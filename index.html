@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Painel Financeiro</title>
-<meta name="theme-color" content="#1b3a5b">
+<meta name="theme-color" content="#2F64E0">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
@@ -22,13 +22,13 @@
   --text: #0b0b0b;
   --text-2: #52514e;
   --text-3: #7a7974;
-  --accent: #2a78d6;
-  --s1: #2a78d6;   /* série 1 — azul */
+  --accent: #2F64E0;  /* azul Feromax */
+  --s1: #2F64E0;   /* série 1 — azul Feromax */
   --s2: #eb6834;   /* série 2 — laranja */
-  --s1-soft: #b7d3f6;
+  --s1-soft: #bcd0f7;
   --s2-soft: #f7c3ad;
   --critical: #d03b3b;
-  --good: #0ca30c;
+  --good: #00AD57;  /* verde Feromax */
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.03);
 }
 @media (prefers-color-scheme: dark) {
@@ -41,11 +41,12 @@
     --text: #f0efec;
     --text-2: #c3c2b7;
     --text-3: #92918a;
-    --accent: #3987e5;
-    --s1: #3987e5;
+    --accent: #5b85f2;
+    --s1: #5b85f2;
     --s2: #d95926;
-    --s1-soft: #1c4a80;
+    --s1-soft: #1e3f86;
     --s2-soft: #6e3218;
+    --good: #1fc472;
     --shadow: none;
   }
 }
@@ -197,6 +198,10 @@ td.sub { color: var(--text-3); font-size: 12.5px; }
 td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3px 9px; font-size: 12.5px; }
 .estimado { color: var(--text-3); font-style: italic; }
 .tab-usuarios td { vertical-align: middle; } .tab-usuarios label { display: inline-flex; gap: 4px; align-items: center; margin-right: 8px; font-size: 12.5px; white-space: nowrap; }
+.marca { display: flex; align-items: center; gap: 12px; }
+.marca .logo { height: 30px; width: auto; display: block; }
+.login-logo { height: 42px; width: auto; display: block; margin: 2px auto 14px; }
+@media (max-width: 520px) { .marca .logo { height: 24px; } }
 </style>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -204,9 +209,12 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
 <body>
 <div class="wrap">
   <header>
-    <div>
-      <h1>Painel Financeiro</h1>
-      <div class="sub" id="status">Carregando…</div>
+    <div class="marca">
+      <img src="logo-feromax.png" alt="Grupo Feromax" class="logo">
+      <div>
+        <h1>Painel Financeiro</h1>
+        <div class="sub" id="status">Carregando…</div>
+      </div>
     </div>
     <div class="spacer"></div>
     <label class="sub" style="display:flex;gap:6px;align-items:center">
@@ -262,6 +270,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
 
 <div class="tela-login" id="telaLogin" hidden>
   <form class="caixa-login" id="formLogin" autocomplete="on">
+    <img src="logo-feromax.png" alt="Grupo Feromax" class="login-logo">
     <h2>Painel Financeiro</h2>
     <p>Entre com seu e-mail e senha.</p>
     <label class="campo"><span>E-mail</span><input id="lEmail" type="email" autocomplete="username" required></label>
