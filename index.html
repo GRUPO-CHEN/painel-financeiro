@@ -1454,11 +1454,14 @@ function renderUsuarios(el) {
   const emps = Object.entries(est.empresasTodas);
   el.innerHTML = `
   <div class="info">
-    <b>Para criar um usuário:</b> no Supabase, vá em <b>Authentication → Users → Add user → Create new user</b>, informe o e-mail e uma senha provisória e marque <b>Auto Confirm User</b>.
-    Ele aparece aqui <b>sem acesso</b>; marque o que ele pode ver e clique em Salvar. A pessoa pode trocar a senha depois, pelo botão "Trocar senha".
+    Clique em <b>+ Novo usuário</b> para criar um acesso: o login é criado na hora e você recebe uma <b>senha provisória</b> para repassar. A pessoa troca depois no botão "Trocar senha".
+    Nesta tabela você ajusta as permissões de quem já existe (marque e clique em Salvar).
   </div>
   <div class="card">
-    <h2>Usuários e permissões</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0">Usuários e permissões</h2>
+      <button class="btn-pri" id="btnNovoUsuario">+ Novo usuário</button>
+    </div>
     <div class="nota">Áreas: o que a pessoa vê · Empresas: de quais empresas · Pode digitar: cadastrar importações e câmbio · Admin: vê tudo e gerencia usuários</div>
     <div class="tabela-wrap"><table class="tab-usuarios">
       <thead><tr><th>Usuário</th><th>Ativo</th><th>Áreas</th><th>Empresas</th><th>Pode digitar</th><th>Admin</th><th></th></tr></thead>
@@ -1495,6 +1498,58 @@ function renderUsuarios(el) {
     tr.querySelector('.u-msg').textContent = 'Salvo';
     setTimeout(() => { const m = tr.querySelector('.u-msg'); if (m) m.textContent = ''; }, 2500);
   });
+  const bNovo = el.querySelector('#btnNovoUsuario');
+  if (bNovo) bNovo.onclick = () => formNovoUsuario(el);
+}
+
+async function formNovoUsuario(painelEl) {
+  if (est.demo) {
+    abrirModal(`<h3>Novo usuário</h3><p class="sub">No modo demonstração não é possível criar usuários.</p><div class="modal-acoes"><button class="btn-pri" id="nFechar">Fechar</button></div>`);
+    $('#nFechar').onclick = fecharModal; return;
+  }
+  const emps = Object.entries(est.empresasTodas);
+  abrirModal(`
+    <h3>Novo usuário</h3>
+    <div class="nota">Cria o login e aplica as permissões. A senha provisória aparece para você repassar.</div>
+    <label class="campo" style="margin-top:10px"><span>Nome</span><input id="nNome" placeholder="Ex.: Maria Diretora"></label>
+    <label class="campo" style="margin-top:8px"><span>E-mail</span><input id="nEmail" type="email" placeholder="pessoa@grupochen.com.br"></label>
+    <div style="margin-top:12px" class="sub"><b>Áreas</b><br>${AREAS.map(([k, n]) => `<label style="margin:5px 14px 0 0;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" class="n-area" value="${k}"> ${n}</label>`).join('')}</div>
+    <div style="margin-top:10px" class="sub"><b>Empresas</b><br>${emps.map(([c, n]) => `<label style="margin:5px 14px 0 0;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" class="n-emp" value="${c}"> ${esc(n)}</label>`).join('')}</div>
+    <div style="margin-top:12px" class="sub">
+      <label style="margin-right:16px"><input type="checkbox" id="nEditor"> Pode digitar</label>
+      <label style="margin-right:16px"><input type="checkbox" id="nAdmin"> Admin</label>
+      <label><input type="checkbox" id="nAtivo" checked> Ativo</label>
+    </div>
+    <div class="msg-erro" id="nErro" role="alert"></div>
+    <div class="modal-acoes"><button id="nCancelar">Cancelar</button><button class="btn-pri" id="nCriar">Criar usuário</button></div>
+  `);
+  $('#nCancelar').onclick = fecharModal;
+  $('#nCriar').onclick = async () => {
+    const erro = $('#nErro'); erro.textContent = '';
+    const email = $('#nEmail').value.trim();
+    if (!email) { erro.textContent = 'Informe o e-mail.'; return; }
+    const body = {
+      email, nome: $('#nNome').value.trim(),
+      ativo: $('#nAtivo').checked, editor: $('#nEditor').checked, admin: $('#nAdmin').checked,
+      areas: [...document.querySelectorAll('.n-area:checked')].map(x => x.value),
+      empresas: [...document.querySelectorAll('.n-emp:checked')].map(x => Number(x.value)),
+    };
+    const btn = $('#nCriar'); btn.disabled = true; btn.textContent = 'Criando…';
+    try {
+      const { data, error } = await sb.functions.invoke('criar-usuario', { body });
+      if (error) { let msg = error.message; try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (_) {} throw new Error(msg); }
+      abrirModal(`<h3>Usuário criado</h3>
+        <div class="info" style="margin-top:10px">Login: <b>${esc(data.email)}</b><br>Senha provisória: <b style="font-size:16px">${esc(data.senha)}</b></div>
+        <p class="sub" style="margin-top:8px">Repasse esses dados à pessoa. Ela troca a senha depois no botão "Trocar senha".</p>
+        <div class="modal-acoes"><button class="btn-pri" id="nOk">Fechar</button></div>`);
+      $('#nOk').onclick = fecharModal;
+      est.usuarios = await buscarTodos(() => sb.from('perfis').select('*').order('email'));
+      renderUsuarios(painelEl);
+    } catch (e) {
+      erro.textContent = 'Erro ao criar: ' + e.message;
+      btn.disabled = false; btn.textContent = 'Criar usuário';
+    }
+  };
 }
 
 // ======================= gráficos (SVG, sem bibliotecas) =======================
