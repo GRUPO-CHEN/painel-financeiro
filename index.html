@@ -1,0 +1,1698 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel Financeiro</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f3f2ef;
+  --surface: #fcfcfb;
+  --line: #e4e2dd;
+  --grid: #ebe9e4;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --text-3: #7a7974;
+  --accent: #2a78d6;
+  --s1: #2a78d6;   /* série 1 — azul */
+  --s2: #eb6834;   /* série 2 — laranja */
+  --s1-soft: #b7d3f6;
+  --s2-soft: #f7c3ad;
+  --critical: #d03b3b;
+  --good: #0ca30c;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.03);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121211;
+    --surface: #1a1a19;
+    --line: #2c2c2a;
+    --grid: #262624;
+    --text: #f0efec;
+    --text-2: #c3c2b7;
+    --text-3: #92918a;
+    --accent: #3987e5;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s1-soft: #1c4a80;
+    --s2-soft: #6e3218;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+header h1 { font-size: 20px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+header .sub { color: var(--text-3); font-size: 12.5px; }
+header .spacer { flex: 1; }
+button, .btn {
+  font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--text-3); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.demo-banner {
+  background: #fff4d6; color: #5c4400; border: 1px solid #f0d58a; border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 14px; font-size: 13px;
+}
+@media (prefers-color-scheme: dark) { .demo-banner { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; } }
+
+/* filtros — uma linha acima de tudo */
+.filtros {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 14px; box-shadow: var(--shadow); margin-bottom: 14px;
+}
+.filtros label { color: var(--text-2); font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+.filtros input[type=date] {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 8px;
+}
+.grupo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip {
+  border: 1px solid var(--line); background: var(--bg); color: var(--text-2);
+  border-radius: 999px; padding: 5px 11px; font-size: 13px; cursor: pointer; user-select: none;
+}
+.chip[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+.sep { width: 1px; align-self: stretch; background: var(--line); }
+
+/* abas */
+.abas { display: flex; gap: 4px; margin: 4px 0 14px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.aba {
+  border: 0; background: none; border-radius: 0; padding: 10px 14px; color: var(--text-3);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-weight: 550;
+}
+.aba[aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); }
+
+/* cartões */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.kpi, .card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.kpi { padding: 14px 16px; }
+.kpi .rot { color: var(--text-2); font-size: 12.5px; }
+.kpi .val { font-size: 22px; white-space: nowrap; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.kpi .det { color: var(--text-3); font-size: 12px; margin-top: 2px; }
+.kpi .alerta { color: var(--critical); }
+.grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+@media (max-width: 520px) { .opc { display: none; } .sep { display: none; } .grade { grid-template-columns: 1fr; } .wrap { padding: 14px 12px 40px; } }
+.card { padding: 14px 16px 12px; min-width: 0; }
+.card h2 { font-size: 14px; font-weight: 620; margin: 0; }
+.card .nota { color: var(--text-3); font-size: 12px; margin: 2px 0 8px; }
+.card.cheio { grid-column: 1 / -1; }
+.legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin: 4px 0 6px; }
+.legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.grafico { position: relative; width: 100%; }
+.grafico svg { display: block; width: 100%; overflow: visible; }
+.grafico text { fill: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* tabelas */
+.tabela-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; }
+th { color: var(--text-3); font-weight: 550; font-size: 12px; }
+td.n, th.n { text-align: right; }
+tr.total td { font-weight: 650; border-bottom: 0; border-top: 1px solid var(--line); }
+tbody tr:hover td { background: var(--bg); }
+.neg { color: var(--critical); }
+
+/* tooltip */
+.tip {
+  position: fixed; pointer-events: none; z-index: 10; opacity: 0; transition: opacity .08s;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 150px;
+}
+.tip .t { color: var(--text-3); font-size: 12px; margin-bottom: 4px; }
+.tip .l { display: flex; justify-content: space-between; gap: 14px; }
+.tip .l i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.tip .l b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.carregando { opacity: .55; transition: opacity .15s; }
+.erro { background: #fde8e8; color: #8a1f1f; border: 1px solid #f3b9b9; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+@media (prefers-color-scheme: dark) { .erro { background: #3d1616; color: #f4b4b4; border-color: #6b2525; } }
+.vazio { color: var(--text-3); padding: 28px 0; text-align: center; }
+[hidden] { display: none !important; }
+.controles { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
+.controles .rot { color: var(--text-2); font-size: 12.5px; }
+.controles input[type=date] { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+.seta { padding: 5px 10px; }
+.info { color: var(--text-2); font-size: 12.5px; background: var(--surface); border: 1px dashed var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; }
+.rolagem { max-height: 520px; overflow: auto; }
+.rolagem thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+td.sub { color: var(--text-3); font-size: 12.5px; }
+.pop-wrap { position: relative; }
+.pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 240px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.14);
+}
+.pop h3 { font-size: 12px; color: var(--text-3); font-weight: 600; margin: 8px 0 4px; }
+.pop h3:first-child { margin-top: 0; }
+.pop label { display: flex; gap: 8px; align-items: center; padding: 4px 0; color: var(--text); font-size: 13px; cursor: pointer; }
+.pop .acoes { display: flex; gap: 8px; margin-top: 8px; border-top: 1px solid var(--grid); padding-top: 8px; }
+.pop .acoes button { padding: 4px 10px; font-size: 12.5px; }
+.chip.ativo-filtro { border-color: var(--accent); color: var(--accent); }
+/* login */
+.tela-login { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--bg); padding: 16px; }
+.caixa-login, .modal-caixa { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+.caixa-login h2, .modal-caixa h2 { margin: 0 0 4px; font-size: 19px; }
+.caixa-login p { color: var(--text-2); margin: 0 0 14px; font-size: 13px; }
+.campo { display: block; margin: 10px 0 0; }
+.campo span { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 4px; }
+.campo input, .campo select, .campo textarea {
+  width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+}
+.campo textarea { min-height: 60px; resize: vertical; }
+.campo-linha { display: flex; gap: 10px; } .campo-linha .campo { flex: 1; min-width: 0; }
+.btn-pri { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.btn-pri:hover { filter: brightness(1.05); border-color: var(--accent); }
+.btn-perigo { color: var(--critical); }
+.msg-erro { color: var(--critical); font-size: 13px; min-height: 1em; margin-top: 10px; }
+.msg-ok { color: var(--good); font-size: 13px; margin-top: 10px; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; }
+.modal { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 16px; overflow: auto; }
+.modal-caixa { max-width: 560px; }
+.modal-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.selo { display: inline-block; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
+.aviso { background: #fff4d6; color: #5c4400; border: 1px solid #f0d58a; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px; }
+@media (prefers-color-scheme: dark) { .aviso { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; } }
+td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3px 9px; font-size: 12.5px; }
+.estimado { color: var(--text-3); font-style: italic; }
+.tab-usuarios td { vertical-align: middle; } .tab-usuarios label { display: inline-flex; gap: 4px; align-items: center; margin-right: 8px; font-size: 12.5px; white-space: nowrap; }
+</style>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Painel Financeiro</h1>
+      <div class="sub" id="status">Carregando…</div>
+    </div>
+    <div class="spacer"></div>
+    <label class="sub" style="display:flex;gap:6px;align-items:center">
+      <input type="checkbox" id="auto" checked> Atualizar a cada 5 min
+    </label>
+    <button id="btnAtualizar" title="Buscar os dados agora">Atualizar</button>
+    <span class="sub" id="usuario"></span>
+    <button id="btnSenha" hidden>Trocar senha</button>
+    <button id="btnSair" hidden>Sair</button>
+  </header>
+
+  <div class="demo-banner" id="demo" hidden>
+    Modo demonstração: os números abaixo são <b>fictícios</b>. Com o Supabase configurado, o painel mostra os dados reais do ERP.
+  </div>
+  <div class="aviso" id="aviso" hidden></div>
+  <div class="erro" id="erro" hidden></div>
+
+  <section class="filtros" aria-label="Filtros">
+    <div class="grupo" id="periodo">
+    <label>De <input type="date" id="dtIni"></label>
+    <label>Até <input type="date" id="dtFim"></label>
+    <div class="grupo" id="atalhos">
+      <button class="chip" data-p="hoje">Hoje</button>
+      <button class="chip" data-p="mes">Mês atual</button>
+      <button class="chip" data-p="30">Últimos 30 dias</button>
+      <button class="chip" data-p="90">Últimos 90 dias</button>
+      <button class="chip" data-p="ano">Ano</button>
+    </div>
+    </div>
+    <div class="sep" id="sepPeriodo"></div>
+    <div class="grupo" id="empresas" aria-label="Empresas"></div>
+    <div class="sep"></div>
+    <div class="pop-wrap">
+      <button class="chip" id="btnBancos" aria-haspopup="true" aria-expanded="false">Bancos: todos ▾</button>
+      <div class="pop" id="popBancos" hidden></div>
+    </div>
+  </section>
+
+  <nav class="abas" role="tablist">
+    <button class="aba" role="tab" data-aba="geral" aria-selected="true">Visão geral</button>
+    <button class="aba" role="tab" data-aba="dia" aria-selected="false">Resumo do dia</button>
+    <button class="aba" role="tab" data-aba="projecao" aria-selected="false">Fluxo projetado</button>
+    <button class="aba" role="tab" data-aba="bancos" aria-selected="false">Bancos</button>
+    <button class="aba" role="tab" data-aba="pagar" aria-selected="false">A pagar</button>
+    <button class="aba" role="tab" data-aba="receber" aria-selected="false">A receber</button>
+    <button class="aba" role="tab" data-aba="importacoes" aria-selected="false">Importações</button>
+    <button class="aba" role="tab" data-aba="usuarios" aria-selected="false">Usuários</button>
+  </nav>
+
+  <main id="conteudo"></main>
+</div>
+<div class="tip" id="tip"></div>
+
+<div class="tela-login" id="telaLogin" hidden>
+  <form class="caixa-login" id="formLogin" autocomplete="on">
+    <h2>Painel Financeiro</h2>
+    <p>Entre com seu e-mail e senha.</p>
+    <label class="campo"><span>E-mail</span><input id="lEmail" type="email" autocomplete="username" required></label>
+    <label class="campo"><span>Senha</span><input id="lSenha" type="password" autocomplete="current-password" required></label>
+    <button class="btn-pri" id="lBotao" style="width:100%;margin-top:16px">Entrar</button>
+    <div class="msg-erro" id="lErro" role="alert"></div>
+    <button type="button" class="link" id="lEsqueci">Esqueci minha senha</button>
+  </form>
+</div>
+<div class="modal" id="modal" hidden><div class="modal-caixa" id="modalCaixa" role="dialog" aria-modal="true"></div></div>
+
+<script>
+'use strict';
+// ======================= utilidades =======================
+const $ = s => document.querySelector(s);
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const brlCurto = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 });
+const brlEixo = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 2 });
+const inteiro = new Intl.NumberFormat('pt-BR');
+const R = v => brl.format(v || 0);
+const brl0 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const R0 = v => brl0.format(Math.round(v || 0));
+const Rc = v => brlCurto.format(v || 0);
+const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const hojeISO = () => iso(new Date());
+const parseISO = s => { const [a, m, d] = s.split('-').map(Number); return new Date(a, m - 1, d); };
+const ddmm = s => s.slice(8, 10) + '/' + s.slice(5, 7);
+const ddmmaa = s => s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(2, 4);
+const somaDias = (s, n) => { const d = parseISO(s); d.setDate(d.getDate() + n); return iso(d); };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const FAIXAS = { 1: '1 a 30 dias', 2: '31 a 60 dias', 3: '61 a 90 dias', 4: '91 a 180 dias', 5: 'Mais de 180 dias' };
+
+// ======================= estado =======================
+const est = {
+  demo: false,
+  empresasDisp: {},
+  nomesBancos: {},
+  empresas: [],
+  inicio: null,
+  fim: null,
+  aba: 'geral',
+  dados: null,
+  carregando: false,
+  bancosDisp: {},      // { empresa: [bancos] }
+  bancosSel: null,     // null = todos; senão Set de 'empresa-banco'
+  dia: null,           // resumo do dia
+  baseDia: 'conciliacao',
+  dadosDia: null,
+  horizonte: 90,       // fluxo projetado (dias)
+  inclVencidos: false,
+  dadosProj: null,
+};
+const DEMO_BANCOS = { 1: [[1, 180000], [341, 420000], [888, 25000], [422, 90000], [887, 12000]], 2: [[1, 60000], [341, 210000], [422, 45000], [3411, 30000]] };
+const bancoSelecionado = (e, b) => !est.bancosSel || est.bancosSel.has(`${e}-${b}`);
+
+function nomeBanco(emp, banco) {
+  return est.nomesBancos[`${emp}-${banco}`] || est.nomesBancos[String(banco)] || `Banco ${banco}`;
+}
+function nomeEmpresa(e) { return est.empresasDisp[e] || `Empresa ${e}`; }
+
+// ======================= dados de demonstração =======================
+function gerarDemo(inicio, fim, empresas) {
+  let semente = 7;
+  const rnd = () => (semente = (semente * 16807) % 2147483647) / 2147483647;
+  const cfg = DEMO_BANCOS;
+  const ate = fim < hojeISO() ? fim : hojeISO();
+  const bancos = [], pagar = [], receber = [];
+  for (const e of [1, 2]) {
+    for (const [b, base] of cfg[e]) {
+      let saldo = base;
+      for (let d = inicio; d <= ate; d = somaDias(d, 1)) {
+        const dow = parseISO(d).getDay();
+        const util = dow !== 0 && dow !== 6;
+        const ent = util ? Math.round(base * (0.02 + rnd() * 0.06)) : 0;
+        const sai = util ? Math.round(base * (0.02 + rnd() * 0.065)) : 0;
+        saldo += ent - sai;
+        if (empresas.includes(e) && bancoSelecionado(e, b)) bancos.push([e, b, d, saldo, ent, sai]);
+      }
+    }
+  }
+  for (let d = inicio; d <= fim; d = somaDias(d, 1)) {
+    const dow = parseISO(d).getDay();
+    if (dow === 0 || dow === 6) continue;
+    for (const e of empresas) {
+      const k = e === 1 ? 1 : 0.45;
+      const venc = d < hojeISO();
+      for (const [conta, sub] of [[20, 1], [20, 3], [21, 2]]) {
+        const tot = Math.round(k * (4000 + rnd() * 26000));
+        pagar.push([d, e, conta, sub, tot, venc ? (rnd() < 0.12 ? tot : 0) : tot]);
+      }
+      const tr = Math.round(k * (15000 + rnd() * 55000));
+      receber.push([d, e, tr, venc ? Math.round(tr * (rnd() < 0.3 ? rnd() * 0.5 : 0)) : tr]);
+    }
+  }
+  const k = empresas.reduce((s, e) => s + (e === 1 ? 1 : 0.45), 0);
+  const faixas = [[1, 38, 186000], [2, 14, 72400], [3, 9, 41800], [4, 6, 30500], [5, 11, 58900]]
+    .map(([faixa, qtd, valor]) => ({ faixa, qtd: Math.round(qtd * k), valor: Math.round(valor * k) }));
+  const nomes = ['Mercado Bom Preço', 'Construtora Horizonte', 'Distribuidora Sul', 'Padaria Real', 'Auto Peças Leste',
+    'Hotel Mirante', 'Clínica Vida', 'Transportes Rápido', 'Loja do Bairro', 'Escola Saber'];
+  const topAtraso = nomes.map((nome, i) => ({ cod: 100 + i, nome, qtd: 6 - Math.floor(i / 2), valor: Math.round(k * (52000 / (1 + i * 0.45))), dias: 12 + ((i * 37) % 160) }));
+  return { atualizadoEm: new Date().toISOString(), bancos, pagar, receber, faixas, topAtraso };
+}
+
+// ======================= Supabase / login =======================
+const CFG = window.PAINEL_CONFIG || {};
+let sb = null;
+Object.assign(est, {
+  perfil: null, geracoes: {}, syncStatus: [], syncInfo: null,
+  contas: { pagar: [20, 21], projecao: [] }, ptax: null, cambio: { modo: 'manual', manual: 5.5 },
+  importacoes: [], usuarios: [], empresasTodas: {}, impFiltro: { status: '', soFluxo: false },
+});
+
+const ABAS = {
+  geral: ['caixa', 'titulos'], dia: ['caixa'], projecao: ['caixa', 'titulos'], bancos: ['caixa'],
+  pagar: ['titulos'], receber: ['titulos'], importacoes: ['importacoes'], usuarios: ['admin'],
+};
+const temArea = a => !!est.perfil && (est.perfil.admin || (a !== 'admin' && (est.perfil.areas || []).includes(a)));
+const podeEditar = () => !!est.perfil && (est.perfil.admin || est.perfil.editor);
+const cambioAtual = () => (est.cambio.modo === 'ptax' && est.ptax && est.ptax.valor) ? Number(est.ptax.valor) : Number(est.cambio.manual || 0);
+const valorImp = i => (i.valor_brl !== null && i.valor_brl !== undefined && i.valor_brl !== '') ? Number(i.valor_brl) : Number(i.fob_usd || 0) * cambioAtual();
+
+// busca todas as linhas (o Supabase devolve no máximo 1000 por vez)
+async function buscarTodos(fazConsulta) {
+  const TAM = 1000; let de = 0, todos = [];
+  for (;;) {
+    const { data, error } = await fazConsulta().range(de, de + TAM - 1);
+    if (error) throw new Error(error.message);
+    todos = todos.concat(data || []);
+    if (!data || data.length < TAM) break;
+    de += TAM;
+  }
+  return todos;
+}
+
+async function iniciar() {
+  if (!CFG.SUPABASE_URL || !CFG.SUPABASE_CHAVE_PUBLICA || !window.supabase) return iniciarDemo();
+  sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_CHAVE_PUBLICA);
+  sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') abrirTrocaSenha(true); });
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return mostrarLogin();
+  await entrar();
+}
+
+function mostrarLogin() {
+  $('#telaLogin').hidden = false;
+  setTimeout(() => $('#lEmail').focus(), 50);
+}
+
+async function entrar() {
+  $('#telaLogin').hidden = true;
+  $('#btnSair').hidden = false; $('#btnSenha').hidden = false;
+  const { data: { user } } = await sb.auth.getUser();
+  const { data: perfil, error } = await sb.from('perfis').select('*').eq('id', user.id).maybeSingle();
+  if (error) return mostrarErro('Não consegui ler seu perfil: ' + error.message);
+  est.perfil = perfil;
+  $('#usuario').textContent = (perfil && perfil.nome) || user.email;
+  if (!perfil || !perfil.ativo) {
+    document.querySelector('.filtros').hidden = true; document.querySelector('.abas').hidden = true;
+    $('#status').textContent = '';
+    $('#conteudo').innerHTML = `<div class="card"><div class="vazio">Olá, ${esc(user.email)}. Seu acesso ainda não foi liberado.<br>Peça ao administrador do painel para ativar seu usuário.</div></div>`;
+    return;
+  }
+  try { await carregarConfig(); } catch (e) { return mostrarErro('Não consegui ler a configuração: ' + e.message); }
+  prepararPainel();
+}
+
+async function carregarConfig() {
+  const { data, error } = await sb.from('config_painel').select('chave,valor');
+  if (error) throw new Error(error.message);
+  const c = Object.fromEntries((data || []).map(r => [r.chave, r.valor]));
+  if (!c.empresas) throw new Error('o sincronizador ainda não rodou nenhuma vez.');
+  est.empresasTodas = c.empresas;
+  est.empresasDisp = est.perfil.admin ? c.empresas
+    : Object.fromEntries(Object.entries(c.empresas).filter(([k]) => (est.perfil.empresas || []).includes(Number(k))));
+  est.bancosDisp = c.bancos || {};
+  est.nomesBancos = c.nomes_bancos || {};
+  est.contas = c.contas || est.contas;
+  est.ptax = c.ptax || null;
+  est.syncInfo = c.sincronizador || null;
+  const { data: par } = await sb.from('parametros').select('chave,valor');
+  const cam = (par || []).find(p => p.chave === 'cambio');
+  if (cam) est.cambio = cam.valor;
+}
+
+function iniciarDemo() {
+  est.demo = true;
+  est.perfil = { nome: 'Demonstração', ativo: true, admin: true, editor: true, areas: ['caixa', 'titulos', 'importacoes'], empresas: [1, 2] };
+  est.empresasDisp = est.empresasTodas = { 1: 'Empresa 1', 2: 'Empresa 2' };
+  est.nomesBancos = { '1': 'Banco do Brasil', '341': 'Itaú', '422': 'Safra', '1-888': 'Conta 888', '1-887': 'Conta 887', '2-3411': 'Itaú 3411' };
+  est.bancosDisp = Object.fromEntries(Object.entries(DEMO_BANCOS).map(([e, l]) => [e, l.map(x => x[0])]));
+  est.ptax = { valor: 5.4183, data: somaDias(hojeISO(), -1) };
+  est.cambio = { modo: 'manual', manual: 5.5 };
+  const h = hojeISO();
+  est.importacoes = [
+    { id: 1, empresa: 2, previsao: somaDias(h, 3), tipo: 'Câmbio', fornecedor: 'Fornecedor Ásia A', pedido: '2047', fob_usd: 2338.47, valor_brl: null, status: 'Embarque', observacao: '', no_fluxo: true },
+    { id: 2, empresa: 2, previsao: somaDias(h, 5), tipo: 'Numerário', fornecedor: 'Fornecedor Ásia B', pedido: '2072', fob_usd: null, valor_brl: 24000, status: 'Nacionalização', observacao: 'Impostos de importação', no_fluxo: true },
+    { id: 3, empresa: 2, previsao: somaDias(h, 12), tipo: 'Numerário', fornecedor: 'Fornecedor Ásia C', pedido: '2015', fob_usd: null, valor_brl: 39000, status: 'Chegada Brasil', observacao: '', no_fluxo: true },
+    { id: 4, empresa: 1, previsao: somaDias(h, 20), tipo: 'Câmbio', fornecedor: 'Fornecedor Europa', pedido: '2074', fob_usd: 18500, valor_brl: null, status: 'Produção', observacao: '50% na produção', no_fluxo: true },
+  ];
+  est.usuarios = [
+    { id: 'a', email: 'voce@empresa.com.br', nome: 'Você', ativo: true, admin: true, editor: true, areas: ['caixa', 'titulos', 'importacoes'], empresas: [1, 2] },
+    { id: 'b', email: 'diretor@empresa.com.br', nome: 'Diretor', ativo: true, admin: false, editor: false, areas: ['caixa', 'titulos', 'importacoes'], empresas: [1, 2] },
+    { id: 'c', email: 'comercial@empresa.com.br', nome: 'Comercial', ativo: false, admin: false, editor: false, areas: [], empresas: [] },
+  ];
+  $('#demo').hidden = false;
+  $('#usuario').textContent = 'Demonstração';
+  prepararPainel();
+}
+
+function prepararPainel() {
+  configurarAbas();
+  let salvo = {};
+  try { salvo = JSON.parse(localStorage.getItem('painel-filtros') || '{}'); } catch (_) {}
+  est.empresas = (salvo.empresas || Object.keys(est.empresasDisp).map(Number)).filter(e => est.empresasDisp[e]);
+  if (!est.empresas.length) est.empresas = Object.keys(est.empresasDisp).map(Number);
+  aplicarAtalho(salvo.atalho || 'mes', false);
+  if (salvo.atalho === 'custom' && salvo.inicio && salvo.fim) { est.inicio = salvo.inicio; est.fim = salvo.fim; }
+  if (Array.isArray(salvo.bancos)) est.bancosSel = new Set(salvo.bancos);
+  est.dia = hojeISO();
+  montarFiltros();
+  carregar();
+}
+
+function configurarAbas() {
+  const permitidas = Object.keys(ABAS).filter(a => ABAS[a].every(temArea));
+  document.querySelectorAll('.aba').forEach(b => { b.hidden = !permitidas.includes(b.dataset.aba); });
+  if (!permitidas.includes(est.aba)) est.aba = permitidas[0] || null;
+  document.querySelectorAll('.aba').forEach(b => b.setAttribute('aria-selected', String(b.dataset.aba === est.aba)));
+  if (!est.aba) $('#conteudo').innerHTML = '<div class="card"><div class="vazio">Seu usuário não tem nenhuma área liberada.</div></div>';
+}
+
+function mostrarErro(msg) { $('#erro').textContent = msg; $('#erro').hidden = false; }
+
+// ---------- leitura dos dados no Supabase ----------
+async function lerGeracoes() {
+  const { data, error } = await sb.from('sync_status').select('tabela,geracao,atualizado_em,erro,erro_em');
+  if (error) throw new Error(error.message);
+  est.syncStatus = data || [];
+  est.geracoes = Object.fromEntries(est.syncStatus.map(r => [r.tabela, r.geracao ?? -1]));
+}
+const ger = t => est.geracoes[t] ?? -1;
+
+async function lerPainel() {
+  await lerGeracoes();
+  const emps = est.empresas;
+  const [saldos, tits, faixas, venc] = await Promise.all([
+    temArea('caixa') ? buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,data,saldo,entradas,saidas')
+      .eq('geracao', ger('saldo_diario')).in('empresa', emps).gte('data', est.inicio).lte('data', est.fim)
+      .order('data').order('empresa').order('banco')) : [],
+    temArea('titulos') ? buscarTodos(() => sb.from('titulos').select('tipo,empresa,vencimento,conta,sub_conta,total,aberto')
+      .eq('geracao', ger('titulos')).in('empresa', emps).gte('vencimento', est.inicio).lte('vencimento', est.fim)
+      .order('vencimento').order('tipo').order('empresa').order('conta').order('sub_conta')) : [],
+    temArea('titulos') ? buscarTodos(() => sb.from('inadimplencia').select('empresa,faixa,qtd,valor')
+      .eq('geracao', ger('inadimplencia')).in('empresa', emps).order('empresa').order('faixa')) : [],
+    temArea('titulos') ? buscarTodos(() => sb.from('vencidos_cliente').select('empresa,cod_cliente,nome,qtd,valor,dias_max')
+      .eq('geracao', ger('vencidos_cliente')).in('empresa', emps).order('valor', { ascending: false })) : [],
+  ]);
+  const contasPagar = (est.contas.pagar || []).map(Number);
+  const pagar = tits.filter(r => r.tipo === 'P' && (!contasPagar.length || contasPagar.includes(Number(r.conta))))
+    .map(r => [r.vencimento, r.empresa, r.conta, r.sub_conta, Number(r.total), Number(r.aberto)]);
+  const rec = new Map();
+  for (const r of tits.filter(t => t.tipo === 'R')) {
+    const k = r.vencimento + '|' + r.empresa;
+    const x = rec.get(k) || [r.vencimento, r.empresa, 0, 0];
+    x[2] += Number(r.total); x[3] += Number(r.aberto); rec.set(k, x);
+  }
+  const fx = new Map();
+  for (const f of faixas) { const x = fx.get(f.faixa) || { faixa: f.faixa, qtd: 0, valor: 0 }; x.qtd += f.qtd; x.valor += Number(f.valor); fx.set(f.faixa, x); }
+  const cli = new Map();
+  for (const v of venc) {
+    const k = v.cod_cliente || v.nome;
+    const x = cli.get(k) || { cod: v.cod_cliente, nome: v.nome || `Cliente ${v.cod_cliente}`, qtd: 0, valor: 0, dias: 0 };
+    x.qtd += v.qtd; x.valor += Number(v.valor); x.dias = Math.max(x.dias, v.dias_max); cli.set(k, x);
+  }
+  return {
+    atualizadoEm: new Date().toISOString(),
+    bancos: saldos.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => [r.empresa, r.banco, r.data, Number(r.saldo), Number(r.entradas), Number(r.saidas)]),
+    pagar, receber: [...rec.values()], faixas: [...fx.values()],
+    topAtraso: [...cli.values()].sort((a, b) => b.valor - a.valor).slice(0, 10),
+  };
+}
+
+async function lerDia() {
+  await lerGeracoes();
+  const campo = est.baseDia === 'pagamento' ? 'dt_pagamento' : 'dt_conciliacao';
+  const [saldos, movs] = await Promise.all([
+    buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,saldo,entradas,saidas')
+      .eq('geracao', ger('saldo_diario')).in('empresa', est.empresas).eq('data', est.dia).order('empresa').order('banco')),
+    buscarTodos(() => sb.from('movimentos').select('tipo,empresa,banco,titulo,parcela,cod,nome,vencimento,conta,valor')
+      .eq('geracao', ger('movimentos')).in('empresa', est.empresas).eq(campo, est.dia)
+      .order('tipo').order('valor', { ascending: false }).order('titulo')),
+  ]);
+  return {
+    atualizadoEm: new Date().toISOString(), dia: est.dia, base: est.baseDia,
+    bancos: saldos.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => [r.empresa, r.banco, Number(r.saldo), Number(r.entradas), Number(r.saidas)]),
+    movimentos: movs.filter(m => !est.bancosSel || bancoSelecionado(m.empresa, m.banco)).map(m => ({
+      tipo: m.tipo, emp: m.empresa, banco: m.banco, titulo: m.titulo, parcela: m.parcela, cod: m.cod,
+      nome: m.nome || (m.tipo === 'R' ? `Cliente ${m.cod}` : `Fornecedor ${m.cod}`), vencimento: m.vencimento, conta: m.conta, valor: Number(m.valor),
+    })),
+  };
+}
+
+async function lerProj() {
+  await lerGeracoes();
+  const hoje = hojeISO(), ate = somaDias(hoje, est.horizonte);
+  const [saldos, tits] = await Promise.all([
+    buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,data,saldo')
+      .eq('geracao', ger('saldo_diario')).in('empresa', est.empresas).gte('data', somaDias(hoje, -10)).lte('data', hoje)
+      .order('data').order('empresa').order('banco')),
+    buscarTodos(() => sb.from('titulos').select('tipo,empresa,vencimento,conta,qtd_aberto,aberto')
+      .eq('geracao', ger('titulos')).in('empresa', est.empresas).gt('aberto', 0).lte('vencimento', ate)
+      .order('vencimento').order('tipo').order('empresa').order('conta')),
+  ]);
+  if (temArea('importacoes')) await lerImportacoes();
+  const ultimo = new Map();   // último saldo de cada banco (até hoje)
+  for (const r of saldos) if (bancoSelecionado(r.empresa, r.banco)) ultimo.set(r.empresa + '-' + r.banco, Number(r.saldo));
+  const contasProj = (est.contas.projecao || []).map(Number);
+  const junta = lista => {
+    const m = new Map();
+    for (const r of lista) {
+      const k = r.vencimento < hoje ? null : r.vencimento;
+      const x = m.get(k) || [k, 0, 0]; x[1] += r.qtd_aberto; x[2] += Number(r.aberto); m.set(k, x);
+    }
+    return [...m.values()];
+  };
+  return {
+    atualizadoEm: new Date().toISOString(), hoje, ate,
+    saldoHoje: [...ultimo.values()].reduce((s, v) => s + v, 0),
+    receber: junta(tits.filter(r => r.tipo === 'R')),
+    pagar: junta(tits.filter(r => r.tipo === 'P' && (!contasProj.length || contasProj.includes(Number(r.conta))))),
+  };
+}
+
+async function lerImportacoes() {
+  if (est.demo) return;
+  const lista = await buscarTodos(() => sb.from('importacoes').select('*').order('previsao').order('id'));
+  est.importacoes = lista;
+  const { data: par } = await sb.from('parametros').select('chave,valor');
+  const cam = (par || []).find(p => p.chave === 'cambio'); if (cam) est.cambio = cam.valor;
+  const { data: cfg } = await sb.from('config_painel').select('valor').eq('chave', 'ptax').maybeSingle();
+  if (cfg) est.ptax = cfg.valor;
+}
+
+async function lerUsuarios() {
+  if (est.demo) return;
+  est.usuarios = await buscarTodos(() => sb.from('perfis').select('*').order('email'));
+}
+
+// importações entram como saídas no fluxo projetado
+function importacoesNoFluxo(hoje, ate) {
+  if (!temArea('importacoes')) return [];
+  return est.importacoes.filter(i => i.no_fluxo && est.empresas.includes(i.empresa) && i.previsao <= ate && i.status !== 'Estoque')
+    .sort((a, b) => a.previsao.localeCompare(b.previsao));
+}
+
+function avisoSincronizacao() {
+  if (est.demo || !est.syncStatus.length) { $('#aviso').hidden = true; return ''; }
+  const datas = est.syncStatus.map(r => r.atualizado_em).filter(Boolean).map(d => new Date(d));
+  const ultima = datas.length ? new Date(Math.min(...datas)) : null;
+  const erros = est.syncStatus.filter(r => r.erro);
+  const intervalo = (est.syncInfo && est.syncInfo.intervalo_min) || 5;
+  const atrasado = !ultima || (Date.now() - ultima) > Math.max(30, intervalo * 4) * 60e3;
+  const partes = [];
+  if (atrasado) partes.push(`Os dados do ERP não são atualizados desde ${ultima ? ultima.toLocaleString('pt-BR') : '—'}. Verifique se o computador do sincronizador está ligado.`);
+  if (erros.length) partes.push(`Erro ao atualizar: ${erros.map(r => r.tabela).join(', ')}.`);
+  $('#aviso').textContent = partes.join(' ');
+  $('#aviso').hidden = !partes.length;
+  return ultima ? `Dados do ERP de ${ultima.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '';
+}
+
+function salvarFiltros(atalho) {
+  try { localStorage.setItem('painel-filtros', JSON.stringify({ empresas: est.empresas, atalho, inicio: est.inicio, fim: est.fim, bancos: est.bancosSel ? [...est.bancosSel] : null })); } catch (_) {}
+}
+
+function aplicarAtalho(p, recarregar = true) {
+  const h = hojeISO();
+  const d = new Date();
+  if (p === 'hoje') { est.inicio = h; est.fim = h; }
+  if (p === 'mes') { est.inicio = iso(new Date(d.getFullYear(), d.getMonth(), 1)); est.fim = h; }
+  if (p === '30') { est.inicio = somaDias(h, -29); est.fim = h; }
+  if (p === '90') { est.inicio = somaDias(h, -89); est.fim = h; }
+  if (p === 'ano') { est.inicio = `${d.getFullYear()}-01-01`; est.fim = h; }
+  document.querySelectorAll('#atalhos .chip').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.p === p)));
+  $('#dtIni').value = est.inicio; $('#dtFim').value = est.fim;
+  if (recarregar) { salvarFiltros(p); carregar(); }
+}
+
+function montarFiltros() {
+  $('#dtIni').value = est.inicio; $('#dtFim').value = est.fim;
+  const box = $('#empresas');
+  box.innerHTML = '';
+  for (const [cod, nome] of Object.entries(est.empresasDisp)) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.textContent = nome;
+    b.setAttribute('aria-pressed', String(est.empresas.includes(Number(cod))));
+    b.onclick = () => {
+      const c = Number(cod);
+      const sel = est.empresas.includes(c) ? est.empresas.filter(x => x !== c) : [...est.empresas, c];
+      if (!sel.length) return; // sempre ao menos uma
+      est.empresas = sel.sort();
+      b.setAttribute('aria-pressed', String(sel.includes(c)));
+      montarPopBancos();
+      salvarFiltros(document.querySelector('#atalhos .chip[aria-pressed=true]')?.dataset.p || 'custom');
+      carregar();
+    };
+    box.appendChild(b);
+  }
+  montarPopBancos();
+}
+
+// ---------- filtro de bancos ----------
+function montarPopBancos() {
+  const pop = $('#popBancos');
+  let html = '';
+  for (const e of est.empresas) {
+    const lista = est.bancosDisp[e] || [];
+    if (!lista.length) continue;
+    html += `<h3>${esc(nomeEmpresa(e))}</h3>` + lista.map(b =>
+      `<label><input type="checkbox" data-k="${e}-${b}" ${bancoSelecionado(e, b) ? 'checked' : ''}> ${esc(nomeBanco(e, b))} <span class="sub" style="color:var(--text-3)">(${b})</span></label>`).join('');
+  }
+  html += `<div class="acoes"><button data-a="todos">Todos</button><button data-a="nenhum">Limpar</button></div>`;
+  pop.innerHTML = html;
+  pop.querySelectorAll('input').forEach(i => i.onchange = () => {
+    const marcados = [...pop.querySelectorAll('input:checked')].map(x => x.dataset.k);
+    const todos = [...pop.querySelectorAll('input')].map(x => x.dataset.k);
+    est.bancosSel = marcados.length === todos.length ? null : new Set(marcados);
+    aposMudarBancos();
+  });
+  pop.querySelector('[data-a=todos]').onclick = () => { est.bancosSel = null; montarPopBancos(); aposMudarBancos(); };
+  pop.querySelector('[data-a=nenhum]').onclick = () => { est.bancosSel = new Set(); montarPopBancos(); aposMudarBancos(false); };
+  rotuloBancos();
+}
+function rotuloBancos() {
+  const visiveis = est.empresas.flatMap(e => (est.bancosDisp[e] || []).map(b => `${e}-${b}`));
+  const n = visiveis.filter(k => !est.bancosSel || est.bancosSel.has(k)).length;
+  const btn = $('#btnBancos');
+  btn.textContent = !est.bancosSel || n === visiveis.length ? 'Bancos: todos ▾' : n === 1
+    ? `Banco: ${nomeBanco(...visiveis.find(k => est.bancosSel.has(k)).split('-').map(Number))} ▾` : `Bancos: ${n} de ${visiveis.length} ▾`;
+  btn.classList.toggle('ativo-filtro', !!est.bancosSel && n !== visiveis.length);
+}
+let tBancos;
+function aposMudarBancos(recarregar = true) {
+  rotuloBancos();
+  salvarFiltros(document.querySelector('#atalhos .chip[aria-pressed=true]')?.dataset.p || 'custom');
+  clearTimeout(tBancos);
+  if (recarregar) tBancos = setTimeout(carregar, 350);
+}
+function paramBancos() {
+  if (!est.bancosSel) return {};
+  const lista = est.empresas.flatMap(e => (est.bancosDisp[e] || []).map(b => `${e}-${b}`)).filter(k => est.bancosSel.has(k));
+  return { bancos: lista.length ? lista.join(',') : '0-0' };
+}
+
+let seq = 0;
+async function carregar() {
+  if (!est.aba) return;
+  const meu = ++seq;
+  $('#conteudo').classList.add('carregando');
+  $('#erro').hidden = true;
+  try {
+    const aba = est.aba;
+    let desc = '';
+    if (aba === 'dia') {
+      const d = est.demo ? gerarDemoDia(est.dia, est.baseDia) : await lerDia();
+      if (meu !== seq) return; est.dadosDia = d; desc = `dia ${ddmmaa(est.dia)}`;
+    } else if (aba === 'projecao') {
+      const d = est.demo ? gerarDemoProj(est.horizonte) : await lerProj();
+      if (meu !== seq) return; est.dadosProj = d; desc = `projeção de ${est.horizonte} dias`;
+    } else if (aba === 'importacoes') {
+      if (!est.demo) { await lerGeracoes(); await lerImportacoes(); }
+      if (meu !== seq) return; desc = 'importações';
+    } else if (aba === 'usuarios') {
+      if (!est.demo) { await lerGeracoes(); await lerUsuarios(); }
+      if (meu !== seq) return; desc = 'usuários';
+    } else {
+      const d = est.demo ? gerarDemo(est.inicio, est.fim, est.empresas) : await lerPainel();
+      if (meu !== seq) return; est.dados = d; desc = `${ddmmaa(est.inicio)} a ${ddmmaa(est.fim)}`;
+    }
+    const erp = avisoSincronizacao();
+    $('#status').textContent = [erp || `Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`, desc].filter(Boolean).join(' · ');
+    render();
+  } catch (e) {
+    mostrarErro('Não foi possível carregar os dados: ' + e.message);
+  } finally {
+    if (meu === seq) $('#conteudo').classList.remove('carregando');
+  }
+}
+
+// ======================= cálculos =======================
+function calcular() {
+  const d = est.dados;
+  // bancos
+  const porConta = new Map();
+  const totalDia = new Map();
+  for (const [e, b, data, saldo, ent, sai] of d.bancos) {
+    const k = e + '-' + b;
+    if (!porConta.has(k)) porConta.set(k, { e, b, nome: nomeBanco(e, b), serie: [], ent: 0, sai: 0 });
+    const c = porConta.get(k);
+    c.serie.push([data, saldo]); c.ent += ent; c.sai += sai;
+    if (c.serie.length === 1) c.ini = saldo - ent + sai;
+    c.fim = saldo;
+    const t = totalDia.get(data) || { saldo: 0, ent: 0, sai: 0 };
+    t.saldo += saldo; t.ent += ent; t.sai += sai;
+    totalDia.set(data, t);
+  }
+  const contas = [...porConta.values()].sort((a, b) => a.e - b.e || b.fim - a.fim);
+  const dias = [...totalDia.keys()].sort();
+  const serieSaldo = dias.map(x => [x, totalDia.get(x).saldo]);
+  const saldoFim = contas.reduce((s, c) => s + c.fim, 0);
+  const saldoIni = contas.reduce((s, c) => s + c.ini, 0);
+  const entradas = contas.reduce((s, c) => s + c.ent, 0);
+  const saidas = contas.reduce((s, c) => s + c.sai, 0);
+
+  // pagar / receber
+  const pagTot = d.pagar.reduce((s, r) => s + r[4], 0);
+  const pagAb = d.pagar.reduce((s, r) => s + r[5], 0);
+  const recTot = d.receber.reduce((s, r) => s + r[2], 0);
+  const recAb = d.receber.reduce((s, r) => s + r[3], 0);
+  const vencido = d.faixas.reduce((s, f) => s + f.valor, 0);
+  const vencidoQtd = d.faixas.reduce((s, f) => s + f.qtd, 0);
+  return { contas, serieSaldo, saldoFim, saldoIni, entradas, saidas, pagTot, pagAb, recTot, recAb, vencido, vencidoQtd };
+}
+
+// agrupa por dia (ou por semana quando o período é longo)
+function agrupar(linhas, idxData, idxValores) {
+  const longo = (parseISO(est.fim) - parseISO(est.inicio)) / 864e5 > 62;
+  const chave = s => {
+    if (!longo) return s;
+    const dt = parseISO(s); const dow = (dt.getDay() + 6) % 7; dt.setDate(dt.getDate() - dow); return iso(dt);
+  };
+  const m = new Map();
+  for (const r of linhas) {
+    const k = chave(r[idxData]);
+    const acc = m.get(k) || idxValores.map(() => 0);
+    idxValores.forEach((ix, i) => { acc[i] += r[ix]; });
+    m.set(k, acc);
+  }
+  const ks = [...m.keys()].sort();
+  return { longo, cats: ks, valores: idxValores.map((_, i) => ks.map(k => m.get(k)[i])) };
+}
+
+// ======================= render =======================
+function render() {
+  const el = $('#conteudo');
+  const aba = est.aba;
+  if (!aba) return;
+  const periodo = !['dia', 'projecao', 'importacoes', 'usuarios'].includes(aba);
+  $('#periodo').hidden = !periodo; $('#sepPeriodo').hidden = !periodo;
+  document.querySelector('.filtros').hidden = aba === 'usuarios';
+  if (aba === 'importacoes') return renderImportacoes(el);
+  if (aba === 'usuarios') return renderUsuarios(el);
+  if (aba === 'dia') { if (est.dadosDia) renderDia(el); return; }
+  if (aba === 'projecao') { if (est.dadosProj) renderProj(el); return; }
+  if (!est.dados) return;
+  const c = calcular();
+  if (aba === 'geral') el.innerHTML = htmlGeral(c);
+  if (aba === 'bancos') el.innerHTML = htmlBancos(c);
+  if (aba === 'pagar') el.innerHTML = htmlPagar();
+  if (aba === 'receber') el.innerHTML = htmlReceber(c);
+  desenhar(c);
+}
+
+const kpi = (rot, val, det = '', cls = '') =>
+  `<div class="kpi"><div class="rot">${rot}</div><div class="val ${cls}" >${val}</div><div class="det">${det}</div></div>`;
+
+function htmlGeral(c) {
+  const varSaldo = c.saldoFim - c.saldoIni;
+  return `
+  <div class="kpis">
+    ${kpi('Saldo em bancos', R0(c.saldoFim), `em ${ddmmaa(c.serieSaldo.at(-1)?.[0] || est.fim)} · ${varSaldo >= 0 ? '▲' : '▼'} ${R0(Math.abs(varSaldo))} no período`, c.saldoFim < 0 ? 'neg' : '')}
+    ${kpi('Entradas no período', R0(c.entradas), 'recebimentos conciliados')}
+    ${kpi('Saídas no período', R0(c.saidas), 'pagamentos conciliados')}
+    ${kpi('A receber em aberto', R0(c.recAb), `de ${R0(c.recTot)} com vencimento no período`)}
+    ${kpi('A pagar em aberto', R0(c.pagAb), `de ${R0(c.pagTot)} com vencimento no período`)}
+    ${kpi('⚠ Vencido a receber', R0(c.vencido), `${inteiro.format(c.vencidoQtd)} títulos vencidos hoje`, c.vencido > 0 ? 'alerta' : '')}
+  </div>
+  <div class="grade">
+    <div class="card cheio">
+      <h2>Saldo total em bancos</h2>
+      <div class="nota">Soma das contas das empresas selecionadas, dia a dia</div>
+      <div class="grafico" id="gSaldo"></div>
+    </div>
+    <div class="card cheio">
+      <h2>A receber × a pagar por vencimento</h2>
+      <div class="nota" id="nRxP"></div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>A receber</span><span><i style="background:var(--s2)"></i>A pagar</span></div>
+      <div class="grafico" id="gRxP"></div>
+    </div>
+  </div>`;
+}
+
+function htmlBancos(c) {
+  if (!c.contas.length) return `<div class="card"><div class="vazio">Nenhuma conta bancária para as empresas selecionadas.</div></div>`;
+  const multi = est.empresas.length > 1;
+  const linhas = c.contas.map((x, i) => `
+    <tr>
+      ${multi ? `<td>${esc(nomeEmpresa(x.e))}</td>` : ''}
+      <td>${esc(x.nome)}</td>
+      <td class="n">${R(x.ini)}</td>
+      <td class="n">${R(x.ent)}</td>
+      <td class="n">${R(x.sai)}</td>
+      <td class="n ${x.fim < 0 ? 'neg' : ''}"><b>${R(x.fim)}</b></td>
+      <td><div class="spark" data-i="${i}" style="width:120px;height:28px"></div></td>
+    </tr>`).join('');
+  return `
+  <div class="kpis">
+    ${kpi('Saldo inicial', R0(c.saldoIni), `em ${ddmmaa(est.inicio)}`)}
+    ${kpi('Entradas', R0(c.entradas))}
+    ${kpi('Saídas', R0(c.saidas))}
+    ${kpi('Saldo final', R0(c.saldoFim), `em ${ddmmaa(c.serieSaldo.at(-1)?.[0] || est.fim)}`, c.saldoFim < 0 ? 'neg' : '')}
+  </div>
+  <div class="card">
+    <h2>Saldo por conta bancária</h2>
+    <div class="nota">Movimentos conciliados (baixas com data de conciliação)</div>
+    <div class="tabela-wrap"><table>
+      <thead><tr>${multi ? '<th>Empresa</th>' : ''}<th>Banco</th><th class="n">Saldo inicial</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Saldo final</th><th>Evolução</th></tr></thead>
+      <tbody>${linhas}
+        <tr class="total">${multi ? '<td></td>' : ''}<td>Total</td><td class="n">${R(c.saldoIni)}</td><td class="n">${R(c.entradas)}</td><td class="n">${R(c.saidas)}</td><td class="n">${R(c.saldoFim)}</td><td></td></tr>
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+function htmlPagar() {
+  const d = est.dados;
+  const porConta = new Map();
+  for (const [, , conta, sub, tot, ab] of d.pagar) {
+    const k = conta + '.' + sub;
+    const x = porConta.get(k) || { k, tot: 0, ab: 0 };
+    x.tot += tot; x.ab += ab; porConta.set(k, x);
+  }
+  const contas = [...porConta.values()].sort((a, b) => b.tot - a.tot);
+  const tot = contas.reduce((s, x) => s + x.tot, 0), ab = contas.reduce((s, x) => s + x.ab, 0);
+  const hoje = hojeISO();
+  const atrasado = d.pagar.filter(r => r[0] < hoje).reduce((s, r) => s + r[5], 0);
+  return `
+  <div class="kpis">
+    ${kpi('Total com vencimento no período', R0(tot))}
+    ${kpi('Já pago', R0(tot - ab))}
+    ${kpi('Em aberto', R0(ab))}
+    ${kpi('⚠ Em aberto já vencido', R0(atrasado), 'vencimento antes de hoje', atrasado > 0 ? 'alerta' : '')}
+  </div>
+  <div class="grade">
+    <div class="card cheio">
+      <h2>Contas a pagar por vencimento</h2>
+      <div class="nota" id="nPag"></div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>Pago</span><span><i style="background:var(--s2)"></i>Em aberto</span></div>
+      <div class="grafico" id="gPag"></div>
+    </div>
+    <div class="card cheio">
+      <h2>Por conta / subconta</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Conta.Sub</th><th class="n">Total</th><th class="n">Pago</th><th class="n">Em aberto</th><th class="n">% do total</th></tr></thead>
+        <tbody>${contas.map(x => `<tr><td>${esc(x.k)}</td><td class="n">${R(x.tot)}</td><td class="n">${R(x.tot - x.ab)}</td><td class="n">${R(x.ab)}</td><td class="n">${tot ? (x.tot / tot * 100).toFixed(1).replace('.', ',') : '0'}%</td></tr>`).join('')}
+        <tr class="total"><td>Total</td><td class="n">${R(tot)}</td><td class="n">${R(tot - ab)}</td><td class="n">${R(ab)}</td><td class="n">100%</td></tr></tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+function htmlReceber(c) {
+  const d = est.dados;
+  return `
+  <div class="kpis">
+    ${kpi('Total com vencimento no período', R0(c.recTot))}
+    ${kpi('Já recebido', R0(c.recTot - c.recAb))}
+    ${kpi('Em aberto', R0(c.recAb))}
+    ${kpi('⚠ Inadimplência hoje', R0(c.vencido), `${inteiro.format(c.vencidoQtd)} títulos vencidos (todas as datas)`, c.vencido > 0 ? 'alerta' : '')}
+  </div>
+  <div class="grade">
+    <div class="card cheio">
+      <h2>Contas a receber por vencimento</h2>
+      <div class="nota" id="nRec"></div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>Recebido</span><span><i style="background:var(--s2)"></i>Em aberto</span></div>
+      <div class="grafico" id="gRec"></div>
+    </div>
+    <div class="card">
+      <h2>Inadimplência por faixa de atraso</h2>
+      <div class="nota">Títulos vencidos e não baixados, posição de hoje</div>
+      <div class="grafico" id="gFaixas"></div>
+    </div>
+    <div class="card">
+      <h2>Maiores clientes em atraso</h2>
+      <div class="nota">Posição de hoje</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Cliente</th><th class="n">Títulos</th><th class="n">Maior atraso</th><th class="n">Valor vencido</th></tr></thead>
+        <tbody>${d.topAtraso.length ? d.topAtraso.map(x => `<tr><td>${esc(x.nome)}</td><td class="n">${x.qtd}</td><td class="n">${x.dias} dias</td><td class="n">${R(x.valor)}</td></tr>`).join('') : '<tr><td colspan="4" class="vazio">Nenhum título vencido 🎉</td></tr>'}</tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+function desenhar(c) {
+  const d = est.dados;
+  const rotCat = longo => longo ? (s => 'sem ' + ddmm(s)) : ddmm;
+  if (est.aba === 'geral') {
+    graficoLinha($('#gSaldo'), c.serieSaldo, { altura: 240 });
+    const rec = agrupar(d.receber, 0, [2]);
+    const pag = agrupar(d.pagar, 0, [4]);
+    const cats = [...new Set([...rec.cats, ...pag.cats])].sort();
+    const val = (g, k) => { const i = g.cats.indexOf(k); return i < 0 ? 0 : g.valores[0][i]; };
+    $('#nRxP').textContent = rec.longo ? 'Total por semana de vencimento (título inteiro, pago ou não)' : 'Total por dia de vencimento (título inteiro, pago ou não)';
+    graficoBarras($('#gRxP'), {
+      cats, rotulo: rotCat(rec.longo), agrupado: true,
+      series: [
+        { nome: 'A receber', cor: 'var(--s1)', valores: cats.map(k => val(rec, k)) },
+        { nome: 'A pagar', cor: 'var(--s2)', valores: cats.map(k => val(pag, k)) },
+      ],
+    });
+  }
+  if (est.aba === 'bancos') {
+    document.querySelectorAll('.spark').forEach(el => sparkline(el, c.contas[Number(el.dataset.i)].serie));
+  }
+  if (est.aba === 'pagar') {
+    const g = agrupar(d.pagar, 0, [4, 5]);
+    $('#nPag').textContent = g.longo ? 'Por semana de vencimento' : 'Por dia de vencimento';
+    graficoBarras($('#gPag'), {
+      cats: g.cats, rotulo: rotCat(g.longo),
+      series: [
+        { nome: 'Pago', cor: 'var(--s1)', valores: g.valores[0].map((t, i) => t - g.valores[1][i]) },
+        { nome: 'Em aberto', cor: 'var(--s2)', valores: g.valores[1] },
+      ],
+    });
+  }
+  if (est.aba === 'receber') {
+    const g = agrupar(d.receber, 0, [2, 3]);
+    $('#nRec').textContent = g.longo ? 'Por semana de vencimento' : 'Por dia de vencimento';
+    graficoBarras($('#gRec'), {
+      cats: g.cats, rotulo: rotCat(g.longo),
+      series: [
+        { nome: 'Recebido', cor: 'var(--s1)', valores: g.valores[0].map((t, i) => t - g.valores[1][i]) },
+        { nome: 'Em aberto', cor: 'var(--s2)', valores: g.valores[1] },
+      ],
+    });
+    barrasHorizontais($('#gFaixas'), [1, 2, 3, 4, 5].map(f => {
+      const x = d.faixas.find(y => y.faixa === f) || { qtd: 0, valor: 0 };
+      return { rot: FAIXAS[f], valor: x.valor, det: `${inteiro.format(x.qtd)} títulos` };
+    }));
+  }
+}
+
+// ======================= resumo do dia =======================
+function gerarDemoDia(dia, base) {
+  const ini = somaDias(dia, -60);
+  const todos = gerarDemo(ini, dia, est.empresas).bancos.filter(r => r[2] === dia);
+  const clientes = ['Mercado Bom Preço', 'Construtora Horizonte', 'Distribuidora Sul', 'Padaria Real', 'Hotel Mirante',
+    'Clínica Vida', 'Escola Saber', 'Auto Peças Leste', 'Loja do Bairro', 'Transportes Rápido', 'Farmácia Central', 'Restaurante Sabor'];
+  const fornecedores = ['Energia Elétrica', 'Atacadão Alimentos', 'Folha de pagamento', 'Aluguel Matriz', 'Simples Nacional',
+    'Fornecedor de Embalagens', 'Telefonia e Internet', 'Manutenção Predial', 'Combustível', 'Contabilidade'];
+  let sem = Number(dia.replace(/-/g, '')) % 997 + 3;
+  const rnd = () => (sem = (sem * 16807) % 2147483647) / 2147483647;
+  const movimentos = [];
+  const quebrar = (total, tipo, e, b) => {
+    let resto = total;
+    const partes = total > 0 ? 1 + Math.floor(rnd() * 4) : 0;
+    for (let i = 0; i < partes; i++) {
+      const v = i === partes - 1 ? resto : Math.round(resto * (0.25 + rnd() * 0.4));
+      resto -= v;
+      const nomes = tipo === 'R' ? clientes : fornecedores;
+      movimentos.push({ tipo, emp: e, banco: b, titulo: 10000 + Math.floor(rnd() * 9000), parcela: 1 + Math.floor(rnd() * 3),
+        cod: 100 + Math.floor(rnd() * 900), nome: nomes[Math.floor(rnd() * nomes.length)],
+        vencimento: somaDias(dia, -Math.floor(rnd() * 12)), conta: tipo === 'R' ? '10.1' : ['20.1', '20.3', '21.2'][Math.floor(rnd() * 3)], valor: v });
+    }
+  };
+  for (const [e, b, , , ent, sai] of todos) { quebrar(ent, 'R', e, b); quebrar(sai, 'P', e, b); }
+  movimentos.sort((a, b) => a.tipo.localeCompare(b.tipo) || b.valor - a.valor);
+  return { atualizadoEm: new Date().toISOString(), dia, base, bancos: todos.map(r => [r[0], r[1], r[3], r[4], r[5]]), movimentos };
+}
+
+function renderDia(el) {
+  const d = est.dadosDia;
+  const contas = d.bancos.map(([e, b, fim, ent, sai]) => ({ e, b, nome: nomeBanco(e, b), fim, ent, sai, ini: fim - ent + sai }))
+    .sort((a, b) => a.e - b.e || b.fim - a.fim);
+  const soma = k => contas.reduce((s, c) => s + c[k], 0);
+  const rec = d.movimentos.filter(m => m.tipo === 'R'), pag = d.movimentos.filter(m => m.tipo === 'P');
+  const totRec = rec.reduce((s, m) => s + m.valor, 0), totPag = pag.reduce((s, m) => s + m.valor, 0);
+  const multi = est.empresas.length > 1;
+  const futuro = d.dia > hojeISO();
+  const dow = parseISO(d.dia).toLocaleDateString('pt-BR', { weekday: 'long' });
+
+  const tabelaMov = (lista, quem, total) => !lista.length
+    ? `<div class="vazio">Nenhum lançamento neste dia</div>`
+    : `<div class="tabela-wrap rolagem"><table>
+        <thead><tr><th>${quem}</th><th class="opc">Título</th><th class="opc">Venc.</th><th class="opc">Conta</th><th class="opc">Banco</th><th class="n">Valor</th></tr></thead>
+        <tbody>${lista.map(m => `<tr>
+          <td>${esc(m.nome)}</td>
+          <td class="sub opc">${m.titulo}/${m.parcela}</td>
+          <td class="sub opc">${m.vencimento ? ddmmaa(m.vencimento) : '—'}</td>
+          <td class="sub opc">${esc(m.conta || '')}</td>
+          <td class="sub opc">${esc(nomeBanco(m.emp, m.banco))}${multi ? ' · ' + esc(nomeEmpresa(m.emp)) : ''}</td>
+          <td class="n">${R(m.valor)}</td></tr>`).join('')}
+          <tr class="total"><td>Total · ${lista.length} lançamento${lista.length > 1 ? 's' : ''}</td><td class="opc" colspan="4"></td><td class="n">${R(total)}</td></tr>
+        </tbody></table></div>`;
+
+  // por cliente / fornecedor (soma)
+  const porNome = lista => {
+    const m = new Map();
+    for (const x of lista) m.set(x.nome, (m.get(x.nome) || 0) + x.valor);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  };
+
+  el.innerHTML = `
+  <div class="controles">
+    <button class="seta" id="diaAnt" title="Dia anterior">‹</button>
+    <input type="date" id="diaSel" value="${d.dia}">
+    <button class="seta" id="diaProx" title="Próximo dia">›</button>
+    <button class="chip" id="diaHoje">Hoje</button>
+    <span class="rot" style="text-transform:capitalize">${dow}</span>
+    <div class="sep"></div>
+    <span class="rot">Data usada:</span>
+    <button class="chip" data-base="conciliacao" aria-pressed="${est.baseDia === 'conciliacao'}" title="Data em que o valor entrou/saiu no extrato (bate com o saldo)">Conciliação</button>
+    <button class="chip" data-base="pagamento" aria-pressed="${est.baseDia === 'pagamento'}" title="Data informada na baixa (dt_referencia)">Pagamento</button>
+  </div>
+  ${futuro ? '<div class="info">Data futura: ainda não há movimento. Veja a aba <b>Fluxo projetado</b>.</div>' : ''}
+  ${est.baseDia === 'pagamento' ? '<div class="info">As listas usam a <b>data de pagamento</b>; os saldos por banco continuam pela data de conciliação, então os totais podem não bater.</div>' : ''}
+  <div class="kpis">
+    ${kpi('Saldo no início do dia', R0(soma('ini')))}
+    ${kpi('Recebimentos', R0(totRec), `${rec.length} lançamentos`)}
+    ${kpi('Pagamentos', R0(totPag), `${pag.length} lançamentos`)}
+    ${kpi('Saldo no fim do dia', R0(soma('fim')), `${soma('ent') - soma('sai') >= 0 ? '▲' : '▼'} ${R0(Math.abs(soma('ent') - soma('sai')))} no dia`, soma('fim') < 0 ? 'neg' : '')}
+  </div>
+  <div class="grade">
+    <div class="card cheio">
+      <h2>Recebimentos — de quem</h2>
+      <div class="nota">Clientes que pagaram neste dia</div>
+      ${tabelaMov(rec, 'Cliente', totRec)}
+    </div>
+    <div class="card cheio">
+      <h2>Pagamentos — para quem</h2>
+      <div class="nota">Contas pagas neste dia</div>
+      ${tabelaMov(pag, 'Fornecedor', totPag)}
+    </div>
+    <div class="card">
+      <h2>Saldo por banco no dia</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr>${multi ? '<th>Empresa</th>' : ''}<th>Banco</th><th class="n">Início</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Fim</th></tr></thead>
+        <tbody>${contas.map(c => `<tr>${multi ? `<td>${esc(nomeEmpresa(c.e))}</td>` : ''}<td>${esc(c.nome)}</td><td class="n">${R(c.ini)}</td><td class="n">${R(c.ent)}</td><td class="n">${R(c.sai)}</td><td class="n ${c.fim < 0 ? 'neg' : ''}"><b>${R(c.fim)}</b></td></tr>`).join('')}
+        <tr class="total">${multi ? '<td></td>' : ''}<td>Total</td><td class="n">${R(soma('ini'))}</td><td class="n">${R(soma('ent'))}</td><td class="n">${R(soma('sai'))}</td><td class="n">${R(soma('fim'))}</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Maiores valores do dia</h2>
+      <div class="nota">Somando todos os títulos de cada cliente / fornecedor</div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>Recebido de</span><span><i style="background:var(--s2)"></i>Pago a</span></div>
+      <div class="grafico" id="gTopDia"></div>
+    </div>
+  </div>`;
+
+  const top = [...porNome(rec).slice(0, 5).map(([n, v]) => ({ rot: n, valor: v, cor: 'var(--s1)' })),
+               ...porNome(pag).slice(0, 5).map(([n, v]) => ({ rot: n, valor: v, cor: 'var(--s2)' }))];
+  barrasHorizontais($('#gTopDia'), top.map(t => ({ ...t, det: '' })), { larguraRotulo: 150 });
+
+  const irPara = dia => { est.dia = dia; carregar(); };
+  $('#diaAnt').onclick = () => irPara(somaDias(est.dia, -1));
+  $('#diaProx').onclick = () => irPara(somaDias(est.dia, 1));
+  $('#diaHoje').onclick = () => irPara(hojeISO());
+  $('#diaSel').onchange = ev => ev.target.value && irPara(ev.target.value);
+  el.querySelectorAll('[data-base]').forEach(b => b.onclick = () => { est.baseDia = b.dataset.base; carregar(); });
+}
+
+// ======================= fluxo de caixa projetado =======================
+function gerarDemoProj(dias) {
+  const hoje = hojeISO(), ate = somaDias(hoje, dias);
+  const k = est.empresas.reduce((s, e) => s + (e === 1 ? 1 : 0.45), 0);
+  const saldoHoje = gerarDemo(somaDias(hoje, -60), hoje, est.empresas).bancos.filter(r => r[2] === hoje).reduce((s, r) => s + r[3], 0);
+  let sem = 11;
+  const rnd = () => (sem = (sem * 16807) % 2147483647) / 2147483647;
+  const receber = [[null, Math.round(78 * k), Math.round(389600 * k)]], pagar = [[null, Math.round(9 * k), Math.round(61300 * k)]];
+  for (let d = hoje; d <= ate; d = somaDias(d, 1)) {
+    const dt = parseISO(d), dow = dt.getDay(), dm = dt.getDate();
+    if (dow === 0 || dow === 6) continue;
+    const fator = Math.max(0.15, 1 - (parseISO(d) - parseISO(hoje)) / 864e5 / (dias * 1.4)); // menos títulos lançados no futuro distante
+    receber.push([d, 3, Math.round(k * fator * (14000 + rnd() * 30000))]);
+    let p = k * (6000 + rnd() * 20000);
+    if (dm >= 5 && dm <= 7 && dow === 1 || dm === 5) p += k * 160000;   // folha
+    if (dm === 20) p += k * 95000;                                       // impostos
+    if (dm === 10) p += k * 38000;                                       // aluguel
+    pagar.push([d, 4, Math.round(p)]);
+  }
+  return { atualizadoEm: new Date().toISOString(), hoje, ate, saldoHoje, receber, pagar };
+}
+
+function calcularProj() {
+  const d = est.dadosProj;
+  const mapa = lista => { const m = new Map(); for (const [dt, , v] of lista) if (dt) m.set(dt, (m.get(dt) || 0) + v); return m; };
+  const imps = importacoesNoFluxo(d.hoje, d.ate);
+  const impLinhas = imps.map(i => [i.previsao < d.hoje ? null : i.previsao, 1, valorImp(i)]);
+  const pagarTudo = d.pagar.concat(impLinhas);
+  const mr = mapa(d.receber), mp = mapa(pagarTudo);
+  const vencRec = d.receber.filter(r => !r[0]).reduce((s, r) => s + r[2], 0);
+  const vencRecQtd = d.receber.filter(r => !r[0]).reduce((s, r) => s + r[1], 0);
+  const vencPag = pagarTudo.filter(r => !r[0]).reduce((s, r) => s + r[2], 0);
+  const vencPagQtd = pagarTudo.filter(r => !r[0]).reduce((s, r) => s + r[1], 0);
+  const totImp = impLinhas.reduce((s, r) => s + r[2], 0);
+  const dias = [];
+  let saldo = d.saldoHoje;
+  for (let dt = d.hoje; dt <= d.ate; dt = somaDias(dt, 1)) {
+    let ent = mr.get(dt) || 0, sai = mp.get(dt) || 0;
+    if (est.inclVencidos && dt === d.hoje) { ent += vencRec; sai += vencPag; }
+    saldo += ent - sai;
+    dias.push({ dt, ent, sai, saldo });
+  }
+  const menor = dias.reduce((m, x) => x.saldo < m.saldo ? x : m, dias[0] || { saldo: d.saldoHoje, dt: d.hoje });
+  const primeiroNeg = dias.find(x => x.saldo < 0);
+  return { dias, menor, primeiroNeg, vencRec, vencRecQtd, vencPag, vencPagQtd, imps, totImp,
+    ent: dias.reduce((s, x) => s + x.ent, 0), sai: dias.reduce((s, x) => s + x.sai, 0) };
+}
+
+function renderProj(el) {
+  const d = est.dadosProj, p = calcularProj();
+  const fim = p.dias.at(-1) || { saldo: d.saldoHoje, dt: d.ate };
+  const semanal = est.horizonte > 62;
+  // agrupar por semana (segunda-feira)
+  const semana = s => { const x = parseISO(s); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return iso(x); };
+  const grupos = new Map();
+  for (const x of p.dias) {
+    const k = semanal ? semana(x.dt) : x.dt;
+    const g = grupos.get(k) || { k, ent: 0, sai: 0, saldo: 0, menor: Infinity };
+    g.ent += x.ent; g.sai += x.sai; g.saldo = x.saldo; g.menor = Math.min(g.menor, x.saldo);
+    grupos.set(k, g);
+  }
+  const gs = [...grupos.values()];
+  const tabSem = new Map();
+  for (const x of p.dias) {
+    const k = semana(x.dt);
+    const g = tabSem.get(k) || { k, ent: 0, sai: 0, saldo: 0, menor: Infinity };
+    g.ent += x.ent; g.sai += x.sai; g.saldo = x.saldo; g.menor = Math.min(g.menor, x.saldo);
+    tabSem.set(k, g);
+  }
+
+  el.innerHTML = `
+  <div class="controles">
+    <span class="rot">Horizonte:</span>
+    ${[30, 60, 90, 180].map(h => `<button class="chip" data-h="${h}" aria-pressed="${est.horizonte === h}">${h} dias</button>`).join('')}
+    <div class="sep"></div>
+    <label class="rot" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="inclVenc" ${est.inclVencidos ? 'checked' : ''}> Incluir títulos já vencidos no 1º dia</label>
+  </div>
+  ${est.inclVencidos ? '' : `<div class="info">Fora da projeção (já vencidos e em aberto): <b>${R0(p.vencRec)}</b> a receber (${inteiro.format(p.vencRecQtd)} títulos) e <b>${R0(p.vencPag)}</b> a pagar (${inteiro.format(p.vencPagQtd)} lançamentos, incluindo importações atrasadas).</div>`}
+  <div class="kpis">
+    ${kpi('Saldo em bancos hoje', R0(d.saldoHoje), est.bancosSel ? 'bancos selecionados' : 'todos os bancos', d.saldoHoje < 0 ? 'neg' : '')}
+    ${kpi('Entradas previstas', R0(p.ent), 'contas a receber em aberto')}
+    ${kpi('Saídas previstas', R0(p.sai), p.totImp ? `inclui ${R0(p.totImp)} de importações` : 'contas a pagar em aberto')}
+    ${kpi(`Saldo projetado em ${ddmmaa(fim.dt)}`, R0(fim.saldo), '', fim.saldo < 0 ? 'neg' : '')}
+    ${kpi(p.menor.saldo < 0 ? '⚠ Menor saldo previsto' : 'Menor saldo previsto', R0(p.menor.saldo),
+        p.primeiroNeg ? `fica negativo a partir de ${ddmmaa(p.primeiroNeg.dt)}` : `em ${ddmmaa(p.menor.dt)}`, p.menor.saldo < 0 ? 'alerta' : '')}
+  </div>
+  <div class="grade">
+    <div class="card cheio">
+      <h2>Saldo projetado</h2>
+      <div class="nota">Saldo de hoje + a receber − a pagar − importações, pela data de vencimento</div>
+      <div class="grafico" id="gProj"></div>
+    </div>
+    <div class="card cheio">
+      <h2>Entradas × saídas previstas</h2>
+      <div class="nota">${semanal ? 'Por semana' : 'Por dia'} de vencimento</div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>Entradas</span><span><i style="background:var(--s2)"></i>Saídas</span></div>
+      <div class="grafico" id="gProjBar"></div>
+    </div>
+    ${p.imps.length ? `<div class="card cheio">
+      <h2>Importações no fluxo</h2>
+      <div class="nota">Cadastradas na aba Importações · câmbio usado: ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })}</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Previsão</th><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Status</th><th class="n">Valor</th></tr></thead>
+        <tbody>${p.imps.map(i => `<tr><td>${ddmmaa(i.previsao)}${i.previsao < d.hoje ? ' <span class="selo">atrasada</span>' : ''}</td><td>${esc(nomeEmpresa(i.empresa))}</td><td>${esc(i.tipo)}</td><td>${esc(i.fornecedor || '')}</td><td>${esc(i.status || '')}</td><td class="n">${R(valorImp(i))}</td></tr>`).join('')}
+        <tr class="total"><td colspan="5">Total</td><td class="n">${R(p.totImp)}</td></tr></tbody>
+      </table></div>
+    </div>` : ''}
+    <div class="card cheio">
+      <h2>Semana a semana</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Semana de</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Resultado</th><th class="n">Menor saldo</th><th class="n">Saldo no fim</th></tr></thead>
+        <tbody>${[...tabSem.values()].map(g => `<tr><td>${ddmmaa(g.k < d.hoje ? d.hoje : g.k)}</td><td class="n">${R(g.ent)}</td><td class="n">${R(g.sai)}</td>
+          <td class="n ${g.ent - g.sai < 0 ? 'neg' : ''}">${R(g.ent - g.sai)}</td><td class="n ${g.menor < 0 ? 'neg' : ''}">${R(g.menor)}</td><td class="n ${g.saldo < 0 ? 'neg' : ''}"><b>${R(g.saldo)}</b></td></tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+  </div>`;
+
+  graficoLinha($('#gProj'), p.dias.map(x => [x.dt, x.saldo]), { altura: 260, nome: 'Saldo projetado' });
+  graficoBarras($('#gProjBar'), {
+    cats: gs.map(g => g.k), rotulo: semanal ? (s => 'sem ' + ddmm(s)) : ddmm, agrupado: true,
+    series: [
+      { nome: 'Entradas', cor: 'var(--s1)', valores: gs.map(g => g.ent) },
+      { nome: 'Saídas', cor: 'var(--s2)', valores: gs.map(g => g.sai) },
+    ],
+  });
+  el.querySelectorAll('[data-h]').forEach(b => b.onclick = () => { est.horizonte = Number(b.dataset.h); carregar(); });
+  $('#inclVenc').onchange = ev => { est.inclVencidos = ev.target.checked; render(); };
+}
+
+// ======================= janelas (modal) =======================
+function abrirModal(html) {
+  $('#modalCaixa').innerHTML = html;
+  $('#modal').hidden = false;
+  const primeiro = $('#modalCaixa').querySelector('input, select, textarea, button');
+  if (primeiro) setTimeout(() => primeiro.focus(), 30);
+}
+function fecharModal() { $('#modal').hidden = true; $('#modalCaixa').innerHTML = ''; }
+$('#modal').addEventListener('click', ev => { if (ev.target.id === 'modal') fecharModal(); });
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('#modal').hidden) fecharModal(); });
+
+function confirmar(titulo, texto, rotuloOk = 'Confirmar') {
+  return new Promise(res => {
+    abrirModal(`<h2>${esc(titulo)}</h2><p style="color:var(--text-2)">${texto}</p>
+      <div class="modal-acoes"><button id="cNao">Cancelar</button><button class="btn-pri" id="cSim">${esc(rotuloOk)}</button></div>`);
+    $('#cNao').onclick = () => { fecharModal(); res(false); };
+    $('#cSim').onclick = () => { fecharModal(); res(true); };
+  });
+}
+
+function abrirTrocaSenha(recuperacao) {
+  abrirModal(`<h2>${recuperacao ? 'Criar nova senha' : 'Trocar senha'}</h2>
+    <label class="campo"><span>Nova senha (mínimo 8 caracteres, com letras e números)</span><input type="password" id="ns1" autocomplete="new-password"></label>
+    <label class="campo"><span>Repita a nova senha</span><input type="password" id="ns2" autocomplete="new-password"></label>
+    <div class="msg-erro" id="nsErro"></div>
+    <div class="modal-acoes"><button id="nsCancelar">Cancelar</button><button class="btn-pri" id="nsSalvar">Salvar</button></div>`);
+  $('#nsCancelar').onclick = fecharModal;
+  $('#nsSalvar').onclick = async () => {
+    const a = $('#ns1').value, b = $('#ns2').value;
+    if (a.length < 8 || !/[a-zA-Z]/.test(a) || !/\d/.test(a)) return void ($('#nsErro').textContent = 'Use pelo menos 8 caracteres, com letras e números.');
+    if (a !== b) return void ($('#nsErro').textContent = 'As senhas não conferem.');
+    if (est.demo) { fecharModal(); return; }
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) return void ($('#nsErro').textContent = error.message);
+    fecharModal();
+    if (recuperacao) entrar();
+  };
+}
+
+// ======================= importações =======================
+const TIPOS_IMP = ['Câmbio', 'Numerário', 'Frete', 'Impostos', 'Outros'];
+const STATUS_IMP = ['Produção', 'Embarque', 'Chegada Brasil', 'Nacionalização', 'Estoque'];
+const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' });
+
+function renderImportacoes(el) {
+  const pode = podeEditar();
+  const f = est.impFiltro;
+  const lista = est.importacoes
+    .filter(i => est.empresas.includes(i.empresa))
+    .filter(i => !f.status || i.status === f.status)
+    .filter(i => !f.soFluxo || i.no_fluxo)
+    .sort((a, b) => a.previsao.localeCompare(b.previsao) || a.id - b.id);
+  const hoje = hojeISO();
+  const aberta = i => i.status !== 'Estoque';
+  const tot = lista.filter(aberta).reduce((s, i) => s + valorImp(i), 0);
+  const tot30 = lista.filter(i => aberta(i) && i.previsao <= somaDias(hoje, 30)).reduce((s, i) => s + valorImp(i), 0);
+  const fob = lista.filter(aberta).reduce((s, i) => s + Number(i.fob_usd || 0), 0);
+  const cam = cambioAtual();
+  const ptaxTxt = est.ptax && est.ptax.valor ? `PTAX ${Number(est.ptax.valor).toLocaleString('pt-BR', { minimumFractionDigits: 4 })} (${ddmmaa(est.ptax.data)})` : 'PTAX indisponível';
+
+  el.innerHTML = `
+  <div class="kpis">
+    ${kpi('Previsto nos próximos 30 dias', R0(tot30), 'importações não finalizadas')}
+    ${kpi('Total previsto', R0(tot), `${lista.filter(aberta).length} lançamentos em aberto`)}
+    ${kpi('Total em FOB', usd.format(fob), 'lançamentos com valor em dólar')}
+    ${kpi('Câmbio usado', cam.toLocaleString('pt-BR', { minimumFractionDigits: 4 }), est.cambio.modo === 'ptax' ? 'automático (PTAX venda)' : 'manual')}
+  </div>
+  <div class="grade">
+    <div class="card">
+      <h2>Câmbio</h2>
+      <div class="nota">Usado para converter o FOB quando o valor em R$ não foi informado · ${ptaxTxt}</div>
+      <div class="controles" style="margin:8px 0 0">
+        <label class="rot"><input type="radio" name="camModo" value="manual" ${est.cambio.modo !== 'ptax' ? 'checked' : ''} ${pode ? '' : 'disabled'}> Manual</label>
+        <input type="number" id="camManual" step="0.0001" min="0" value="${Number(est.cambio.manual || 0)}" style="width:110px;font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)" ${pode ? '' : 'disabled'}>
+        <label class="rot"><input type="radio" name="camModo" value="ptax" ${est.cambio.modo === 'ptax' ? 'checked' : ''} ${pode ? '' : 'disabled'}> PTAX automática</label>
+        ${pode ? '<button id="camSalvar">Salvar câmbio</button>' : ''}
+        <span class="msg-ok" id="camMsg" style="margin:0"></span>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="controles" style="margin-bottom:6px">
+      <h2 style="margin-right:auto">Importações</h2>
+      <select id="impStatus" style="font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)">
+        <option value="">Todos os status</option>${STATUS_IMP.map(st => `<option ${f.status === st ? 'selected' : ''}>${st}</option>`).join('')}
+      </select>
+      <label class="rot"><input type="checkbox" id="impSoFluxo" ${f.soFluxo ? 'checked' : ''}> Só as que entram no fluxo</label>
+      ${pode ? '<button class="btn-pri" id="impNova">+ Nova importação</button>' : ''}
+    </div>
+    <div class="tabela-wrap"><table>
+      <thead><tr><th>Previsão</th><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Pedido</th><th class="n">FOB (US$)</th><th class="n">Valor (R$)</th><th>Status</th><th>Fluxo</th><th class="opc">Observação</th>${pode ? '<th></th>' : ''}</tr></thead>
+      <tbody>${lista.length ? lista.map(i => `<tr>
+        <td>${ddmmaa(i.previsao)}${aberta(i) && i.previsao < hoje ? ' <span class="selo">atrasada</span>' : ''}</td>
+        <td>${esc(nomeEmpresa(i.empresa))}</td><td>${esc(i.tipo)}</td><td>${esc(i.fornecedor || '')}</td><td>${esc(i.pedido || '')}</td>
+        <td class="n">${i.fob_usd ? usd.format(i.fob_usd) : ''}</td>
+        <td class="n">${i.valor_brl !== null && i.valor_brl !== undefined ? R(i.valor_brl) : `<span class="estimado" title="FOB × câmbio">${R(valorImp(i))}</span>`}</td>
+        <td><span class="selo">${esc(i.status || '—')}</span></td>
+        <td>${i.no_fluxo ? 'Sim' : 'Não'}</td>
+        <td class="opc sub">${esc(i.observacao || '')}</td>
+        ${pode ? `<td><div class="acoes-linha"><button data-ed="${i.id}">Editar</button><button class="btn-perigo" data-ex="${i.id}">Excluir</button></div></td>` : ''}
+      </tr>`).join('') : `<tr><td colspan="11" class="vazio">Nenhuma importação cadastrada.</td></tr>`}</tbody>
+    </table></div>
+    <div class="nota" style="margin-top:8px"><span class="estimado">Valores em itálico</span> são estimados (FOB × câmbio). Status "Estoque" = finalizada (sai do fluxo).</div>
+  </div>`;
+
+  $('#impStatus').onchange = ev => { f.status = ev.target.value; render(); };
+  $('#impSoFluxo').onchange = ev => { f.soFluxo = ev.target.checked; render(); };
+  if (!pode) return;
+  $('#impNova').onclick = () => formImportacao(null);
+  el.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => formImportacao(est.importacoes.find(i => String(i.id) === b.dataset.ed)));
+  el.querySelectorAll('[data-ex]').forEach(b => b.onclick = async () => {
+    const i = est.importacoes.find(x => String(x.id) === b.dataset.ex);
+    if (!await confirmar('Excluir importação', `Excluir <b>${esc(i.fornecedor || i.tipo)}</b> de ${ddmmaa(i.previsao)} (${R(valorImp(i))})?`, 'Excluir')) return;
+    if (est.demo) est.importacoes = est.importacoes.filter(x => x !== i);
+    else { const { error } = await sb.from('importacoes').delete().eq('id', i.id); if (error) return mostrarErro(error.message); await lerImportacoes(); }
+    render();
+  });
+  $('#camSalvar').onclick = async () => {
+    const modo = el.querySelector('input[name=camModo]:checked').value;
+    const manual = Number($('#camManual').value);
+    if (modo === 'manual' && !(manual > 0)) return void ($('#camMsg').textContent = 'Informe um câmbio válido.');
+    if (modo === 'ptax' && !(est.ptax && est.ptax.valor)) return void ($('#camMsg').textContent = 'PTAX ainda não disponível; use manual.');
+    est.cambio = { modo, manual };
+    if (!est.demo) {
+      const { error } = await sb.from('parametros').update({ valor: est.cambio }).eq('chave', 'cambio');
+      if (error) return mostrarErro(error.message);
+    }
+    render(); $('#camMsg').textContent = 'Câmbio salvo.';
+  };
+}
+
+function formImportacao(i) {
+  const novo = !i;
+  i = i || { empresa: est.empresas[0], previsao: hojeISO(), tipo: 'Câmbio', status: 'Produção', no_fluxo: true };
+  const opt = (lista, v) => lista.map(x => `<option ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('');
+  abrirModal(`<h2>${novo ? 'Nova importação' : 'Editar importação'}</h2>
+    <div class="campo-linha">
+      <label class="campo"><span>Empresa</span><select id="fEmp">${Object.entries(est.empresasDisp).map(([c, n]) => `<option value="${c}" ${Number(c) === i.empresa ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+      <label class="campo"><span>Previsão de pagamento</span><input type="date" id="fPrev" value="${i.previsao}"></label>
+    </div>
+    <div class="campo-linha">
+      <label class="campo"><span>Tipo</span><select id="fTipo">${opt(TIPOS_IMP, i.tipo)}</select></label>
+      <label class="campo"><span>Status</span><select id="fStatus">${opt(STATUS_IMP, i.status)}</select></label>
+    </div>
+    <div class="campo-linha">
+      <label class="campo"><span>Fornecedor</span><input id="fForn" value="${esc(i.fornecedor || '')}"></label>
+      <label class="campo"><span>Pedido</span><input id="fPed" value="${esc(i.pedido || '')}"></label>
+    </div>
+    <div class="campo-linha">
+      <label class="campo"><span>FOB (US$)</span><input type="number" step="0.01" min="0" id="fFob" value="${i.fob_usd ?? ''}"></label>
+      <label class="campo"><span>Valor em R$ (vazio = FOB × câmbio)</span><input type="number" step="0.01" min="0" id="fBrl" value="${i.valor_brl ?? ''}"></label>
+    </div>
+    <div class="nota" id="fEstim" style="margin-top:6px"></div>
+    <label class="campo"><span>Observação</span><textarea id="fObs">${esc(i.observacao || '')}</textarea></label>
+    <label class="rot" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="fFluxo" ${i.no_fluxo ? 'checked' : ''}> Entra no fluxo de caixa projetado</label>
+    <div class="msg-erro" id="fErro"></div>
+    <div class="modal-acoes"><button id="fCancelar">Cancelar</button><button class="btn-pri" id="fSalvar">Salvar</button></div>`);
+  const estim = () => {
+    const fob = Number($('#fFob').value || 0), brl = $('#fBrl').value;
+    $('#fEstim').textContent = !brl && fob ? `Estimado: ${R(fob * cambioAtual())} (câmbio ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })})` : '';
+  };
+  $('#fFob').oninput = estim; $('#fBrl').oninput = estim; estim();
+  $('#fCancelar').onclick = fecharModal;
+  $('#fSalvar').onclick = async () => {
+    const reg = {
+      empresa: Number($('#fEmp').value), previsao: $('#fPrev').value, tipo: $('#fTipo').value, status: $('#fStatus').value,
+      fornecedor: $('#fForn').value.trim() || null, pedido: $('#fPed').value.trim() || null,
+      fob_usd: $('#fFob').value === '' ? null : Number($('#fFob').value),
+      valor_brl: $('#fBrl').value === '' ? null : Number($('#fBrl').value),
+      observacao: $('#fObs').value.trim() || null, no_fluxo: $('#fFluxo').checked,
+    };
+    if (!reg.previsao) return void ($('#fErro').textContent = 'Informe a data prevista.');
+    if (reg.fob_usd === null && reg.valor_brl === null) return void ($('#fErro').textContent = 'Informe o FOB ou o valor em R$.');
+    $('#fSalvar').disabled = true;
+    if (est.demo) {
+      if (novo) est.importacoes.push({ id: Date.now(), ...reg }); else Object.assign(i, reg);
+    } else {
+      const q = novo ? sb.from('importacoes').insert(reg) : sb.from('importacoes').update(reg).eq('id', i.id);
+      const { error } = await q;
+      if (error) { $('#fSalvar').disabled = false; return void ($('#fErro').textContent = error.message); }
+      await lerImportacoes();
+    }
+    fecharModal(); render();
+  };
+}
+
+// ======================= usuários (administrador) =======================
+const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['importacoes', 'Importações']];
+function renderUsuarios(el) {
+  const emps = Object.entries(est.empresasTodas);
+  el.innerHTML = `
+  <div class="info">
+    <b>Para criar um usuário:</b> no Supabase, vá em <b>Authentication → Users → Add user → Create new user</b>, informe o e-mail e uma senha provisória e marque <b>Auto Confirm User</b>.
+    Ele aparece aqui <b>sem acesso</b>; marque o que ele pode ver e clique em Salvar. A pessoa pode trocar a senha depois, pelo botão "Trocar senha".
+  </div>
+  <div class="card">
+    <h2>Usuários e permissões</h2>
+    <div class="nota">Áreas: o que a pessoa vê · Empresas: de quais empresas · Pode digitar: cadastrar importações e câmbio · Admin: vê tudo e gerencia usuários</div>
+    <div class="tabela-wrap"><table class="tab-usuarios">
+      <thead><tr><th>Usuário</th><th>Ativo</th><th>Áreas</th><th>Empresas</th><th>Pode digitar</th><th>Admin</th><th></th></tr></thead>
+      <tbody>${est.usuarios.map(u => `<tr data-u="${esc(u.id)}">
+        <td><input class="u-nome" value="${esc(u.nome || '')}" style="font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);width:140px"><div class="sub">${esc(u.email || '')}</div></td>
+        <td><input type="checkbox" class="u-ativo" ${u.ativo ? 'checked' : ''}></td>
+        <td>${AREAS.map(([k, n]) => `<label><input type="checkbox" class="u-area" value="${k}" ${(u.areas || []).includes(k) ? 'checked' : ''}>${n}</label>`).join('')}</td>
+        <td>${emps.map(([c, n]) => `<label><input type="checkbox" class="u-emp" value="${c}" ${(u.empresas || []).includes(Number(c)) ? 'checked' : ''}>${esc(n)}</label>`).join('')}</td>
+        <td><input type="checkbox" class="u-editor" ${u.editor ? 'checked' : ''}></td>
+        <td><input type="checkbox" class="u-admin" ${u.admin ? 'checked' : ''}></td>
+        <td><button class="u-salvar">Salvar</button> <span class="msg-ok u-msg" style="margin:0"></span></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+  el.querySelectorAll('.u-salvar').forEach(b => b.onclick = async () => {
+    const tr = b.closest('tr'), u = est.usuarios.find(x => String(x.id) === tr.dataset.u);
+    const reg = {
+      nome: tr.querySelector('.u-nome').value.trim() || null,
+      ativo: tr.querySelector('.u-ativo').checked,
+      editor: tr.querySelector('.u-editor').checked,
+      admin: tr.querySelector('.u-admin').checked,
+      areas: [...tr.querySelectorAll('.u-area:checked')].map(x => x.value),
+      empresas: [...tr.querySelectorAll('.u-emp:checked')].map(x => Number(x.value)),
+    };
+    if (!est.demo && est.perfil && u.id === est.perfil.id && !reg.admin) {
+      if (!await confirmar('Remover seu próprio acesso de administrador?', 'Você não poderá mais gerenciar usuários.', 'Remover')) return;
+    }
+    if (est.demo) Object.assign(u, reg);
+    else {
+      const { error } = await sb.from('perfis').update(reg).eq('id', u.id);
+      if (error) return mostrarErro(error.message);
+      Object.assign(u, reg);
+    }
+    tr.querySelector('.u-msg').textContent = 'Salvo';
+    setTimeout(() => { const m = tr.querySelector('.u-msg'); if (m) m.textContent = ''; }, 2500);
+  });
+}
+
+// ======================= gráficos (SVG, sem bibliotecas) =======================
+const NS = 'http://www.w3.org/2000/svg';
+function passoBonito(max, n = 4) {
+  if (max <= 0) return 1;
+  const bruto = max / n, mag = Math.pow(10, Math.floor(Math.log10(bruto))), f = bruto / mag;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+}
+function escalaY(min, max, zero = true) {
+  if (zero) { min = Math.min(0, min); max = Math.max(0, max); }
+  else { const f = Math.max((max - min) * 0.15, Math.abs(max) * 0.08) || 1; min -= f; max += f; }
+  if (min === max) max = 1;
+  const p = passoBonito(max - min);
+  const lo = Math.floor(min / p) * p, hi = Math.ceil(max / p) * p;
+  const ticks = []; for (let v = lo; v <= hi + p / 2; v += p) ticks.push(v);
+  return { lo, hi, ticks };
+}
+function svgEl(tag, attrs, pai) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (pai) pai.appendChild(e);
+  return e;
+}
+const tip = $('#tip');
+function mostrarTip(ev, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY - h - 10;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y < 8) y = ev.clientY + 16;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const esconderTip = () => { tip.style.opacity = 0; };
+
+function eixos(svg, W, H, m, esc, yPx) {
+  for (const t of esc.ticks) {
+    const y = yPx(t);
+    svgEl('line', { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: t === 0 ? css('--text-3') : css('--grid'), 'stroke-width': 1 }, svg);
+    const tx = svgEl('text', { x: m.l - 8, y: y + 4, 'text-anchor': 'end' }, svg);
+    tx.textContent = brlEixo.format(t);
+  }
+}
+function rotulosX(svg, cats, xCentro, H, m, W, rotulo) {
+  const maxRot = Math.max(2, Math.floor((W - m.l - m.r) / 64));
+  const passo = Math.ceil(cats.length / maxRot);
+  cats.forEach((k, i) => {
+    if (i % passo) return;
+    const t = svgEl('text', { x: xCentro(i), y: H - m.b + 16, 'text-anchor': 'middle' }, svg);
+    t.textContent = rotulo(k);
+  });
+}
+
+function graficoLinha(el, serie, { altura = 240, zero = false, nome = 'Saldo' } = {}) {
+  el.innerHTML = '';
+  if (!serie.length) { el.innerHTML = '<div class="vazio">Sem dados no período</div>'; return; }
+  const W = el.clientWidth || 600, H = altura, m = { l: 74, r: 16, t: 10, b: 26 };
+  const ys = serie.map(p => p[1]);
+  const esc = escalaY(Math.min(...ys), Math.max(...ys), zero || Math.min(...ys) < 0);
+  const yPx = v => m.t + (H - m.t - m.b) * (1 - (v - esc.lo) / (esc.hi - esc.lo));
+  const xPx = i => serie.length === 1 ? (m.l + W - m.r) / 2 : m.l + (W - m.l - m.r) * i / (serie.length - 1);
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': 'Gráfico de linha do saldo' }, el);
+  eixos(svg, W, H, m, esc, yPx);
+  rotulosX(svg, serie.map(p => p[0]), xPx, H, m, W, ddmm);
+  const cor = css('--s1');
+  const dPath = serie.map((p, i) => (i ? 'L' : 'M') + xPx(i).toFixed(1) + ' ' + yPx(p[1]).toFixed(1)).join(' ');
+  // área suave
+  svgEl('path', { d: `${dPath} L ${xPx(serie.length - 1)} ${yPx(Math.max(esc.lo, 0))} L ${xPx(0)} ${yPx(Math.max(esc.lo, 0))} Z`, fill: cor, opacity: .08 }, svg);
+  svgEl('path', { d: dPath, fill: 'none', stroke: cor, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+  // último ponto com rótulo direto
+  const ult = serie.length - 1;
+  svgEl('circle', { cx: xPx(ult), cy: yPx(serie[ult][1]), r: 4, fill: cor, stroke: css('--surface'), 'stroke-width': 2 }, svg);
+  // crosshair + tooltip
+  const guia = svgEl('line', { y1: m.t, y2: H - m.b, stroke: css('--text-3'), 'stroke-width': 1, 'stroke-dasharray': '3 3', opacity: 0 }, svg);
+  const ponto = svgEl('circle', { r: 5, fill: cor, stroke: css('--surface'), 'stroke-width': 2, opacity: 0 }, svg);
+  const alvo = svgEl('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' }, svg);
+  alvo.addEventListener('mousemove', ev => {
+    const r = svg.getBoundingClientRect();
+    const x = (ev.clientX - r.left) * (W / r.width);
+    const i = Math.max(0, Math.min(serie.length - 1, Math.round((x - m.l) / ((W - m.l - m.r) / Math.max(1, serie.length - 1)))));
+    const [dt, v] = serie[i];
+    guia.setAttribute('x1', xPx(i)); guia.setAttribute('x2', xPx(i)); guia.setAttribute('opacity', 1);
+    ponto.setAttribute('cx', xPx(i)); ponto.setAttribute('cy', yPx(v)); ponto.setAttribute('opacity', 1);
+    mostrarTip(ev, `<div class="t">${ddmmaa(dt)}</div><div class="l"><span><i style="background:${cor}"></i>${nome}</span><b class="${v < 0 ? 'neg' : ''}">${R(v)}</b></div>`);
+  });
+  alvo.addEventListener('mouseleave', () => { guia.setAttribute('opacity', 0); ponto.setAttribute('opacity', 0); esconderTip(); });
+}
+
+function graficoBarras(el, { cats, series, rotulo, agrupado = false, altura = 260 }) {
+  el.innerHTML = '';
+  if (!cats.length) { el.innerHTML = '<div class="vazio">Sem vencimentos no período</div>'; return; }
+  const W = el.clientWidth || 600, H = altura, m = { l: 74, r: 10, t: 10, b: 26 };
+  const somas = cats.map((_, i) => agrupado ? Math.max(...series.map(s => s.valores[i])) : series.reduce((t, s) => t + s.valores[i], 0));
+  const esc = escalaY(0, Math.max(...somas));
+  const yPx = v => m.t + (H - m.t - m.b) * (1 - (v - esc.lo) / (esc.hi - esc.lo));
+  const banda = (W - m.l - m.r) / cats.length;
+  const xCentro = i => m.l + banda * (i + 0.5);
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': 'Gráfico de barras' }, el);
+  eixos(svg, W, H, m, esc, yPx);
+  rotulosX(svg, cats, xCentro, H, m, W, rotulo);
+  const larg = Math.max(2, Math.min(agrupado ? 18 : 28, banda * (agrupado ? 0.38 : 0.7)));
+  const raio = Math.min(4, larg / 2);
+  const grupoHover = svgEl('rect', { y: m.t, height: H - m.t - m.b, width: banda, fill: css('--text'), opacity: 0 }, svg);
+  cats.forEach((k, i) => {
+    let base = 0;
+    series.forEach((s, si) => {
+      const v = Math.max(0, s.valores[i]);
+      if (v <= 0) return;
+      const x = agrupado ? xCentro(i) - larg - 1 + si * (larg + 2) : xCentro(i) - larg / 2;
+      const y0 = agrupado ? yPx(0) : yPx(base);
+      const y1 = agrupado ? yPx(v) : yPx(base + v);
+      const topo = agrupado || si === series.length - 1 || series.slice(si + 1).every(z => !(z.valores[i] > 0));
+      let h = Math.max(1, y0 - y1 - (agrupado || base === 0 ? 0 : 2)); // 2px de respiro entre segmentos
+      const r = topo ? Math.min(raio, h) : 0;
+      const d = `M${x},${y1 + h} L${x},${y1 + r} Q${x},${y1} ${x + r},${y1} L${x + larg - r},${y1} Q${x + larg},${y1} ${x + larg},${y1 + r} L${x + larg},${y1 + h} Z`;
+      svgEl('path', { d, fill: s.cor }, svg);
+      if (!agrupado) base += v;
+    });
+  });
+  const alvo = svgEl('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' }, svg);
+  alvo.addEventListener('mousemove', ev => {
+    const r = svg.getBoundingClientRect();
+    const x = (ev.clientX - r.left) * (W / r.width);
+    const i = Math.max(0, Math.min(cats.length - 1, Math.floor((x - m.l) / banda)));
+    grupoHover.setAttribute('x', m.l + banda * i); grupoHover.setAttribute('opacity', .05);
+    const linhas = series.map(s => `<div class="l"><span><i style="background:${s.cor}"></i>${s.nome}</span><b>${R(s.valores[i])}</b></div>`).join('');
+    const tot = agrupado ? '' : `<div class="l" style="border-top:1px solid var(--line);margin-top:4px;padding-top:4px"><span>Total</span><b>${R(series.reduce((t, s) => t + s.valores[i], 0))}</b></div>`;
+    mostrarTip(ev, `<div class="t">${rotulo(cats[i])}${rotulo === ddmm ? '/' + cats[i].slice(2, 4) : ''}</div>${linhas}${tot}`);
+  });
+  alvo.addEventListener('mouseleave', () => { grupoHover.setAttribute('opacity', 0); esconderTip(); });
+}
+
+function barrasHorizontais(el, itens, { larguraRotulo = 112 } = {}) {
+  el.innerHTML = '';
+  if (!itens.length) { el.innerHTML = '<div class="vazio">Sem lançamentos</div>'; return; }
+  const W = el.clientWidth || 400, linha = 34, H = itens.length * linha, rotL = larguraRotulo, valR = 104;
+  const maxCar = Math.floor((rotL - 8) / 6.2);
+  const max = Math.max(1, ...itens.map(i => i.valor));
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': 'Inadimplência por faixa' }, el);
+  itens.forEach((it, i) => {
+    const y = i * linha;
+    const t = svgEl('text', { x: 0, y: y + linha / 2 + 4 }, svg);
+    t.textContent = it.rot.length > maxCar ? it.rot.slice(0, maxCar - 1) + '…' : it.rot;
+    const w = Math.max(it.valor > 0 ? 3 : 0, (W - rotL - valR) * it.valor / max);
+    if (w > 0) {
+      const r = Math.min(4, w);
+      const x = rotL, yy = y + 8, h = linha - 16;
+      svgEl('path', { d: `M${x},${yy} L${x + w - r},${yy} Q${x + w},${yy} ${x + w},${yy + r} L${x + w},${yy + h - r} Q${x + w},${yy + h} ${x + w - r},${yy + h} L${x},${yy + h} Z`, style: `fill:${it.cor || 'var(--s2)'}` }, svg);
+    }
+    const v = svgEl('text', { x: rotL + w + 8, y: y + linha / 2 + 4 }, svg);
+    v.textContent = Rc(it.valor);
+    v.setAttribute('style', 'fill:var(--text);font-weight:600');
+    const alvo = svgEl('rect', { x: 0, y, width: W, height: linha, fill: 'transparent' }, svg);
+    alvo.addEventListener('mousemove', ev => mostrarTip(ev, `<div class="t">${it.rot}</div><div class="l"><span>Valor</span><b>${R(it.valor)}</b></div>${it.det ? `<div class="l"><span>Títulos</span><b>${it.det.split(' ')[0]}</b></div>` : ''}`));
+    alvo.addEventListener('mouseleave', esconderTip);
+  });
+}
+
+function sparkline(el, serie) {
+  const W = 120, H = 28;
+  if (serie.length < 2) return;
+  const ys = serie.map(p => p[1]), lo = Math.min(...ys), hi = Math.max(...ys), amp = hi - lo || 1;
+  const d = serie.map((p, i) => (i ? 'L' : 'M') + (2 + (W - 4) * i / (serie.length - 1)).toFixed(1) + ' ' + (2 + (H - 4) * (1 - (p[1] - lo) / amp)).toFixed(1)).join(' ');
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--s1)" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+}
+
+// ======================= eventos =======================
+document.querySelectorAll('#atalhos .chip').forEach(b => b.onclick = () => aplicarAtalho(b.dataset.p));
+for (const id of ['#dtIni', '#dtFim']) {
+  $(id).addEventListener('change', () => {
+    const a = $('#dtIni').value, b = $('#dtFim').value;
+    if (!a || !b) return;
+    est.inicio = a <= b ? a : b; est.fim = a <= b ? b : a;
+    document.querySelectorAll('#atalhos .chip').forEach(x => x.setAttribute('aria-pressed', 'false'));
+    salvarFiltros('custom');
+    carregar();
+  });
+}
+document.querySelectorAll('.aba').forEach(b => b.onclick = () => {
+  est.aba = b.dataset.aba;
+  document.querySelectorAll('.aba').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+  render();
+  carregar();
+});
+$('#btnBancos').onclick = ev => {
+  ev.stopPropagation();
+  const p = $('#popBancos'); p.hidden = !p.hidden; $('#btnBancos').setAttribute('aria-expanded', String(!p.hidden));
+};
+$('#popBancos').addEventListener('click', ev => ev.stopPropagation());
+document.addEventListener('click', ev => { if (!ev.target.closest('.pop-wrap')) { $('#popBancos').hidden = true; $('#btnBancos').setAttribute('aria-expanded', 'false'); } });
+$('#btnAtualizar').onclick = carregar;
+$('#btnSair').onclick = async () => { if (sb) await sb.auth.signOut(); location.reload(); };
+$('#btnSenha').onclick = () => abrirTrocaSenha(false);
+$('#formLogin').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const b = $('#lBotao'); b.disabled = true; $('#lErro').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email: $('#lEmail').value.trim(), password: $('#lSenha').value });
+  b.disabled = false;
+  if (error) { $('#lErro').textContent = /invalid/i.test(error.message) ? 'E-mail ou senha inválidos.' : error.message; return; }
+  $('#lSenha').value = '';
+  entrar();
+});
+$('#lEsqueci').onclick = async () => {
+  const email = $('#lEmail').value.trim();
+  if (!email) { $('#lErro').textContent = 'Digite seu e-mail acima e clique de novo.'; return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  $('#lErro').textContent = error ? error.message : 'Se o e-mail estiver cadastrado, você vai receber um link para criar uma nova senha.';
+};
+setInterval(() => { if ($('#auto').checked && !document.hidden) carregar(); }, 5 * 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#auto').checked) carregar(); });
+let tResize;
+addEventListener('resize', () => { clearTimeout(tResize); tResize = setTimeout(render, 150); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', render);
+
+iniciar();
+</script>
+</body>
+</html>
