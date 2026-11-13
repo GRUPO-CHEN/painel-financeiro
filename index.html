@@ -31,23 +31,20 @@
   --good: #00AD57;  /* verde Feromax */
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.03);
 }
+html.tema-escuro {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --line: #2c2c2a; --grid: #262624;
+  --text: #f0efec; --text-2: #c3c2b7; --text-3: #92918a;
+  --accent: #5b85f2; --s1: #5b85f2; --s2: #d95926; --s1-soft: #1e3f86; --s2-soft: #6e3218;
+  --good: #1fc472; --shadow: none;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  html:not(.tema-claro) {
     color-scheme: dark;
-    --bg: #121211;
-    --surface: #1a1a19;
-    --line: #2c2c2a;
-    --grid: #262624;
-    --text: #f0efec;
-    --text-2: #c3c2b7;
-    --text-3: #92918a;
-    --accent: #5b85f2;
-    --s1: #5b85f2;
-    --s2: #d95926;
-    --s1-soft: #1e3f86;
-    --s2-soft: #6e3218;
-    --good: #1fc472;
-    --shadow: none;
+    --bg: #121211; --surface: #1a1a19; --line: #2c2c2a; --grid: #262624;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #92918a;
+    --accent: #5b85f2; --s1: #5b85f2; --s2: #d95926; --s1-soft: #1e3f86; --s2-soft: #6e3218;
+    --good: #1fc472; --shadow: none;
   }
 }
 * { box-sizing: border-box; }
@@ -73,7 +70,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   background: #fff4d6; color: #5c4400; border: 1px solid #f0d58a; border-radius: 8px;
   padding: 8px 12px; margin-bottom: 14px; font-size: 13px;
 }
-@media (prefers-color-scheme: dark) { .demo-banner { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; } }
+html.tema-escuro .demo-banner { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; }
+@media (prefers-color-scheme: dark) { html:not(.tema-claro) .demo-banner { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; } }
 
 /* filtros — uma linha acima de tudo */
 .filtros {
@@ -122,7 +120,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin: 4px 0 6px; }
 .legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .grafico { position: relative; width: 100%; }
-.grafico svg { display: block; width: 100%; overflow: visible; }
+.grafico svg { display: block; width: 100%; height: auto; overflow: visible; }
 .grafico text { fill: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* tabelas */
@@ -148,7 +146,8 @@ tbody tr:hover td { background: var(--bg); }
 
 .carregando { opacity: .55; transition: opacity .15s; }
 .erro { background: #fde8e8; color: #8a1f1f; border: 1px solid #f3b9b9; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
-@media (prefers-color-scheme: dark) { .erro { background: #3d1616; color: #f4b4b4; border-color: #6b2525; } }
+html.tema-escuro .erro { background: #3d1616; color: #f4b4b4; border-color: #6b2525; }
+@media (prefers-color-scheme: dark) { html:not(.tema-claro) .erro { background: #3d1616; color: #f4b4b4; border-color: #6b2525; } }
 .vazio { color: var(--text-3); padding: 28px 0; text-align: center; }
 [hidden] { display: none !important; }
 .controles { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
@@ -194,7 +193,8 @@ td.sub { color: var(--text-3); font-size: 12.5px; }
 .modal-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .selo { display: inline-block; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
 .aviso { background: #fff4d6; color: #5c4400; border: 1px solid #f0d58a; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px; }
-@media (prefers-color-scheme: dark) { .aviso { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; } }
+html.tema-escuro .aviso { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; }
+@media (prefers-color-scheme: dark) { html:not(.tema-claro) .aviso { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; } }
 td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3px 9px; font-size: 12.5px; }
 .estimado { color: var(--text-3); font-style: italic; }
 .tab-usuarios td { vertical-align: middle; } .tab-usuarios label { display: inline-flex; gap: 4px; align-items: center; margin-right: 8px; font-size: 12.5px; white-space: nowrap; }
@@ -221,6 +221,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
       <input type="checkbox" id="auto" checked> Atualizar a cada 5 min
     </label>
     <button id="btnAtualizar" title="Buscar os dados agora">Atualizar</button>
+    <button id="btnTema" title="Tema claro/escuro" aria-label="Alternar tema">🌙</button>
     <span class="sub" id="usuario"></span>
     <button id="btnSenha" hidden>Trocar senha</button>
     <button id="btnSair" hidden>Sair</button>
@@ -1584,6 +1585,16 @@ function mostrarTip(ev, html) {
   tip.style.left = x + 'px'; tip.style.top = y + 'px';
 }
 const esconderTip = () => { tip.style.opacity = 0; };
+// liga mouse e toque (celular) no mesmo comportamento de tooltip
+function ligarToque(alvo, mover, sair) {
+  alvo.addEventListener('mousemove', mover);
+  alvo.addEventListener('mouseleave', sair);
+  const toque = ev => { const t = ev.touches && ev.touches[0]; if (t) mover({ clientX: t.clientX, clientY: t.clientY }); };
+  alvo.addEventListener('touchstart', toque, { passive: true });
+  alvo.addEventListener('touchmove', toque, { passive: true });
+  alvo.addEventListener('touchend', sair);
+  alvo.addEventListener('touchcancel', sair);
+}
 
 function eixos(svg, W, H, m, esc, yPx) {
   for (const t of esc.ticks) {
@@ -1626,7 +1637,7 @@ function graficoLinha(el, serie, { altura = 240, zero = false, nome = 'Saldo' } 
   const guia = svgEl('line', { y1: m.t, y2: H - m.b, stroke: css('--text-3'), 'stroke-width': 1, 'stroke-dasharray': '3 3', opacity: 0 }, svg);
   const ponto = svgEl('circle', { r: 5, fill: cor, stroke: css('--surface'), 'stroke-width': 2, opacity: 0 }, svg);
   const alvo = svgEl('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' }, svg);
-  alvo.addEventListener('mousemove', ev => {
+  ligarToque(alvo, ev => {
     const r = svg.getBoundingClientRect();
     const x = (ev.clientX - r.left) * (W / r.width);
     const i = Math.max(0, Math.min(serie.length - 1, Math.round((x - m.l) / ((W - m.l - m.r) / Math.max(1, serie.length - 1)))));
@@ -1634,8 +1645,7 @@ function graficoLinha(el, serie, { altura = 240, zero = false, nome = 'Saldo' } 
     guia.setAttribute('x1', xPx(i)); guia.setAttribute('x2', xPx(i)); guia.setAttribute('opacity', 1);
     ponto.setAttribute('cx', xPx(i)); ponto.setAttribute('cy', yPx(v)); ponto.setAttribute('opacity', 1);
     mostrarTip(ev, `<div class="t">${ddmmaa(dt)}</div><div class="l"><span><i style="background:${cor}"></i>${nome}</span><b class="${v < 0 ? 'neg' : ''}">${R(v)}</b></div>`);
-  });
-  alvo.addEventListener('mouseleave', () => { guia.setAttribute('opacity', 0); ponto.setAttribute('opacity', 0); esconderTip(); });
+  }, () => { guia.setAttribute('opacity', 0); ponto.setAttribute('opacity', 0); esconderTip(); });
 }
 
 function graficoBarras(el, { cats, series, rotulo, agrupado = false, altura = 260 }) {
@@ -1670,7 +1680,7 @@ function graficoBarras(el, { cats, series, rotulo, agrupado = false, altura = 26
     });
   });
   const alvo = svgEl('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' }, svg);
-  alvo.addEventListener('mousemove', ev => {
+  ligarToque(alvo, ev => {
     const r = svg.getBoundingClientRect();
     const x = (ev.clientX - r.left) * (W / r.width);
     const i = Math.max(0, Math.min(cats.length - 1, Math.floor((x - m.l) / banda)));
@@ -1678,8 +1688,7 @@ function graficoBarras(el, { cats, series, rotulo, agrupado = false, altura = 26
     const linhas = series.map(s => `<div class="l"><span><i style="background:${s.cor}"></i>${s.nome}</span><b>${R(s.valores[i])}</b></div>`).join('');
     const tot = agrupado ? '' : `<div class="l" style="border-top:1px solid var(--line);margin-top:4px;padding-top:4px"><span>Total</span><b>${R(series.reduce((t, s) => t + s.valores[i], 0))}</b></div>`;
     mostrarTip(ev, `<div class="t">${rotulo(cats[i])}${rotulo === ddmm ? '/' + cats[i].slice(2, 4) : ''}</div>${linhas}${tot}`);
-  });
-  alvo.addEventListener('mouseleave', () => { grupoHover.setAttribute('opacity', 0); esconderTip(); });
+  }, () => { grupoHover.setAttribute('opacity', 0); esconderTip(); });
 }
 
 function barrasHorizontais(el, itens, { larguraRotulo = 112 } = {}) {
@@ -1703,8 +1712,7 @@ function barrasHorizontais(el, itens, { larguraRotulo = 112 } = {}) {
     v.textContent = Rc(it.valor);
     v.setAttribute('style', 'fill:var(--text);font-weight:600');
     const alvo = svgEl('rect', { x: 0, y, width: W, height: linha, fill: 'transparent' }, svg);
-    alvo.addEventListener('mousemove', ev => mostrarTip(ev, `<div class="t">${it.rot}</div><div class="l"><span>Valor</span><b>${R(it.valor)}</b></div>${it.det ? `<div class="l"><span>Títulos</span><b>${it.det.split(' ')[0]}</b></div>` : ''}`));
-    alvo.addEventListener('mouseleave', esconderTip);
+    ligarToque(alvo, ev => mostrarTip(ev, `<div class="t">${it.rot}</div><div class="l"><span>Valor</span><b>${R(it.valor)}</b></div>${it.det ? `<div class="l"><span>Títulos</span><b>${it.det.split(' ')[0]}</b></div>` : ''}`), esconderTip);
   });
 }
 
@@ -1762,7 +1770,39 @@ setInterval(() => { if ($('#auto').checked && !document.hidden) carregar(); }, 5
 document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#auto').checked) carregar(); });
 let tResize;
 addEventListener('resize', () => { clearTimeout(tResize); tResize = setTimeout(render, 150); });
-matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', render);
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { atualizarIconeTema(); try { render(); } catch (_) {} });
+
+// ===== tema claro/escuro (manual) =====
+function efetivoEscuro() {
+  const h = document.documentElement;
+  if (h.classList.contains('tema-escuro')) return true;
+  if (h.classList.contains('tema-claro')) return false;
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
+function atualizarIconeTema() {
+  const esc = efetivoEscuro();
+  const btn = document.getElementById('btnTema');
+  if (btn) { btn.textContent = esc ? '☀️' : '🌙'; btn.title = esc ? 'Mudar para tema claro' : 'Mudar para tema escuro'; }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', esc ? '#121211' : '#2F64E0');
+}
+function aplicarTema(t) {
+  const h = document.documentElement;
+  h.classList.remove('tema-claro', 'tema-escuro');
+  if (t === 'claro') h.classList.add('tema-claro');
+  else if (t === 'escuro') h.classList.add('tema-escuro');
+  atualizarIconeTema();
+}
+(function () {
+  let t = 'auto'; try { t = localStorage.getItem('painel-tema') || 'auto'; } catch (_) {}
+  aplicarTema(t);
+})();
+document.getElementById('btnTema')?.addEventListener('click', () => {
+  const novo = efetivoEscuro() ? 'claro' : 'escuro';
+  try { localStorage.setItem('painel-tema', novo); } catch (_) {}
+  aplicarTema(novo);
+  try { render(); } catch (_) {}
+});
 
 iniciar();
 </script>
