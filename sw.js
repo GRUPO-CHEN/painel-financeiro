@@ -1,5 +1,5 @@
 // Service worker do Painel Financeiro — network-first (sempre pega a versao nova; cache so para offline).
-const CACHE = 'painel-v1';
+const CACHE = 'painel-v2';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
