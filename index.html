@@ -336,6 +336,53 @@ function ehAplicacao(banco) { return Object.prototype.hasOwnProperty.call(APLICA
 // Para incluir outras, acrescente o código "conta.sub_conta" nesta lista.
 const CONTAS_TRANSFERENCIA = ['08.01'];
 function ehTransferencia(conta) { return CONTAS_TRANSFERENCIA.includes(String(conta || '').trim()); }
+
+// Plano de contas: código "conta.sub_conta" -> descrição. Mostra o texto no lugar do número.
+const PLANO_CONTAS = {
+  '10.00.00': 'Receita operacional', '10.01.00': 'Receita operacional',
+  '10.01.01': 'Receita Vendas', '10.01.02': 'Manutenções', '10.01.03': 'Receitas não lançadas',
+  '10.01.05': 'SmartHub', '10.01.06': 'SHService', '10.01.07': 'SHComissão',
+  '11.00.00': 'Outras receitas / não operacional', '11.01.00': 'Outras receitas / não operacional',
+  '11.01.01': 'Comissões Recebidas', '11.01.02': 'Reembolso Clientes', '11.01.03': 'Rendimentos de Aplicações',
+  '11.01.06': 'Empréstimos Bancos', '11.01.08': 'Aporte Capital Sócios', '11.01.10': 'Reembolso Fortify',
+  '11.01.11': 'Reembolso - Despesa Importação', '11.01.12': 'Desbloqueio Judicial', '11.01.13': 'Reembolso - Fornecedor',
+  '11.01.14': 'Devolução - Retirada de sócio', '11.01.15': 'Reembolso de Impostos', '11.01.16': 'Desconto de Títulos',
+  '11.01.98': 'Transferência entre Contas - Crédito', '11.01.99': 'Nota de Devolução',
+  '20.00.00': 'Despesas operacional', '20.01.00': 'Recursos Humanos',
+  '20.01.01': 'Folha de Pagamento', '20.01.02': 'Medicina do Trabalho', '20.01.03': '13º Salário',
+  '20.01.04': 'Férias', '20.01.06': 'Rescisão Contratual', '20.01.20': 'Encargos',
+  '20.01.21': 'GPS - Sobre a Folha e Pró-Labore', '20.01.22': 'FGTS', '20.01.30': 'Sócios',
+  '20.01.31': 'Pró-Labore', '20.01.32': 'Retirada Sócio', '20.01.33': 'Retirada Sócio 2',
+  '20.01.40': 'Benefícios', '20.01.41': 'Plano de Saúde', '20.01.42': 'Alimentação',
+  '20.01.43': 'Seguro de Vida', '20.01.45': 'Treinamento/Cursos', '20.01.46': 'Vale Transporte', '20.01.47': 'Endomarketing',
+  '20.02.00': 'Fornecedores de Compras', '20.02.01': 'Importação - Numerários', '20.02.02': 'Fretes Compras Nacionais',
+  '20.02.03': 'SHService', '20.02.05': 'Fretes Compras Importadas', '20.02.07': 'Material de Embalagem',
+  '20.02.10': 'Insumo de produção ou indiretos', '20.02.11': 'Materiais de Revenda', '20.02.12': 'Importação',
+  '20.03.00': 'Despesas Fixa e Estrutura', '20.03.01': 'Aluguel', '20.03.03': 'Luz', '20.03.04': 'Água',
+  '20.03.05': 'Seguros', '20.03.07': 'Sistemas RH', '20.03.08': 'Sistemas ERP', '20.03.09': 'Telefone Fixo',
+  '20.03.10': 'Telefone Celular', '20.03.11': 'Internet', '20.03.12': 'Contabilidade', '20.03.13': 'Serviços',
+  '20.03.20': 'Taxas/Impostos', '20.03.21': 'IPTU', '20.03.22': 'Taxa do Lixo', '20.03.23': 'Impostos Diversos - Custo Fixo',
+  '20.04.00': 'Despesas Adm e Diversas', '20.04.01': 'Material de Escritório/Limpeza', '20.04.02': 'Despesa Diretoria',
+  '20.04.03': 'Ativo - Material de Informática e Telecom', '20.04.04': 'Ativo - Móveis e Utensílios e Melhorias',
+  '20.04.05': 'Manutenção', '20.04.08': 'Ferramentas/Manutenção PAC', '20.04.12': 'Despesas Diversas', '20.04.13': 'Certificado Digital',
+  '20.05.00': 'Despesas Comerciais Diretas', '20.05.01': 'Comissões Vendedores', '20.05.02': 'Comissões Parceiros', '20.05.10': 'Despesas Visita Cliente',
+  '20.06.00': 'Marketing', '20.06.01': 'Serviços de Marketing', '20.06.03': 'Brindes', '20.06.04': 'Site',
+  '20.06.05': 'Eventos', '20.06.08': 'Material Gráfico', '20.06.09': 'Divulgação', '20.06.99': 'Outros',
+  '20.07.00': 'Despesas Bancárias', '20.07.01': 'Tarifas', '20.07.02': 'Taxas sobre Vendas', '20.07.04': 'Manutenção de Conta',
+  '20.08.00': 'Despesas Financeiras', '20.08.01': 'Juros', '20.08.02': 'Cobrança de IOF',
+  '20.09.00': 'Empréstimos', '20.09.04': 'Empréstimos - Capital Giro',
+  '20.11.00': 'Fornecedores de Serviços', '20.11.01': 'Serviços Advocatícios', '20.11.04': 'Despesas de fretes e carretos',
+  '20.12.00': 'Impostos sobre Vendas', '20.12.01': 'PIS', '20.12.02': 'COFINS', '20.12.03': 'IPI', '20.12.04': 'GNRE',
+  '20.12.05': 'ICMS', '20.12.06': 'ICMS ST', '20.12.07': 'ISS', '20.12.08': 'Simples Nacional',
+  '21.00.00': 'Outras despesas / não operacional', '21.01.00': 'Despesas não operacional',
+  '21.01.04': 'Empréstimo Diretoria', '21.01.07': 'Despesas não lançadas',
+  '21.02.00': 'Encargos', '21.02.01': 'IRPJ 2089', '21.02.04': 'ISS', '21.02.11': 'CSLL', '21.02.13': 'Simples Nacional',
+  '21.02.15': 'GNRE', '21.02.19': 'Darf 5952', '21.02.20': 'Darf 1708', '21.02.21': 'Darf 3208',
+};
+function descConta(codigo) {
+  const c = String(codigo || '').trim();
+  return PLANO_CONTAS[c] || c;
+}
 function nomeBanco(emp, banco) {
   if (ehAplicacao(banco)) return APLICACOES[Number(banco)];
   return est.nomesBancos[`${emp}-${banco}`] || est.nomesBancos[String(banco)] || `Banco ${banco}`;
@@ -947,8 +994,8 @@ function htmlPagar() {
     <div class="card cheio">
       <h2>Por conta / subconta</h2>
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Conta.Sub</th><th class="n">Total</th><th class="n">Pago</th><th class="n">Em aberto</th><th class="n">% do total</th></tr></thead>
-        <tbody>${contas.map(x => `<tr><td>${esc(x.k)}</td><td class="n">${R(x.tot)}</td><td class="n">${R(x.tot - x.ab)}</td><td class="n">${R(x.ab)}</td><td class="n">${tot ? (x.tot / tot * 100).toFixed(1).replace('.', ',') : '0'}%</td></tr>`).join('')}
+        <thead><tr><th>Conta</th><th class="n">Total</th><th class="n">Pago</th><th class="n">Em aberto</th><th class="n">% do total</th></tr></thead>
+        <tbody>${contas.map(x => `<tr><td>${esc(descConta(x.k))}<span class="sub"> · ${esc(x.k)}</span></td><td class="n">${R(x.tot)}</td><td class="n">${R(x.tot - x.ab)}</td><td class="n">${R(x.ab)}</td><td class="n">${tot ? (x.tot / tot * 100).toFixed(1).replace('.', ',') : '0'}%</td></tr>`).join('')}
         <tr class="total"><td>Total</td><td class="n">${R(tot)}</td><td class="n">${R(tot - ab)}</td><td class="n">${R(ab)}</td><td class="n">100%</td></tr></tbody>
       </table></div>
     </div>
@@ -1090,7 +1137,7 @@ function renderDia(el) {
           <td>${esc(m.nome)}</td>
           <td class="sub opc">${m.titulo}/${m.parcela}</td>
           <td class="sub opc">${m.vencimento ? ddmmaa(m.vencimento) : '—'}</td>
-          <td class="sub opc">${esc(m.conta || '')}</td>
+          <td class="sub opc">${esc(descConta(m.conta))}</td>
           <td class="sub opc">${esc(nomeBanco(m.emp, m.banco))}${multi ? ' · ' + esc(nomeEmpresa(m.emp)) : ''}</td>
           <td class="n">${R(m.valor)}</td></tr>`).join('')}
           <tr class="total"><td>Total · ${lista.length} lançamento${lista.length > 1 ? 's' : ''}</td><td class="opc" colspan="4"></td><td class="n">${R(total)}</td></tr>
