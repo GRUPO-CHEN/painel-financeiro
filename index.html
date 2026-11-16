@@ -332,6 +332,10 @@ const bancoSelecionado = (e, b) => !est.bancosSel || est.bancosSel.has(`${e}-${b
 // Para incluir/mudar uma aplicação, basta editar aqui: { codigoBanco: 'Nome' }.
 const APLICACOES = { 887: 'Aplicação Safra', 888: 'Aplicação Itaú', 3411: 'Aplicação Itaú' };
 function ehAplicacao(banco) { return Object.prototype.hasOwnProperty.call(APLICACOES, Number(banco)); }
+// Plano de contas tratado como transferência entre contas (não é receita nem despesa).
+// Para incluir outras, acrescente o código "conta.sub_conta" nesta lista.
+const CONTAS_TRANSFERENCIA = ['08.01'];
+function ehTransferencia(conta) { return CONTAS_TRANSFERENCIA.includes(String(conta || '').trim()); }
 function nomeBanco(emp, banco) {
   if (ehAplicacao(banco)) return APLICACOES[Number(banco)];
   return est.nomesBancos[`${emp}-${banco}`] || est.nomesBancos[String(banco)] || `Banco ${banco}`;
@@ -536,10 +540,11 @@ async function lerPainel() {
       .eq('geracao', ger('vencidos_cliente')).in('empresa', emps).order('valor', { ascending: false })) : [],
   ]);
   const contasPagar = (est.contas.pagar || []).map(Number);
-  const pagar = tits.filter(r => r.tipo === 'P' && (!contasPagar.length || contasPagar.includes(Number(r.conta))))
+  const semTransf = tits.filter(r => !ehTransferencia(`${r.conta}.${r.sub_conta}`));
+  const pagar = semTransf.filter(r => r.tipo === 'P' && (!contasPagar.length || contasPagar.includes(Number(r.conta))))
     .map(r => [r.vencimento, r.empresa, r.conta, r.sub_conta, Number(r.total), Number(r.aberto)]);
   const rec = new Map();
-  for (const r of tits.filter(t => t.tipo === 'R')) {
+  for (const r of semTransf.filter(t => t.tipo === 'R')) {
     const k = r.vencimento + '|' + r.empresa;
     const x = rec.get(k) || [r.vencimento, r.empresa, 0, 0];
     x[2] += Number(r.total); x[3] += Number(r.aberto); rec.set(k, x);
@@ -1067,8 +1072,12 @@ function renderDia(el) {
   const somaC = k => oper.reduce((s, c) => s + c[k], 0);
   const somaA = k => aplic.reduce((s, c) => s + c[k], 0);
   const soma = k => contas.reduce((s, c) => s + c[k], 0);
-  const rec = d.movimentos.filter(m => m.tipo === 'R'), pag = d.movimentos.filter(m => m.tipo === 'P');
+  const transf = d.movimentos.filter(m => ehTransferencia(m.conta));
+  const rec = d.movimentos.filter(m => m.tipo === 'R' && !ehTransferencia(m.conta));
+  const pag = d.movimentos.filter(m => m.tipo === 'P' && !ehTransferencia(m.conta));
   const totRec = rec.reduce((s, m) => s + m.valor, 0), totPag = pag.reduce((s, m) => s + m.valor, 0);
+  const transfEnt = transf.filter(m => m.tipo === 'R').reduce((s, m) => s + m.valor, 0);
+  const transfSai = transf.filter(m => m.tipo === 'P').reduce((s, m) => s + m.valor, 0);
   const multi = est.empresas.length > 1;
   const futuro = d.dia > hojeISO();
   const dow = parseISO(d.dia).toLocaleDateString('pt-BR', { weekday: 'long' });
@@ -1112,6 +1121,7 @@ function renderDia(el) {
     ${kpi('Saldo no início do dia', R0(somaC('ini')), 'contas operacionais')}
     ${kpi('Recebimentos', R0(totRec), `${rec.length} lançamentos`)}
     ${kpi('Pagamentos', R0(totPag), `${pag.length} lançamentos`)}
+    ${transf.length ? kpi('Transferências', R0(Math.max(transfEnt, transfSai)), `${transf.length} lançamento${transf.length > 1 ? 's' : ''} · entre contas`) : ''}
     ${kpi('Saldo no fim do dia', R0(somaC('fim')), `contas · ${somaC('ent') - somaC('sai') >= 0 ? '▲' : '▼'} ${R0(Math.abs(somaC('ent') - somaC('sai')))} no dia`, somaC('fim') < 0 ? 'neg' : '')}
     ${aplic.length ? kpi('Aplicações', R0(somaA('fim')), 'saldo aplicado (investimentos)') : ''}
   </div>
@@ -1126,6 +1136,20 @@ function renderDia(el) {
       <div class="nota">Contas pagas neste dia</div>
       ${tabelaMov(pag, 'Fornecedor', totPag)}
     </div>
+    ${transf.length ? `<div class="card cheio">
+      <h2>Transferências entre contas</h2>
+      <div class="nota">Movimentações internas (conta ${CONTAS_TRANSFERENCIA.join(', ')}) — não contam como recebimento nem pagamento</div>
+      <div class="tabela-wrap rolagem"><table>
+        <thead><tr><th>Direção</th><th>Banco</th><th class="opc">Título</th><th class="opc">Contraparte</th><th class="n">Valor</th></tr></thead>
+        <tbody>${transf.map(m => `<tr>
+          <td>${m.tipo === 'R' ? '↓ Entrou' : '↑ Saiu'}</td>
+          <td>${esc(nomeBanco(m.emp, m.banco))}${multi ? ' · ' + esc(nomeEmpresa(m.emp)) : ''}</td>
+          <td class="sub opc">${m.titulo}/${m.parcela}</td>
+          <td class="sub opc">${esc(m.nome || '')}</td>
+          <td class="n">${R(m.valor)}</td></tr>`).join('')}
+          <tr class="total"><td>Entrou ${R0(transfEnt)} · Saiu ${R0(transfSai)}</td><td class="opc" colspan="3"></td><td class="n ${(transfEnt - transfSai) < 0 ? 'neg' : ''}">${R(transfEnt - transfSai)}</td></tr>
+        </tbody></table></div>
+    </div>` : ''}
     <div class="card">
       <h2>Saldo por banco no dia</h2>
       <div class="tabela-wrap"><table>
