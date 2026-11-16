@@ -833,17 +833,21 @@ function render() {
   const periodo = !['dia', 'projecao', 'importacoes', 'usuarios'].includes(aba);
   $('#periodo').hidden = !periodo; $('#sepPeriodo').hidden = !periodo;
   document.querySelector('.filtros').hidden = aba === 'usuarios';
-  if (aba === 'importacoes') return renderImportacoes(el);
-  if (aba === 'usuarios') return renderUsuarios(el);
-  if (aba === 'dia') { if (est.dadosDia) renderDia(el); return; }
-  if (aba === 'projecao') { if (est.dadosProj) renderProj(el); return; }
-  if (!est.dados) return;
-  const c = calcular();
-  if (aba === 'geral') el.innerHTML = htmlGeral(c);
-  if (aba === 'bancos') el.innerHTML = htmlBancos(c);
-  if (aba === 'pagar') el.innerHTML = htmlPagar();
-  if (aba === 'receber') el.innerHTML = htmlReceber(c);
-  desenhar(c);
+  try {
+    if (aba === 'importacoes') return renderImportacoes(el);
+    if (aba === 'usuarios') return renderUsuarios(el);
+    if (aba === 'dia') { el.innerHTML = est.dadosDia ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosDia) renderDia(el); return; }
+    if (aba === 'projecao') { el.innerHTML = est.dadosProj ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosProj) renderProj(el); return; }
+    if (!est.dados) { el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
+    const c = calcular();
+    if (aba === 'geral') el.innerHTML = htmlGeral(c);
+    if (aba === 'bancos') el.innerHTML = htmlBancos(c);
+    if (aba === 'pagar') el.innerHTML = htmlPagar();
+    if (aba === 'receber') el.innerHTML = htmlReceber(c);
+    desenhar(c);
+  } catch (e) {
+    el.innerHTML = `<div class="card"><div class="vazio">Não foi possível montar esta aba: ${esc(e.message)}</div></div>`;
+  }
 }
 
 const kpi = (rot, val, det = '', cls = '') =>
@@ -1062,6 +1066,7 @@ function renderDia(el) {
   const oper = contas.filter(c => !ehAplicacao(c.b)), aplic = contas.filter(c => ehAplicacao(c.b));
   const somaC = k => oper.reduce((s, c) => s + c[k], 0);
   const somaA = k => aplic.reduce((s, c) => s + c[k], 0);
+  const soma = k => contas.reduce((s, c) => s + c[k], 0);
   const rec = d.movimentos.filter(m => m.tipo === 'R'), pag = d.movimentos.filter(m => m.tipo === 'P');
   const totRec = rec.reduce((s, m) => s + m.valor, 0), totPag = pag.reduce((s, m) => s + m.valor, 0);
   const multi = est.empresas.length > 1;
