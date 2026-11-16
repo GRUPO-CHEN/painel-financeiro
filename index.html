@@ -218,7 +218,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
     </div>
     <div class="spacer"></div>
     <label class="sub" style="display:flex;gap:6px;align-items:center">
-      <input type="checkbox" id="auto" checked> Atualizar a cada 5 min
+      <input type="checkbox" id="auto" checked title="Atualiza sozinho a cada 2 horas e sempre às 17:45"> Atualização automática
     </label>
     <button id="btnAtualizar" title="Buscar os dados agora">Atualizar</button>
     <button id="btnTema" title="Tema claro/escuro" aria-label="Alternar tema">🌙</button>
@@ -328,7 +328,12 @@ const est = {
 const DEMO_BANCOS = { 1: [[1, 180000], [341, 420000], [888, 25000], [422, 90000], [887, 12000]], 2: [[1, 60000], [341, 210000], [422, 45000], [3411, 30000]] };
 const bancoSelecionado = (e, b) => !est.bancosSel || est.bancosSel.has(`${e}-${b}`);
 
+// Contas de aplicação (investimento) — separadas das contas operacionais.
+// Para incluir/mudar uma aplicação, basta editar aqui: { codigoBanco: 'Nome' }.
+const APLICACOES = { 887: 'Aplicação Safra', 888: 'Aplicação Itaú', 3411: 'Aplicação Itaú' };
+function ehAplicacao(banco) { return Object.prototype.hasOwnProperty.call(APLICACOES, Number(banco)); }
 function nomeBanco(emp, banco) {
+  if (ehAplicacao(banco)) return APLICACOES[Number(banco)];
   return est.nomesBancos[`${emp}-${banco}`] || est.nomesBancos[String(banco)] || `Banco ${banco}`;
 }
 function nomeEmpresa(e) { return est.empresasDisp[e] || `Empresa ${e}`; }
@@ -786,6 +791,11 @@ function calcular() {
   const saldoIni = contas.reduce((s, c) => s + c.ini, 0);
   const entradas = contas.reduce((s, c) => s + c.ent, 0);
   const saidas = contas.reduce((s, c) => s + c.sai, 0);
+  // separa contas operacionais de aplicações (investimento)
+  const oper = contas.filter(c => !ehAplicacao(c.b)), aplic = contas.filter(c => ehAplicacao(c.b));
+  const saldoContas = oper.reduce((s, c) => s + c.fim, 0), iniContas = oper.reduce((s, c) => s + c.ini, 0);
+  const saldoAplic = aplic.reduce((s, c) => s + c.fim, 0), iniAplic = aplic.reduce((s, c) => s + c.ini, 0);
+  const temAplic = aplic.length > 0;
 
   // pagar / receber
   const pagTot = d.pagar.reduce((s, r) => s + r[4], 0);
@@ -794,7 +804,7 @@ function calcular() {
   const recAb = d.receber.reduce((s, r) => s + r[3], 0);
   const vencido = d.faixas.reduce((s, f) => s + f.valor, 0);
   const vencidoQtd = d.faixas.reduce((s, f) => s + f.qtd, 0);
-  return { contas, serieSaldo, saldoFim, saldoIni, entradas, saidas, pagTot, pagAb, recTot, recAb, vencido, vencidoQtd };
+  return { contas, serieSaldo, saldoFim, saldoIni, saldoContas, iniContas, saldoAplic, iniAplic, temAplic, entradas, saidas, pagTot, pagAb, recTot, recAb, vencido, vencidoQtd };
 }
 
 // agrupa por dia (ou por semana quando o período é longo)
@@ -840,10 +850,12 @@ const kpi = (rot, val, det = '', cls = '') =>
   `<div class="kpi"><div class="rot">${rot}</div><div class="val ${cls}" >${val}</div><div class="det">${det}</div></div>`;
 
 function htmlGeral(c) {
-  const varSaldo = c.saldoFim - c.saldoIni;
+  const varC = c.saldoContas - c.iniContas;
+  const emDia = `em ${ddmmaa(c.serieSaldo.at(-1)?.[0] || est.fim)}`;
   return `
   <div class="kpis">
-    ${kpi('Saldo em bancos', R0(c.saldoFim), `em ${ddmmaa(c.serieSaldo.at(-1)?.[0] || est.fim)} · ${varSaldo >= 0 ? '▲' : '▼'} ${R0(Math.abs(varSaldo))} no período`, c.saldoFim < 0 ? 'neg' : '')}
+    ${kpi('Saldo em contas', R0(c.saldoContas), `${emDia} · ${varC >= 0 ? '▲' : '▼'} ${R0(Math.abs(varC))} no período`, c.saldoContas < 0 ? 'neg' : '')}
+    ${c.temAplic ? kpi('Saldo em aplicações', R0(c.saldoAplic), `${emDia} · investimentos`) : ''}
     ${kpi('Entradas no período', R0(c.entradas), 'recebimentos conciliados')}
     ${kpi('Saídas no período', R0(c.saidas), 'pagamentos conciliados')}
     ${kpi('A receber em aberto', R0(c.recAb), `de ${R0(c.recTot)} com vencimento no período`)}
@@ -1047,7 +1059,9 @@ function renderDia(el) {
   const d = est.dadosDia;
   const contas = d.bancos.map(([e, b, fim, ent, sai]) => ({ e, b, nome: nomeBanco(e, b), fim, ent, sai, ini: fim - ent + sai }))
     .sort((a, b) => a.e - b.e || b.fim - a.fim);
-  const soma = k => contas.reduce((s, c) => s + c[k], 0);
+  const oper = contas.filter(c => !ehAplicacao(c.b)), aplic = contas.filter(c => ehAplicacao(c.b));
+  const somaC = k => oper.reduce((s, c) => s + c[k], 0);
+  const somaA = k => aplic.reduce((s, c) => s + c[k], 0);
   const rec = d.movimentos.filter(m => m.tipo === 'R'), pag = d.movimentos.filter(m => m.tipo === 'P');
   const totRec = rec.reduce((s, m) => s + m.valor, 0), totPag = pag.reduce((s, m) => s + m.valor, 0);
   const multi = est.empresas.length > 1;
@@ -1090,10 +1104,11 @@ function renderDia(el) {
   ${futuro ? '<div class="info">Data futura: ainda não há movimento. Veja a aba <b>Fluxo projetado</b>.</div>' : ''}
   ${est.baseDia === 'pagamento' ? '<div class="info">As listas usam a <b>data de pagamento</b>; os saldos por banco continuam pela data de conciliação, então os totais podem não bater.</div>' : ''}
   <div class="kpis">
-    ${kpi('Saldo no início do dia', R0(soma('ini')))}
+    ${kpi('Saldo no início do dia', R0(somaC('ini')), 'contas operacionais')}
     ${kpi('Recebimentos', R0(totRec), `${rec.length} lançamentos`)}
     ${kpi('Pagamentos', R0(totPag), `${pag.length} lançamentos`)}
-    ${kpi('Saldo no fim do dia', R0(soma('fim')), `${soma('ent') - soma('sai') >= 0 ? '▲' : '▼'} ${R0(Math.abs(soma('ent') - soma('sai')))} no dia`, soma('fim') < 0 ? 'neg' : '')}
+    ${kpi('Saldo no fim do dia', R0(somaC('fim')), `contas · ${somaC('ent') - somaC('sai') >= 0 ? '▲' : '▼'} ${R0(Math.abs(somaC('ent') - somaC('sai')))} no dia`, somaC('fim') < 0 ? 'neg' : '')}
+    ${aplic.length ? kpi('Aplicações', R0(somaA('fim')), 'saldo aplicado (investimentos)') : ''}
   </div>
   <div class="grade">
     <div class="card cheio">
@@ -1766,7 +1781,16 @@ $('#lEsqueci').onclick = async () => {
   const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
   $('#lErro').textContent = error ? error.message : 'Se o e-mail estiver cadastrado, você vai receber um link para criar uma nova senha.';
 };
-setInterval(() => { if ($('#auto').checked && !document.hidden) carregar(); }, 5 * 60e3);
+// atualização automática: a cada 2 horas + sempre às 17:45 (quando a opção está ligada)
+setInterval(() => { if ($('#auto').checked && !document.hidden) carregar(); }, 2 * 60 * 60e3);
+let ultimoDiario = '';
+setInterval(() => {
+  if (!$('#auto').checked) return;
+  const agora = new Date();
+  const hhmm = ('0' + agora.getHours()).slice(-2) + ':' + ('0' + agora.getMinutes()).slice(-2);
+  const hoje = agora.toISOString().slice(0, 10);
+  if (hhmm === '17:45' && ultimoDiario !== hoje) { ultimoDiario = hoje; carregar(); }
+}, 30e3);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#auto').checked) carregar(); });
 let tResize;
 addEventListener('resize', () => { clearTimeout(tResize); tResize = setTimeout(render, 150); });
