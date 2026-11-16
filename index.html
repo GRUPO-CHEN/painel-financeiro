@@ -255,8 +255,8 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
   </section>
 
   <nav class="abas" role="tablist">
-    <button class="aba" role="tab" data-aba="geral" aria-selected="true">Visão geral</button>
-    <button class="aba" role="tab" data-aba="dia" aria-selected="false">Resumo do dia</button>
+    <button class="aba" role="tab" data-aba="dia" aria-selected="true">Resumo do dia</button>
+    <button class="aba" role="tab" data-aba="geral" aria-selected="false">Visão geral</button>
     <button class="aba" role="tab" data-aba="projecao" aria-selected="false">Fluxo projetado</button>
     <button class="aba" role="tab" data-aba="bancos" aria-selected="false">Bancos</button>
     <button class="aba" role="tab" data-aba="pagar" aria-selected="false">A pagar</button>
@@ -313,7 +313,7 @@ const est = {
   empresas: [],
   inicio: null,
   fim: null,
-  aba: 'geral',
+  aba: 'dia',
   dados: null,
   carregando: false,
   bancosDisp: {},      // { empresa: [bancos] }
@@ -391,7 +391,7 @@ Object.assign(est, {
 });
 
 const ABAS = {
-  geral: ['caixa', 'titulos'], dia: ['caixa'], projecao: ['caixa', 'titulos'], bancos: ['caixa'],
+  dia: ['caixa'], geral: ['caixa', 'titulos'], projecao: ['caixa', 'titulos'], bancos: ['caixa'],
   pagar: ['titulos'], receber: ['titulos'], importacoes: ['importacoes'], usuarios: ['admin'],
 };
 const temArea = a => !!est.perfil && (est.perfil.admin || (a !== 'admin' && (est.perfil.areas || []).includes(a)));
