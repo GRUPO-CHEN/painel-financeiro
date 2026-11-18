@@ -202,6 +202,13 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
 .marca .logo { height: 30px; width: auto; display: block; }
 .login-logo { height: 42px; width: auto; display: block; margin: 2px auto 14px; }
 @media (max-width: 520px) { .marca .logo { height: 24px; } }
+  table.dre td, table.dre th { white-space: nowrap; }
+  table.dre td:first-child, table.dre th:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 230px; }
+  table.dre tr.g td:first-child { cursor: pointer; font-weight: 600; }
+  table.dre tr.g:hover td { background: var(--s1-soft); }
+  table.dre tr.t td { font-weight: 700; border-top: 1px solid var(--line); }
+  table.dre tr.t.d td { font-size: 1.05em; background: var(--s1-soft); }
+  table.dre tr.sep td { color: var(--text-3); font-size: .8em; padding-top: 16px; text-transform: uppercase; letter-spacing: .04em; }
 </style>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -261,6 +268,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
     <button class="aba" role="tab" data-aba="bancos" aria-selected="false">Bancos</button>
     <button class="aba" role="tab" data-aba="pagar" aria-selected="false">A pagar</button>
     <button class="aba" role="tab" data-aba="receber" aria-selected="false">A receber</button>
+    <button class="aba" role="tab" data-aba="dre" aria-selected="false">DRE</button>
     <button class="aba" role="tab" data-aba="importacoes" aria-selected="false">Importações</button>
     <button class="aba" role="tab" data-aba="usuarios" aria-selected="false">Usuários</button>
   </nav>
@@ -443,7 +451,7 @@ Object.assign(est, {
 
 const ABAS = {
   dia: ['caixa'], geral: ['caixa', 'titulos'], projecao: ['caixa', 'titulos'], bancos: ['caixa'],
-  pagar: ['titulos'], receber: ['titulos'], importacoes: ['importacoes'], usuarios: ['admin'],
+  pagar: ['titulos'], receber: ['titulos'], dre: ['dre'], importacoes: ['importacoes'], usuarios: ['admin'],
 };
 const temArea = a => !!est.perfil && (est.perfil.admin || (a !== 'admin' && (est.perfil.areas || []).includes(a)));
 const podeEditar = () => !!est.perfil && (est.perfil.admin || est.perfil.editor);
@@ -803,6 +811,9 @@ async function carregar() {
     } else if (aba === 'projecao') {
       const d = est.demo ? gerarDemoProj(est.horizonte) : await lerProj();
       if (meu !== seq) return; est.dadosProj = d; desc = `projeção de ${est.horizonte} dias`;
+    } else if (aba === 'dre') {
+      const d = est.demo ? { linhas: [] } : await lerDre();
+      if (meu !== seq) return; est.dadosDre = d; desc = 'DRE';
     } else if (aba === 'importacoes') {
       if (!est.demo) { await lerGeracoes(); await lerImportacoes(); }
       if (meu !== seq) return; desc = 'importações';
@@ -886,13 +897,14 @@ function render() {
   const el = $('#conteudo');
   const aba = est.aba;
   if (!aba) return;
-  const periodo = !['dia', 'projecao', 'importacoes', 'usuarios'].includes(aba);
+  const periodo = !['dia', 'projecao', 'dre', 'importacoes', 'usuarios'].includes(aba);
   $('#periodo').hidden = !periodo; $('#sepPeriodo').hidden = !periodo;
   document.querySelector('.filtros').hidden = aba === 'usuarios';
   try {
     if (aba === 'importacoes') return renderImportacoes(el);
     if (aba === 'usuarios') return renderUsuarios(el);
     if (aba === 'dia') { el.innerHTML = est.dadosDia ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosDia) renderDia(el); return; }
+    if (aba === 'dre') { if (est.dadosDre) renderDre(el); else el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
     if (aba === 'projecao') { el.innerHTML = est.dadosProj ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosProj) renderProj(el); return; }
     if (!est.dados) { el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
     const c = calcular();
@@ -967,6 +979,146 @@ function htmlBancos(c) {
       </tbody>
     </table></div>
   </div>`;
+}
+
+// ======================= DRE (competência) =======================
+// linha comercial do ERP -> família (aba "familia" da planilha)
+const FAMILIA_LINHA = {
+  'ACESSORIOS - GENERAL': 'Pneumática', 'ACESSORIOS - GISON': 'Pneumática', 'ACESSORIOS - KILEWS': 'Parafusadeira',
+  'COBOT': 'Robô Colaborativo', 'DUROFIX': 'Linha Bateria', 'GENERAL AIR TOOLS': 'Pneumática', 'GISON': 'Pneumática',
+  'JHC': 'Linha Industrial', 'KILEWS': 'Parafusadeira', 'LINHA INDUSTRIAL': 'Linha Industrial', 'LIXAS STAR': 'Lixas',
+  'NEW RAPID': 'Pneumática', 'PECAS - GENERAL': 'Peças de Reposição GENERAL', 'PECAS - GISON': 'Peças de Reposição GISON',
+  'PECAS - JHC': 'Peças de Reposição', 'PECAS - KILEWS': 'Peças de Reposição KILEWS', 'PONTAS': 'Pontas',
+  'SERVIÇOS': 'MOB', 'SMART HUB': 'Assessória', 'SHI TEN': 'Parafusadeira', 'FRETE': 'Frete',
+};
+const famDe = l => FAMILIA_LINHA[String(l || '').trim().toUpperCase()] || (l ? 'Outras' : 'Sem família');
+// estrutura do DRE (aba PLANEJAMENTO). "x.*" = todas as subcontas.
+const DRE_GRUPOS = [
+  { id: 'rec', nome: 'Receitas', contas: ['10.01.01', '10.01.02', '11.01.02', '11.01.01'] },
+  { id: 'imp', nome: '(-) Impostos sobre vendas', contas: ['20.12.*', '21.02.04', '21.02.13', '21.02.15'] },
+  { id: 'rl', nome: '(=) Receita líquida', soma: ['rec', 'imp'] },
+  { id: 'cmv', nome: '(-) CMV', contas: ['CMV'] },
+  { id: 'mc', nome: '(=) Margem de contribuição', soma: ['rl', 'cmv'], d: 1 },
+  { id: 'dv', nome: '(-) Despesas variáveis', contas: ['20.05.01', '20.05.02', '20.02.07', '20.07.02', '20.11.04'] },
+  { id: 'mc2', nome: '(=) Margem de contribuição 2', soma: ['mc', 'dv'] },
+  { id: 'cf', nome: '(-) Custo fixo', contas: ['11.01.10', '20.03.*', '21.02.19', '21.02.20', '21.02.21'] },
+  { id: 'rh', nome: '(-) RH', contas: ['20.01.01', '20.01.02', '20.01.03', '20.01.04', '20.01.06', '20.01.20', '20.01.21', '20.01.22', '20.01.31', '20.01.40', '20.01.41', '20.01.42', '20.01.43', '20.01.45', '20.01.46', '20.01.47'] },
+  { id: 'mkt', nome: '(-) Marketing', contas: ['20.06.*'] },
+  { id: 'desp', nome: '(-) Despesas', contas: ['20.04.01', '20.04.05', '20.04.08', '20.04.12', '20.04.13', '20.05.10', '20.07.01', '20.07.04', '20.11.01', '20.02.10', '21.01.07', '10.01.03'] },
+  { id: 'dop', nome: '(=) Despesas operacionais', soma: ['cf', 'rh', 'mkt', 'desp'] },
+  { id: 'ebitda', nome: '(=) EBITDA', soma: ['mc2', 'dop'], d: 1 },
+  { id: 'fin', nome: '(-) Despesas financeiras', contas: ['11.01.03', '20.08.*'] },
+  { id: 'lair', nome: '(=) LAIR', soma: ['ebitda', 'fin'] },
+  { id: 'ir', nome: '(-) Impostos sobre a renda', contas: ['21.02.01', '21.02.11'] },
+  { id: 'lucro', nome: '(=) Lucro ou prejuízo', soma: ['lair', 'ir'], d: 1 },
+  { id: 'socios', nome: 'Sócios', contas: ['11.01.08', '11.01.14', '21.01.04', '20.01.32', '20.01.33', '20.04.02'], fora: 1 },
+  { id: 'ativos', nome: 'Ativos', contas: ['20.04.03', '20.04.04'], fora: 1 },
+  { id: 'compras', nome: 'Compras', contas: ['11.01.13', '20.02.01', '20.02.02', '20.02.05', '20.02.11', '20.02.12'], fora: 1 },
+  { id: 'outros', nome: 'Outros (empréstimos, reembolsos…)', contas: ['20.09.*', '11.01.06', '11.01.11', '11.01.12', '11.01.15', '11.01.16', '11.01.99'], fora: 1 },
+  { id: 'nc', nome: 'Não classificado', contas: [], fora: 1 },
+];
+const _grupoCache = {};
+function grupoDre(c) {
+  if (_grupoCache[c]) return _grupoCache[c];
+  const g = DRE_GRUPOS.find(x => x.contas && x.contas.includes(c))
+    || DRE_GRUPOS.find(x => x.contas && x.contas.some(p => p.endsWith('.*') && c.startsWith(p.slice(0, -1))));
+  return (_grupoCache[c] = g ? g.id : 'nc');
+}
+const sinalDre = c => (c.startsWith('10.') || c.startsWith('11.')) ? 1 : -1;
+const MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const rotMes = m => MESES_ABREV[Number(m.slice(5, 7)) - 1] + '/' + m.slice(2, 4);
+const somaMes = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+const pctTxt = x => isFinite(x) ? (x * 100).toFixed(1).replace('.', ',') + '%' : '';
+
+async function lerDre() {
+  await lerGeracoes();
+  if (ger('dre_mensal') < 0) return { linhas: [] };
+  const rows = await buscarTodos(() => sb.from('dre_mensal').select('empresa,mes,conta,familia,valor')
+    .eq('geracao', ger('dre_mensal')).in('empresa', est.empresas).order('mes').order('conta').order('familia'));
+  return { linhas: rows.map(r => ({ ...r, valor: Number(r.valor) })) };
+}
+
+function renderDre(el) {
+  const L = est.dadosDre.linhas;
+  if (!L.length) { el.innerHTML = '<div class="card"><div class="vazio">O DRE aparece aqui depois da próxima atualização do sincronizador.</div></div>'; return; }
+  const cfg = est.dreCfg ||= { per: 'u12', mesAtual: false, meses: true, abertos: ['rec'] };
+  const mesHoje = hojeISO().slice(0, 7);
+  let meses;
+  if (cfg.per.startsWith('ano:')) {
+    const a = cfg.per.slice(4);
+    meses = Array.from({ length: 12 }, (_, i) => `${a}-${String(i + 1).padStart(2, '0')}`).filter(m => m <= mesHoje);
+  } else {
+    const n = Number(cfg.per.slice(1)), fim = cfg.mesAtual ? mesHoje : somaMes(mesHoje, -1);
+    meses = Array.from({ length: n }, (_, i) => somaMes(fim, i - n + 1));
+  }
+  const anos = [...new Set(L.map(r => r.mes.slice(0, 4)))].sort().reverse();
+  const nM = meses.length, idx = new Map(meses.map((m, i) => [m, i])), vaz = () => new Array(nM).fill(0);
+  const porConta = new Map(), porFam = new Map();
+  const acc = (map, k, i, v) => { let a = map.get(k); if (!a) map.set(k, a = vaz()); a[i] += v; };
+  for (const r of L) {
+    const i = idx.get(r.mes); if (i === undefined || ehTransferencia(r.conta)) continue;
+    const v = sinalDre(r.conta) * r.valor;
+    acc(porConta, r.conta, i, v);
+    if (r.conta === '10.01.01' || r.conta === 'CMV') acc(porFam, r.conta + '|' + famDe(r.familia), i, v);
+  }
+  const gV = {}, gC = {};
+  for (const g of DRE_GRUPOS) { gV[g.id] = vaz(); gC[g.id] = []; }
+  for (const [c, a] of porConta) { const g = grupoDre(c); gC[g].push(c); a.forEach((v, i) => { gV[g][i] += v; }); }
+  for (const g of DRE_GRUPOS) if (g.soma) gV[g.id] = meses.map((_, i) => g.soma.reduce((s, id) => s + gV[id][i], 0));
+  const tot = a => a.reduce((s, v) => s + v, 0);
+  const recT = tot(gV.rec);
+  const f = v => Math.abs(v) < 0.5 ? '–' : R0(v);
+  const cel = (a, neg) => (cfg.meses ? a.map(v => `<td class="n ${neg && v < 0 ? 'neg' : ''}">${f(v)}</td>`).join('') : '')
+    + `<td class="n ${neg && tot(a) < 0 ? 'neg' : ''}"><b>${f(tot(a))}</b></td><td class="n">${f(tot(a) / nM)}</td><td class="n sub">${recT ? pctTxt(tot(a) / recT) : ''}</td>`;
+  const linhas = []; let sep = false;
+  for (const g of DRE_GRUPOS) {
+    if (g.fora && !gC[g.id].length) continue;
+    if (g.fora && !sep) { sep = true; linhas.push(`<tr class="sep"><td colspan="${(cfg.meses ? nM : 0) + 4}">Abaixo do resultado — não entram no lucro</td></tr>`); }
+    if (g.soma) { linhas.push(`<tr class="t ${g.d ? 'd' : ''}"><td>${g.nome}</td>${cel(gV[g.id], true)}</tr>`); continue; }
+    const aberto = cfg.abertos.includes(g.id);
+    linhas.push(`<tr class="g" data-g="${g.id}"><td>${aberto ? '▾' : '▸'} ${g.nome}</td>${cel(gV[g.id])}</tr>`);
+    if (!aberto) continue;
+    for (const c of gC[g.id].sort((a, b) => Math.abs(tot(porConta.get(b))) - Math.abs(tot(porConta.get(a))))) {
+      linhas.push(`<tr><td style="padding-left:26px">${esc(c === 'CMV' ? 'Custo das mercadorias vendidas' : descConta(c))} <span class="sub">${c === 'CMV' ? '' : c}</span></td>${cel(porConta.get(c))}</tr>`);
+      if (c === '10.01.01' || c === 'CMV') {
+        const fams = [...porFam.entries()].filter(([k]) => k.startsWith(c + '|')).sort((a, b) => Math.abs(tot(b[1])) - Math.abs(tot(a[1])));
+        for (const [k, a] of fams) linhas.push(`<tr><td style="padding-left:46px" class="sub">${esc(k.split('|')[1])}</td>${cel(a)}</tr>`);
+      }
+    }
+  }
+  const t = id => tot(gV[id]);
+  const chip = (v, r) => `<button class="chip" data-per="${v}" aria-pressed="${cfg.per === v}">${r}</button>`;
+  el.innerHTML = `
+  <div class="kpis">
+    ${kpi('Receita', R0(recT), `média ${R0(recT / nM)}/mês`)}
+    ${kpi('Margem de contribuição', R0(t('mc')), recT ? pctTxt(t('mc') / recT) + ' da receita' : '', t('mc') < 0 ? 'neg' : '')}
+    ${kpi('EBITDA', R0(t('ebitda')), recT ? pctTxt(t('ebitda') / recT) + ' da receita' : '', t('ebitda') < 0 ? 'neg' : '')}
+    ${kpi('Lucro ou prejuízo', R0(t('lucro')), recT ? pctTxt(t('lucro') / recT) + ' da receita' : '', t('lucro') < 0 ? 'neg' : '')}
+  </div>
+  <div class="card cheio">
+    <div class="controles">
+      ${chip('u12', 'Últimos 12 meses')}${chip('u6', '6 meses')}${chip('u3', '3 meses')}
+      <div class="sep"></div>${anos.map(a => chip('ano:' + a, a)).join('')}
+      <div class="sep"></div>
+      ${cfg.per.startsWith('u') ? `<label class="rot"><input type="checkbox" id="dreAtual" ${cfg.mesAtual ? 'checked' : ''}> incluir mês atual (parcial)</label>` : ''}
+      <label class="rot"><input type="checkbox" id="dreMeses" ${cfg.meses ? 'checked' : ''}> mostrar meses</label>
+      <button class="chip" id="dreAbrir">Expandir tudo</button><button class="chip" id="dreFechar">Recolher tudo</button>
+    </div>
+    <div class="nota">Competência (data de emissão) · ${rotMes(meses[0])} a ${rotMes(meses[nM - 1])} · ${nM} ${nM > 1 ? 'meses' : 'mês'} · clique num grupo para abrir as contas</div>
+    <div class="tabela-wrap rolagem"><table class="dre">
+      <thead><tr><th>Conta</th>${cfg.meses ? meses.map(m => `<th class="n">${rotMes(m)}</th>`).join('') : ''}<th class="n">Total</th><th class="n">Média/mês</th><th class="n">% receita</th></tr></thead>
+      <tbody>${linhas.join('')}</tbody>
+    </table></div>
+  </div>`;
+  const re = () => renderDre(el);
+  el.querySelectorAll('[data-per]').forEach(b => b.onclick = () => { cfg.per = b.dataset.per; re(); });
+  const ma = $('#dreAtual'); if (ma) ma.onchange = e => { cfg.mesAtual = e.target.checked; re(); };
+  $('#dreMeses').onchange = e => { cfg.meses = e.target.checked; re(); };
+  el.querySelectorAll('tr.g').forEach(tr => tr.onclick = () => {
+    const i = cfg.abertos.indexOf(tr.dataset.g); if (i < 0) cfg.abertos.push(tr.dataset.g); else cfg.abertos.splice(i, 1); re();
+  });
+  $('#dreAbrir').onclick = () => { cfg.abertos = DRE_GRUPOS.filter(g => !g.soma).map(g => g.id); re(); };
+  $('#dreFechar').onclick = () => { cfg.abertos = []; re(); };
 }
 
 // ---------- títulos em aberto por data (A pagar / A receber) ----------
@@ -1581,7 +1733,7 @@ function formImportacao(i) {
 }
 
 // ======================= usuários (administrador) =======================
-const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['importacoes', 'Importações']];
+const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['dre', 'DRE e resultados'], ['importacoes', 'Importações']];
 function renderUsuarios(el) {
   const emps = Object.entries(est.empresasTodas);
   el.innerHTML = `
