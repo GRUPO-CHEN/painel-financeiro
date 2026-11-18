@@ -93,7 +93,17 @@ html.tema-escuro .demo-banner { background: #3a2e0c; color: #f5dc9a; border-colo
 .sep { width: 1px; align-self: stretch; background: var(--line); }
 
 /* abas */
-.abas { display: flex; gap: 4px; margin: 4px 0 14px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.abas { position: fixed; top: 0; left: 0; bottom: 0; width: 260px; display: flex; flex-direction: column; gap: 2px;
+  padding: 18px 10px; background: var(--surface); border-right: 1px solid var(--line); box-shadow: var(--shadow);
+  z-index: 60; transform: translateX(-105%); transition: transform .2s ease; overflow-y: auto; }
+body.menu-aberto .abas { transform: none; }
+.abas .menu-tit { font-weight: 700; padding: 6px 14px 12px; color: var(--text-3); font-size: .85em; text-transform: uppercase; letter-spacing: .05em; }
+.abas .aba { text-align: left; border-bottom: 0; border-left: 3px solid transparent; border-radius: 6px; padding: 12px 14px; margin: 0; }
+.abas .aba[aria-selected="true"] { border-left-color: var(--accent); background: var(--s1-soft); }
+#menuFundo { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 59; display: none; }
+body.menu-aberto #menuFundo { display: block; }
+#btnMenu { font-size: 22px; line-height: 1; padding: 6px 11px; }
+.aba-atual { font-size: 1.2em; font-weight: 700; margin: 4px 0 14px; }
 .aba {
   border: 0; background: none; border-radius: 0; padding: 10px 14px; color: var(--text-3);
   border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-weight: 550;
@@ -202,6 +212,15 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
 .marca .logo { height: 30px; width: auto; display: block; }
 .login-logo { height: 42px; width: auto; display: block; margin: 2px auto 14px; }
 @media (max-width: 520px) { .marca .logo { height: 24px; } }
+  .dre-per { position: relative; display: inline-block; }
+  .dre-per summary { list-style: none; cursor: pointer; }
+  .dre-per summary::-webkit-details-marker { display: none; }
+  .dre-per .arvore { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: var(--shadow); padding: 10px 14px; min-width: 230px; max-height: 380px; overflow: auto; }
+  .arvore label { display: flex; gap: 6px; align-items: center; padding: 3px 0; cursor: pointer; white-space: nowrap; }
+  .arvore .ano { display: grid; grid-template-columns: 20px 1fr; align-items: center; }
+  .arvore .tg { cursor: pointer; color: var(--text-3); user-select: none; }
+  .arvore .meses { grid-column: 2; padding-left: 4px; }
   table.dre td, table.dre th { white-space: nowrap; }
   table.dre td:first-child, table.dre th:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 230px; }
   table.dre tr.g td:first-child { cursor: pointer; font-weight: 600; }
@@ -216,6 +235,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
 <body>
 <div class="wrap">
   <header>
+    <button id="btnMenu" title="Menu" aria-label="Abrir menu">☰</button>
     <div class="marca">
       <img src="logo-feromax.png" alt="Grupo Feromax" class="logo">
       <div>
@@ -261,7 +281,10 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
     </div>
   </section>
 
+  <div id="menuFundo"></div>
+  <div class="aba-atual" id="abaAtual"></div>
   <nav class="abas" role="tablist">
+    <div class="menu-tit">Menu</div>
     <button class="aba" role="tab" data-aba="dia" aria-selected="true">Resumo do dia</button>
     <button class="aba" role="tab" data-aba="geral" aria-selected="false">Visão geral</button>
     <button class="aba" role="tab" data-aba="projecao" aria-selected="false">Fluxo projetado</button>
@@ -565,6 +588,7 @@ function configurarAbas() {
   document.querySelectorAll('.aba').forEach(b => { b.hidden = !permitidas.includes(b.dataset.aba); });
   if (!permitidas.includes(est.aba)) est.aba = permitidas[0] || null;
   document.querySelectorAll('.aba').forEach(b => b.setAttribute('aria-selected', String(b.dataset.aba === est.aba)));
+  { const at = document.querySelector(`.aba[data-aba="${est.aba}"]`); $('#abaAtual').textContent = at ? at.textContent : ''; }
   if (!est.aba) $('#conteudo').innerHTML = '<div class="card"><div class="vazio">Seu usuário não tem nenhuma área liberada.</div></div>';
 }
 
@@ -1041,17 +1065,13 @@ async function lerDre() {
 function renderDre(el) {
   const L = est.dadosDre.linhas;
   if (!L.length) { el.innerHTML = '<div class="card"><div class="vazio">O DRE aparece aqui depois da próxima atualização do sincronizador.</div></div>'; return; }
-  const cfg = est.dreCfg ||= { per: 'u12', mesAtual: false, meses: true, abertos: ['rec'] };
   const mesHoje = hojeISO().slice(0, 7);
-  let meses;
-  if (cfg.per.startsWith('ano:')) {
-    const a = cfg.per.slice(4);
-    meses = Array.from({ length: 12 }, (_, i) => `${a}-${String(i + 1).padStart(2, '0')}`).filter(m => m <= mesHoje);
-  } else {
-    const n = Number(cfg.per.slice(1)), fim = cfg.mesAtual ? mesHoje : somaMes(mesHoje, -1);
-    meses = Array.from({ length: n }, (_, i) => somaMes(fim, i - n + 1));
-  }
-  const anos = [...new Set(L.map(r => r.mes.slice(0, 4)))].sort().reverse();
+  const disp = [...new Set(L.map(r => r.mes))].filter(m => m <= mesHoje).sort();
+  const ultimos = n => { const fim = somaMes(mesHoje, -1); return Array.from({ length: n }, (_, k) => somaMes(fim, k - n + 1)); };
+  const cfg = est.dreCfg ||= { sel: ultimos(12), meses: true, abertos: ['rec'], anosAbertos: [], perAberto: false, ir: 'prov' };
+  const sel = new Set(cfg.sel);
+  const meses = disp.filter(m => sel.has(m));
+  const anos = [...new Set(disp.map(m => m.slice(0, 4)))].sort().reverse();
   const nM = meses.length, idx = new Map(meses.map((m, i) => [m, i])), vaz = () => new Array(nM).fill(0);
   const porConta = new Map(), porFam = new Map();
   const acc = (map, k, i, v) => { let a = map.get(k); if (!a) map.set(k, a = vaz()); a[i] += v; };
@@ -1063,6 +1083,14 @@ function renderDre(el) {
   }
   const gV = {}, gC = {};
   for (const g of DRE_GRUPOS) { gV[g.id] = vaz(); gC[g.id] = []; }
+  // IR/CSLL: provisão = receita do mês × % efetivo médio dos últimos 12 meses (como a planilha)
+  const CONTAS_REC = DRE_GRUPOS[0].contas;
+  if (cfg.ir === 'prov' && nM) {
+    const jan = new Set(ultimos(12)), ir = { '21.02.01': 0, '21.02.11': 0 }; let rec12 = 0;
+    for (const r of L) if (jan.has(r.mes)) { if (r.conta in ir) ir[r.conta] += r.valor; else if (CONTAS_REC.includes(r.conta)) rec12 += r.valor; }
+    const recMes = meses.map((_, k) => CONTAS_REC.reduce((s2, c) => s2 + ((porConta.get(c) || [])[k] || 0), 0));
+    for (const c of Object.keys(ir)) porConta.set(c, recMes.map(v => -v * (rec12 ? ir[c] / rec12 : 0)));
+  }
   for (const [c, a] of porConta) { const g = grupoDre(c); gC[g].push(c); a.forEach((v, i) => { gV[g][i] += v; }); }
   for (const g of DRE_GRUPOS) if (g.soma) gV[g.id] = meses.map((_, i) => g.soma.reduce((s, id) => s + gV[id][i], 0));
   const tot = a => a.reduce((s, v) => s + v, 0);
@@ -1087,7 +1115,17 @@ function renderDre(el) {
     }
   }
   const t = id => tot(gV[id]);
-  const chip = (v, r) => `<button class="chip" data-per="${v}" aria-pressed="${cfg.per === v}">${r}</button>`;
+  const MESES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const arvore = `<div class="arvore">
+    <label><input type="checkbox" data-tudo ${nM === disp.length ? 'checked' : ''}> (Selecionar tudo)</label>
+    ${anos.map(a => {
+      const ms = disp.filter(m => m.startsWith(a)), n = ms.filter(m => sel.has(m)).length, ab = cfg.anosAbertos.includes(a);
+      return `<div class="ano"><span class="tg" data-tg="${a}">${ab ? '⊟' : '⊞'}</span>
+        <label><input type="checkbox" data-ano="${a}" ${n === ms.length ? 'checked' : ''} ${n && n < ms.length ? 'data-meio="1"' : ''}> ${a}</label>
+        ${ab ? `<div class="meses">${ms.map(m => `<label><input type="checkbox" data-mes="${m}" ${sel.has(m) ? 'checked' : ''}> ${MESES_NOME[Number(m.slice(5, 7)) - 1]}</label>`).join('')}</div>` : ''}</div>`;
+    }).join('')}
+  </div>`;
+  const rotPer = nM ? `${rotMes(meses[0])} a ${rotMes(meses[nM - 1])} · ${nM} ${nM > 1 ? 'meses' : 'mês'}` : 'nenhum mês';
   el.innerHTML = `
   <div class="kpis">
     ${kpi('Receita', R0(recT), `média ${R0(recT / nM)}/mês`)}
@@ -1097,22 +1135,43 @@ function renderDre(el) {
   </div>
   <div class="card cheio">
     <div class="controles">
-      ${chip('u12', 'Últimos 12 meses')}${chip('u6', '6 meses')}${chip('u3', '3 meses')}
-      <div class="sep"></div>${anos.map(a => chip('ano:' + a, a)).join('')}
+      <details class="dre-per" ${cfg.perAberto ? 'open' : ''}><summary class="chip">📅 ${rotPer} ▾</summary>${arvore}</details>
+      <button class="chip" data-atalho="12">Últimos 12</button><button class="chip" data-atalho="6">6</button><button class="chip" data-atalho="3">3</button><button class="chip" data-atalho="ano">Este ano</button>
       <div class="sep"></div>
-      ${cfg.per.startsWith('u') ? `<label class="rot"><input type="checkbox" id="dreAtual" ${cfg.mesAtual ? 'checked' : ''}> incluir mês atual (parcial)</label>` : ''}
       <label class="rot"><input type="checkbox" id="dreMeses" ${cfg.meses ? 'checked' : ''}> mostrar meses</label>
+      <label class="rot">IR/CSLL <select id="dreIr"><option value="prov" ${cfg.ir === 'prov' ? 'selected' : ''}>provisão (% médio 12m)</option><option value="real" ${cfg.ir === 'real' ? 'selected' : ''}>real (títulos)</option></select></label>
       <button class="chip" id="dreAbrir">Expandir tudo</button><button class="chip" id="dreFechar">Recolher tudo</button>
     </div>
-    <div class="nota">Competência (data de emissão) · ${rotMes(meses[0])} a ${rotMes(meses[nM - 1])} · ${nM} ${nM > 1 ? 'meses' : 'mês'} · clique num grupo para abrir as contas</div>
-    <div class="tabela-wrap rolagem"><table class="dre">
+    <div class="nota">Competência (data de emissão) · ${rotPer} · clique num grupo para abrir as contas</div>
+    ${!nM ? '<div class="vazio">Selecione pelo menos um mês no período.</div>' : `<div class="tabela-wrap rolagem"><table class="dre">
       <thead><tr><th>Conta</th>${cfg.meses ? meses.map(m => `<th class="n">${rotMes(m)}</th>`).join('') : ''}<th class="n">Total</th><th class="n">Média/mês</th><th class="n">% receita</th></tr></thead>
       <tbody>${linhas.join('')}</tbody>
-    </table></div>
+    </table></div>`}
   </div>`;
-  const re = () => renderDre(el);
-  el.querySelectorAll('[data-per]').forEach(b => b.onclick = () => { cfg.per = b.dataset.per; re(); });
-  const ma = $('#dreAtual'); if (ma) ma.onchange = e => { cfg.mesAtual = e.target.checked; re(); };
+  // re-desenha mantendo a posição da tela e da rolagem lateral da tabela
+  const re = () => {
+    const y = window.scrollY, w = el.querySelector('.tabela-wrap'), x = w ? w.scrollLeft : 0;
+    renderDre(el); window.scrollTo(0, y);
+    const w2 = el.querySelector('.tabela-wrap'); if (w2) w2.scrollLeft = x;
+  };
+  const setSel = lista => { cfg.sel = [...new Set(lista)].sort(); re(); };
+  el.querySelectorAll('[data-meio]').forEach(i => { i.indeterminate = true; });
+  const det = el.querySelector('.dre-per'); det.ontoggle = () => { cfg.perAberto = det.open; };
+  el.querySelector('[data-tudo]').onchange = e => setSel(e.target.checked ? disp : []);
+  el.querySelectorAll('[data-ano]').forEach(c => c.onchange = () => {
+    const ms = disp.filter(m => m.startsWith(c.dataset.ano));
+    setSel(c.checked ? [...cfg.sel, ...ms] : cfg.sel.filter(m => !ms.includes(m)));
+  });
+  el.querySelectorAll('[data-mes]').forEach(c => c.onchange = () =>
+    setSel(c.checked ? [...cfg.sel, c.dataset.mes] : cfg.sel.filter(m => m !== c.dataset.mes)));
+  el.querySelectorAll('[data-tg]').forEach(t => t.onclick = () => {
+    const a = t.dataset.tg, k = cfg.anosAbertos.indexOf(a); if (k < 0) cfg.anosAbertos.push(a); else cfg.anosAbertos.splice(k, 1); re();
+  });
+  el.querySelectorAll('[data-atalho]').forEach(b => b.onclick = () => {
+    cfg.perAberto = false;
+    setSel(b.dataset.atalho === 'ano' ? disp.filter(m => m.startsWith(mesHoje.slice(0, 4))) : ultimos(Number(b.dataset.atalho)));
+  });
+  $('#dreIr').onchange = e => { cfg.ir = e.target.value; re(); };
   $('#dreMeses').onchange = e => { cfg.meses = e.target.checked; re(); };
   el.querySelectorAll('tr.g').forEach(tr => tr.onclick = () => {
     const i = cfg.abertos.indexOf(tr.dataset.g); if (i < 0) cfg.abertos.push(tr.dataset.g); else cfg.abertos.splice(i, 1); re();
@@ -2019,9 +2078,14 @@ for (const id of ['#dtIni', '#dtFim']) {
     carregar();
   });
 }
+const fecharMenu = () => document.body.classList.remove('menu-aberto');
+$('#btnMenu').onclick = () => document.body.classList.toggle('menu-aberto');
+$('#menuFundo').onclick = fecharMenu;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharMenu(); });
 document.querySelectorAll('.aba').forEach(b => b.onclick = () => {
-  est.aba = b.dataset.aba;
+  est.aba = b.dataset.aba; fecharMenu();
   document.querySelectorAll('.aba').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+  $('#abaAtual').textContent = b.textContent;
   render();
   carregar();
 });
