@@ -1081,7 +1081,7 @@ function renderDre(el) {
   const mesHoje = hojeISO().slice(0, 7);
   const disp = [...new Set(L.map(r => r.mes))].filter(m => m <= mesHoje).sort();
   const ultimos = n => { const fim = somaMes(mesHoje, -1); return Array.from({ length: n }, (_, k) => somaMes(fim, k - n + 1)); };
-  const cfg = est.dreCfg ||= { sel: ultimos(12), meses: window.innerWidth > 700, abertos: ['rec'], anosAbertos: [], perAberto: false, ir: 'prov' };
+  const cfg = est.dreCfg ||= { sel: ultimos(12), meses: window.innerWidth > 700, abertos: ['rec'], anosAbertos: [], perAberto: false, ir: 'trim' };
   const sel = new Set(cfg.sel);
   const meses = disp.filter(m => sel.has(m));
   const anos = [...new Set(disp.map(m => m.slice(0, 4)))].sort().reverse();
@@ -1096,13 +1096,25 @@ function renderDre(el) {
   }
   const gV = {}, gC = {};
   for (const g of DRE_GRUPOS) { gV[g.id] = vaz(); gC[g.id] = []; }
-  // IR/CSLL: provisão = receita do mês × % efetivo médio dos últimos 12 meses (como a planilha)
+  // IR/CSLL trimestral: o título emitido num trimestre é do trimestre anterior (pago no trimestre seguinte).
+  // Trimestres já pagos = valor efetivo rateado pela receita de cada mês; depois = % efetivo do último trimestre pago.
   const CONTAS_REC = DRE_GRUPOS[0].contas;
-  if (cfg.ir === 'prov' && nM) {
-    const jan = new Set(ultimos(12)), ir = { '21.02.01': 0, '21.02.11': 0 }; let rec12 = 0;
-    for (const r of L) if (jan.has(r.mes)) { if (r.conta in ir) ir[r.conta] += r.valor; else if (CONTAS_REC.includes(r.conta)) rec12 += r.valor; }
-    const recMes = meses.map((_, k) => CONTAS_REC.reduce((s2, c) => s2 + ((porConta.get(c) || [])[k] || 0), 0));
-    for (const c of Object.keys(ir)) porConta.set(c, recMes.map(v => -v * (rec12 ? ir[c] / rec12 : 0)));
+  let notaIr = '';
+  if (cfg.ir !== 'real' && nM) {
+    const trim = m => m.slice(0, 4) + 'T' + (Math.floor((Number(m.slice(5, 7)) - 1) / 3) + 1);
+    const trimAnt = t => { let a = Number(t.slice(0, 4)), q = Number(t.slice(5)) - 1; if (!q) { q = 4; a--; } return a + 'T' + q; };
+    const recMesAll = {}, recTri = {}, irTri = { '21.02.01': {}, '21.02.11': {} };
+    for (const r of L) {
+      if (CONTAS_REC.includes(r.conta)) { recMesAll[r.mes] = (recMesAll[r.mes] || 0) + r.valor; const t = trim(r.mes); recTri[t] = (recTri[t] || 0) + r.valor; }
+      else if (r.conta in irTri) { const t = trimAnt(trim(r.mes)); irTri[r.conta][t] = (irTri[r.conta][t] || 0) + r.valor; }
+    }
+    const ult = [...new Set([...Object.keys(irTri['21.02.01']), ...Object.keys(irTri['21.02.11'])])].sort().at(-1);
+    const taxa = c => ult && recTri[ult] ? (irTri[c][ult] || 0) / recTri[ult] : 0;
+    for (const c of Object.keys(irTri)) porConta.set(c, meses.map(m => {
+      const t = trim(m), rm = recMesAll[m] || 0;
+      return -(ult && t <= ult ? (recTri[t] ? (irTri[c][t] || 0) * rm / recTri[t] : 0) : rm * taxa(c));
+    }));
+    if (ult) notaIr = ` · IR/CSLL efetivo até o ${ult.slice(5)}º tri/${ult.slice(0, 4)} (rateado pela receita); depois, % do último trimestre pago: IRPJ ${pctTxt(taxa('21.02.01'))} e CSLL ${pctTxt(taxa('21.02.11'))}`;
   }
   for (const [c, a] of porConta) { const g = grupoDre(c); gC[g].push(c); a.forEach((v, i) => { gV[g][i] += v; }); }
   for (const g of DRE_GRUPOS) if (g.soma) gV[g.id] = meses.map((_, i) => g.soma.reduce((s, id) => s + gV[id][i], 0));
@@ -1152,10 +1164,10 @@ function renderDre(el) {
       <button class="chip" data-atalho="12">Últimos 12</button><button class="chip" data-atalho="6">6</button><button class="chip" data-atalho="3">3</button><button class="chip" data-atalho="ano">Este ano</button>
       <div class="sep"></div>
       <label class="rot"><input type="checkbox" id="dreMeses" ${cfg.meses ? 'checked' : ''}> mostrar meses</label>
-      <label class="rot">IR/CSLL <select id="dreIr"><option value="prov" ${cfg.ir === 'prov' ? 'selected' : ''}>provisão (% médio 12m)</option><option value="real" ${cfg.ir === 'real' ? 'selected' : ''}>real (títulos)</option></select></label>
+      <label class="rot">IR/CSLL <select id="dreIr"><option value="trim" ${cfg.ir !== 'real' ? 'selected' : ''}>efetivo trimestral</option><option value="real" ${cfg.ir === 'real' ? 'selected' : ''}>títulos pela emissão</option></select></label>
       <button class="chip" id="dreAbrir">Expandir tudo</button><button class="chip" id="dreFechar">Recolher tudo</button>
     </div>
-    <div class="nota">Competência (data de emissão) · ${rotPer} · clique num grupo para abrir as contas</div>
+    <div class="nota">Competência (data de emissão) · ${rotPer}${notaIr} · clique num grupo para abrir as contas</div>
     ${!nM ? '<div class="vazio">Selecione pelo menos um mês no período.</div>' : `<div class="tabela-wrap rolagem"><table class="dre">
       <thead><tr><th>Conta</th>${cfg.meses ? meses.map(m => `<th class="n">${rotMes(m)}</th>`).join('') : ''}<th class="n">Total</th><th class="n">Média/mês</th><th class="n">% receita</th></tr></thead>
       <tbody>${linhas.join('')}</tbody>
