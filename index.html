@@ -224,6 +224,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
   .arvore .tg { cursor: pointer; color: var(--text-3); user-select: none; }
   .arvore .meses { grid-column: 2; padding-left: 4px; }
   table.dre td, table.dre th { white-space: nowrap; }
+  table.dre tr[hidden] { display: none; }
   table.dre td:first-child, table.dre th:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 230px; }
   table.dre tr.g td:first-child { cursor: pointer; font-weight: 600; }
   table.dre tr.g:hover td { background: var(--s1-soft); }
@@ -1081,7 +1082,7 @@ function renderDre(el) {
   const mesHoje = hojeISO().slice(0, 7);
   const disp = [...new Set(L.map(r => r.mes))].filter(m => m <= mesHoje).sort();
   const ultimos = n => { const fim = somaMes(mesHoje, -1); return Array.from({ length: n }, (_, k) => somaMes(fim, k - n + 1)); };
-  const cfg = est.dreCfg ||= { sel: ultimos(12), meses: window.innerWidth > 700, abertos: ['rec'], anosAbertos: [], perAberto: false, ir: 'trim' };
+  const cfg = est.dreCfg ||= { sel: [...ultimos(12), mesHoje], meses: window.innerWidth > 700, abertos: ['rec'], anosAbertos: [], perAberto: false };
   const sel = new Set(cfg.sel);
   const meses = disp.filter(m => sel.has(m));
   const anos = [...new Set(disp.map(m => m.slice(0, 4)))].sort().reverse();
@@ -1096,46 +1097,43 @@ function renderDre(el) {
   }
   const gV = {}, gC = {};
   for (const g of DRE_GRUPOS) { gV[g.id] = vaz(); gC[g.id] = []; }
-  // IR/CSLL trimestral: o título emitido num trimestre é do trimestre anterior (pago no trimestre seguinte).
-  // Trimestres já pagos = valor efetivo rateado pela receita de cada mês; depois = % efetivo do último trimestre pago.
+  // IR/CSLL = títulos pela data de emissão (já cadastrados rateados mês a mês).
+  // Mês atual (parcial), sem título ainda: provisão = receita da empresa 1 no mês × % do mês anterior da empresa 1.
   const CONTAS_REC = DRE_GRUPOS[0].contas;
+  const iAtual = meses.indexOf(mesHoje);
   let notaIr = '';
-  if (cfg.ir !== 'real' && nM) {
-    const trim = m => m.slice(0, 4) + 'T' + (Math.floor((Number(m.slice(5, 7)) - 1) / 3) + 1);
-    const trimAnt = t => { let a = Number(t.slice(0, 4)), q = Number(t.slice(5)) - 1; if (!q) { q = 4; a--; } return a + 'T' + q; };
-    const recMesAll = {}, recTri = {}, irTri = { '21.02.01': {}, '21.02.11': {} };
-    for (const r of L) {
-      if (CONTAS_REC.includes(r.conta)) { recMesAll[r.mes] = (recMesAll[r.mes] || 0) + r.valor; const t = trim(r.mes); recTri[t] = (recTri[t] || 0) + r.valor; }
-      else if (r.conta in irTri) { const t = trimAnt(trim(r.mes)); irTri[r.conta][t] = (irTri[r.conta][t] || 0) + r.valor; }
+  if (iAtual >= 0) {
+    const ant = somaMes(mesHoje, -1);
+    const s1 = (mes, ok) => L.reduce((t, r) => t + (Number(r.empresa) === 1 && r.mes === mes && ok(r.conta) ? r.valor : 0), 0);
+    const recAnt = s1(ant, c => CONTAS_REC.includes(c)), recAtu = s1(mesHoje, c => CONTAS_REC.includes(c)), tx = {};
+    for (const c of ['21.02.01', '21.02.11']) {
+      tx[c] = recAnt ? s1(ant, x => x === c) / recAnt : 0;
+      if (!s1(mesHoje, x => x === c) && tx[c]) { let a = porConta.get(c); if (!a) porConta.set(c, a = vaz()); a[iAtual] -= recAtu * tx[c]; }
     }
-    const ult = [...new Set([...Object.keys(irTri['21.02.01']), ...Object.keys(irTri['21.02.11'])])].sort().at(-1);
-    const taxa = c => ult && recTri[ult] ? (irTri[c][ult] || 0) / recTri[ult] : 0;
-    for (const c of Object.keys(irTri)) porConta.set(c, meses.map(m => {
-      const t = trim(m), rm = recMesAll[m] || 0;
-      return -(ult && t <= ult ? (recTri[t] ? (irTri[c][t] || 0) * rm / recTri[t] : 0) : rm * taxa(c));
-    }));
-    if (ult) notaIr = ` · IR/CSLL efetivo até o ${ult.slice(5)}º tri/${ult.slice(0, 4)} (rateado pela receita); depois, % do último trimestre pago: IRPJ ${pctTxt(taxa('21.02.01'))} e CSLL ${pctTxt(taxa('21.02.11'))}`;
+    if (tx['21.02.01'] || tx['21.02.11']) notaIr = ` · ${rotMes(mesHoje)}* parcial: IRPJ/CSLL provisionados com ${pctTxt(tx['21.02.01'])} / ${pctTxt(tx['21.02.11'])} da receita da empresa 1 (% de ${rotMes(ant)})`;
   }
   for (const [c, a] of porConta) { const g = grupoDre(c); gC[g].push(c); a.forEach((v, i) => { gV[g][i] += v; }); }
   for (const g of DRE_GRUPOS) if (g.soma) gV[g.id] = meses.map((_, i) => g.soma.reduce((s, id) => s + gV[id][i], 0));
   const tot = a => a.reduce((s, v) => s + v, 0);
+  const tiraParcial = iAtual >= 0 && nM > 1, nMed = tiraParcial ? nM - 1 : nM;
+  const med = a => (tot(a) - (tiraParcial ? a[iAtual] : 0)) / nMed;
   const recT = tot(gV.rec);
   const f = v => Math.abs(v) < 0.5 ? '–' : R0(v);
   const cel = (a, neg) => (cfg.meses ? a.map(v => `<td class="n ${neg && v < 0 ? 'neg' : ''}">${f(v)}</td>`).join('') : '')
-    + `<td class="n ${neg && tot(a) < 0 ? 'neg' : ''}"><b>${f(tot(a))}</b></td><td class="n">${f(tot(a) / nM)}</td><td class="n sub">${recT ? pctTxt(tot(a) / recT) : ''}</td>`;
+    + `<td class="n ${neg && tot(a) < 0 ? 'neg' : ''}"><b>${f(tot(a))}</b></td><td class="n">${f(med(a))}</td><td class="n sub">${recT ? pctTxt(tot(a) / recT) : ''}</td>`;
   const linhas = []; let sep = false;
   for (const g of DRE_GRUPOS) {
     if (g.fora && !gC[g.id].length) continue;
     if (g.fora && !sep) { sep = true; linhas.push(`<tr class="sep"><td colspan="${(cfg.meses ? nM : 0) + 4}">Abaixo do resultado — não entram no lucro</td></tr>`); }
     if (g.soma) { linhas.push(`<tr class="t ${g.d ? 'd' : ''}"><td>${g.nome}</td>${cel(gV[g.id], true)}</tr>`); continue; }
     const aberto = cfg.abertos.includes(g.id);
-    linhas.push(`<tr class="g" data-g="${g.id}"><td>${aberto ? '▾' : '▸'} ${g.nome}</td>${cel(gV[g.id])}</tr>`);
-    if (!aberto) continue;
+    const h = aberto ? '' : ' hidden';
+    linhas.push(`<tr class="g" data-g="${g.id}"><td><span class="seta-g">${aberto ? '▾' : '▸'}</span> ${g.nome}</td>${cel(gV[g.id])}</tr>`);
     for (const c of gC[g.id].sort((a, b) => Math.abs(tot(porConta.get(b))) - Math.abs(tot(porConta.get(a))))) {
-      linhas.push(`<tr><td style="padding-left:26px">${esc(c === 'CMV' ? 'Custo das mercadorias vendidas' : descConta(c))} <span class="sub">${c === 'CMV' ? '' : c}</span></td>${cel(porConta.get(c))}</tr>`);
+      linhas.push(`<tr data-pai="${g.id}"${h}><td style="padding-left:26px">${esc(c === 'CMV' ? 'Custo das mercadorias vendidas' : descConta(c))} <span class="sub">${c === 'CMV' ? '' : c}</span></td>${cel(porConta.get(c))}</tr>`);
       if (c === '10.01.01' || c === 'CMV') {
         const fams = [...porFam.entries()].filter(([k]) => k.startsWith(c + '|')).sort((a, b) => Math.abs(tot(b[1])) - Math.abs(tot(a[1])));
-        for (const [k, a] of fams) linhas.push(`<tr><td style="padding-left:46px" class="sub">${esc(k.split('|')[1])}</td>${cel(a)}</tr>`);
+        for (const [k, a] of fams) linhas.push(`<tr data-pai="${g.id}"${h}><td style="padding-left:46px" class="sub">${esc(k.split('|')[1])}</td>${cel(a)}</tr>`);
       }
     }
   }
@@ -1153,7 +1151,7 @@ function renderDre(el) {
   const rotPer = nM ? `${rotMes(meses[0])} a ${rotMes(meses[nM - 1])} · ${nM} ${nM > 1 ? 'meses' : 'mês'}` : 'nenhum mês';
   el.innerHTML = `
   <div class="kpis">
-    ${kpi('Receita', R0(recT), `média ${R0(recT / nM)}/mês`)}
+    ${kpi('Receita', R0(recT), `média ${R0(med(gV.rec))}/mês`)}
     ${kpi('Margem de contribuição', R0(t('mc')), recT ? pctTxt(t('mc') / recT) + ' da receita' : '', t('mc') < 0 ? 'neg' : '')}
     ${kpi('EBITDA', R0(t('ebitda')), recT ? pctTxt(t('ebitda') / recT) + ' da receita' : '', t('ebitda') < 0 ? 'neg' : '')}
     ${kpi('Lucro ou prejuízo', R0(t('lucro')), recT ? pctTxt(t('lucro') / recT) + ' da receita' : '', t('lucro') < 0 ? 'neg' : '')}
@@ -1164,20 +1162,20 @@ function renderDre(el) {
       <button class="chip" data-atalho="12">Últimos 12</button><button class="chip" data-atalho="6">6</button><button class="chip" data-atalho="3">3</button><button class="chip" data-atalho="ano">Este ano</button>
       <div class="sep"></div>
       <label class="rot"><input type="checkbox" id="dreMeses" ${cfg.meses ? 'checked' : ''}> mostrar meses</label>
-      <label class="rot">IR/CSLL <select id="dreIr"><option value="trim" ${cfg.ir !== 'real' ? 'selected' : ''}>efetivo trimestral</option><option value="real" ${cfg.ir === 'real' ? 'selected' : ''}>títulos pela emissão</option></select></label>
+
       <button class="chip" id="dreAbrir">Expandir tudo</button><button class="chip" id="dreFechar">Recolher tudo</button>
     </div>
     <div class="nota">Competência (data de emissão) · ${rotPer}${notaIr} · clique num grupo para abrir as contas</div>
     ${!nM ? '<div class="vazio">Selecione pelo menos um mês no período.</div>' : `<div class="tabela-wrap rolagem"><table class="dre">
-      <thead><tr><th>Conta</th>${cfg.meses ? meses.map(m => `<th class="n">${rotMes(m)}</th>`).join('') : ''}<th class="n">Total</th><th class="n">Média/mês</th><th class="n">% receita</th></tr></thead>
+      <thead><tr><th>Conta</th>${cfg.meses ? meses.map(m => `<th class="n">${rotMes(m)}${m === mesHoje ? '*' : ''}</th>`).join('') : ''}<th class="n">Total</th><th class="n" title="${tiraParcial ? 'sem o mês parcial' : ''}">Média/mês${tiraParcial ? '*' : ''}</th><th class="n">% receita</th></tr></thead>
       <tbody>${linhas.join('')}</tbody>
     </table></div>`}
   </div>`;
   // re-desenha mantendo a posição da tela e da rolagem lateral da tabela
   const re = () => {
-    const y = window.scrollY, w = el.querySelector('.tabela-wrap'), x = w ? w.scrollLeft : 0;
+    const y = window.scrollY, w = el.querySelector('.tabela-wrap'), x = w ? w.scrollLeft : 0, yt = w ? w.scrollTop : 0;
     renderDre(el); window.scrollTo(0, y);
-    const w2 = el.querySelector('.tabela-wrap'); if (w2) w2.scrollLeft = x;
+    const w2 = el.querySelector('.tabela-wrap'); if (w2) { w2.scrollLeft = x; w2.scrollTop = yt; }
   };
   const setSel = lista => { cfg.sel = [...new Set(lista)].sort(); re(); };
   el.querySelectorAll('[data-meio]').forEach(i => { i.indeterminate = true; });
@@ -1194,15 +1192,18 @@ function renderDre(el) {
   });
   el.querySelectorAll('[data-atalho]').forEach(b => b.onclick = () => {
     cfg.perAberto = false;
-    setSel(b.dataset.atalho === 'ano' ? disp.filter(m => m.startsWith(mesHoje.slice(0, 4))) : ultimos(Number(b.dataset.atalho)));
+    setSel(b.dataset.atalho === 'ano' ? disp.filter(m => m.startsWith(mesHoje.slice(0, 4))) : [...ultimos(Number(b.dataset.atalho)), mesHoje]);
   });
-  $('#dreIr').onchange = e => { cfg.ir = e.target.value; re(); };
+
   $('#dreMeses').onchange = e => { cfg.meses = e.target.checked; re(); };
-  el.querySelectorAll('tr.g').forEach(tr => tr.onclick = () => {
-    const i = cfg.abertos.indexOf(tr.dataset.g); if (i < 0) cfg.abertos.push(tr.dataset.g); else cfg.abertos.splice(i, 1); re();
-  });
-  $('#dreAbrir').onclick = () => { cfg.abertos = DRE_GRUPOS.filter(g => !g.soma).map(g => g.id); re(); };
-  $('#dreFechar').onclick = () => { cfg.abertos = []; re(); };
+  const marcar = (id, ab) => {
+    const k = cfg.abertos.indexOf(id); if (ab && k < 0) cfg.abertos.push(id); if (!ab && k >= 0) cfg.abertos.splice(k, 1);
+    el.querySelectorAll(`tr[data-pai="${id}"]`).forEach(r => { r.hidden = !ab; });
+    const sp = el.querySelector(`tr.g[data-g="${id}"] .seta-g`); if (sp) sp.textContent = ab ? '▾' : '▸';
+  };
+  el.querySelectorAll('tr.g').forEach(tr => tr.onclick = () => marcar(tr.dataset.g, !cfg.abertos.includes(tr.dataset.g)));
+  $('#dreAbrir').onclick = () => DRE_GRUPOS.filter(g => !g.soma).forEach(g => marcar(g.id, true));
+  $('#dreFechar').onclick = () => DRE_GRUPOS.filter(g => !g.soma).forEach(g => marcar(g.id, false));
 }
 
 // ---------- títulos em aberto por data (A pagar / A receber) ----------
