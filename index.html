@@ -574,7 +574,8 @@ const ger = t => est.geracoes[t] ?? -1;
 async function lerPainel() {
   await lerGeracoes();
   const emps = est.empresas;
-  const [saldos, tits, faixas, venc] = await Promise.all([
+  const querAbertos = temArea('titulos') && ['pagar', 'receber'].includes(est.aba) && ger('titulos_abertos') >= 0;
+  const [saldos, tits, faixas, venc, abertos] = await Promise.all([
     temArea('caixa') ? buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,data,saldo,entradas,saidas')
       .eq('geracao', ger('saldo_diario')).in('empresa', emps).gte('data', est.inicio).lte('data', est.fim)
       .order('data').order('empresa').order('banco')) : [],
@@ -585,6 +586,8 @@ async function lerPainel() {
       .eq('geracao', ger('inadimplencia')).in('empresa', emps).order('empresa').order('faixa')) : [],
     temArea('titulos') ? buscarTodos(() => sb.from('vencidos_cliente').select('empresa,cod_cliente,nome,qtd,valor,dias_max')
       .eq('geracao', ger('vencidos_cliente')).in('empresa', emps).order('valor', { ascending: false })) : [],
+    querAbertos ? buscarTodos(() => sb.from('titulos_abertos').select('tipo,empresa,vencimento,titulo,parcela,cod,nome,conta,aberto')
+      .eq('geracao', ger('titulos_abertos')).in('empresa', emps).order('vencimento').order('tipo').order('titulo')) : null,
   ]);
   const contasPagar = (est.contas.pagar || []).map(Number);
   const semTransf = tits.filter(r => !ehTransferencia(`${r.conta}.${r.sub_conta}`));
@@ -609,6 +612,7 @@ async function lerPainel() {
     bancos: saldos.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => [r.empresa, r.banco, r.data, Number(r.saldo), Number(r.entradas), Number(r.saidas)]),
     pagar, receber: [...rec.values()], faixas: [...fx.values()],
     topAtraso: [...cli.values()].sort((a, b) => b.valor - a.valor).slice(0, 10),
+    abertos: abertos ? abertos.filter(t => !ehTransferencia(t.conta)).map(t => ({ ...t, aberto: Number(t.aberto) })) : null,
   };
 }
 
@@ -965,6 +969,66 @@ function htmlBancos(c) {
   </div>`;
 }
 
+// ---------- títulos em aberto por data (A pagar / A receber) ----------
+function abertosDoTipo(tipo) {
+  const d = est.dados; if (!d.abertos) return null;
+  const cp = (est.contas.pagar || []).map(Number);
+  return d.abertos.filter(t => t.tipo === tipo && (tipo !== 'P' || !cp.length || cp.includes(Number(String(t.conta).split('.')[0]))));
+}
+function htmlQuem(tipo) {
+  const quem = tipo === 'P' ? 'Fornecedor' : 'Cliente';
+  const titulo = tipo === 'P' ? 'Quem vamos pagar' : 'Quem vamos receber';
+  const lista0 = abertosDoTipo(tipo);
+  if (!lista0) return `<div class="card cheio"><h2>${titulo}</h2><div class="vazio">Disponível depois que a atualização do sistema (migração + sincronizador) for concluída.</div></div>`;
+  est.diaTit ||= hojeISO();
+  const lista = lista0.filter(t => t.vencimento === est.diaTit).sort((a, b) => b.aberto - a.aberto);
+  const tot = lista.reduce((s, t) => s + t.aberto, 0);
+  const multi = est.empresas.length > 1;
+  const dow = parseISO(est.diaTit).toLocaleDateString('pt-BR', { weekday: 'long' });
+  return `<div class="card cheio">
+    <h2>${titulo}</h2>
+    <div class="controles">
+      <button class="seta" data-tit="-1" title="Dia anterior">‹</button>
+      <input type="date" id="diaTit" value="${est.diaTit}">
+      <button class="seta" data-tit="1" title="Próximo dia">›</button>
+      <button class="chip" data-tit="0">Hoje</button>
+      <span class="rot" style="text-transform:capitalize">${dow}</span>
+    </div>
+    <div class="nota">Títulos em aberto com vencimento neste dia</div>
+    ${!lista.length ? '<div class="vazio">Nenhum título em aberto vencendo neste dia</div>' : `<div class="tabela-wrap rolagem"><table>
+      <thead><tr><th>${quem}</th><th class="opc">Título</th><th class="opc">Conta</th>${multi ? '<th class="opc">Empresa</th>' : ''}<th class="n">Em aberto</th></tr></thead>
+      <tbody>${lista.map(t => `<tr><td>${esc(t.nome || (quem + ' ' + (t.cod || '')))}</td><td class="sub opc">${esc(t.titulo || '')}/${esc(t.parcela || '')}</td>
+        <td class="sub opc">${esc(descConta(t.conta))}</td>${multi ? `<td class="sub opc">${esc(nomeEmpresa(t.empresa))}</td>` : ''}<td class="n">${R(t.aberto)}</td></tr>`).join('')}
+        <tr class="total"><td>Total · ${lista.length} título${lista.length > 1 ? 's' : ''}</td><td class="opc" colspan="${multi ? 3 : 2}"></td><td class="n">${R(tot)}</td></tr>
+      </tbody></table></div>`}
+  </div>`;
+}
+function ligarQuem() {
+  const ir = dia => { if (dia) { est.diaTit = dia; render(); } };
+  document.querySelectorAll('[data-tit]').forEach(b => b.onclick = () => {
+    const n = Number(b.dataset.tit); ir(n ? somaDias(est.diaTit, n) : hojeISO());
+  });
+  const inp = $('#diaTit'); if (inp) inp.onchange = ev => ir(ev.target.value);
+  document.querySelectorAll('[data-atraso]').forEach(b => b.onclick = () => { est.periodoAtraso = b.dataset.atraso; render(); });
+}
+// maiores clientes em atraso, com filtro de período pelo vencimento
+function topAtrasoPeriodo() {
+  const lista0 = abertosDoTipo('R');
+  if (!lista0) return null;
+  const hoje = hojeISO(), per = est.periodoAtraso || 'todos';
+  const desde = per === 'ano' ? hoje.slice(0, 4) + '-01-01'
+    : per === '6m' ? (() => { const x = parseISO(hoje); x.setMonth(x.getMonth() - 6); return iso(x); })() : '';
+  const m = new Map();
+  for (const t of lista0) {
+    if (!(t.vencimento < hoje) || (desde && t.vencimento < desde)) continue;
+    const k = t.cod || t.nome;
+    const x = m.get(k) || { nome: t.nome || `Cliente ${t.cod}`, qtd: 0, valor: 0, dias: 0 };
+    x.qtd++; x.valor += t.aberto; x.dias = Math.max(x.dias, Math.round((parseISO(hoje) - parseISO(t.vencimento)) / 864e5));
+    m.set(k, x);
+  }
+  return [...m.values()].sort((a, b) => b.valor - a.valor).slice(0, 15);
+}
+
 function htmlPagar() {
   const d = est.dados;
   const porConta = new Map();
@@ -985,12 +1049,7 @@ function htmlPagar() {
     ${kpi('⚠ Em aberto já vencido', R0(atrasado), 'vencimento antes de hoje', atrasado > 0 ? 'alerta' : '')}
   </div>
   <div class="grade">
-    <div class="card cheio">
-      <h2>Contas a pagar por vencimento</h2>
-      <div class="nota" id="nPag"></div>
-      <div class="legenda"><span><i style="background:var(--s1)"></i>Pago</span><span><i style="background:var(--s2)"></i>Em aberto</span></div>
-      <div class="grafico" id="gPag"></div>
-    </div>
+    ${htmlQuem('P')}
     <div class="card cheio">
       <h2>Por conta / subconta</h2>
       <div class="tabela-wrap"><table>
@@ -1004,6 +1063,8 @@ function htmlPagar() {
 
 function htmlReceber(c) {
   const d = est.dados;
+  const topP = topAtrasoPeriodo();
+  const top = topP || d.topAtraso;
   return `
   <div class="kpis">
     ${kpi('Total com vencimento no período', R0(c.recTot))}
@@ -1012,12 +1073,7 @@ function htmlReceber(c) {
     ${kpi('⚠ Inadimplência hoje', R0(c.vencido), `${inteiro.format(c.vencidoQtd)} títulos vencidos (todas as datas)`, c.vencido > 0 ? 'alerta' : '')}
   </div>
   <div class="grade">
-    <div class="card cheio">
-      <h2>Contas a receber por vencimento</h2>
-      <div class="nota" id="nRec"></div>
-      <div class="legenda"><span><i style="background:var(--s1)"></i>Recebido</span><span><i style="background:var(--s2)"></i>Em aberto</span></div>
-      <div class="grafico" id="gRec"></div>
-    </div>
+    ${htmlQuem('R')}
     <div class="card">
       <h2>Inadimplência por faixa de atraso</h2>
       <div class="nota">Títulos vencidos e não baixados, posição de hoje</div>
@@ -1025,10 +1081,12 @@ function htmlReceber(c) {
     </div>
     <div class="card">
       <h2>Maiores clientes em atraso</h2>
-      <div class="nota">Posição de hoje</div>
+      ${topP ? `<div class="controles">${[['todos', 'Todos'], ['ano', 'Este ano'], ['6m', 'Últimos 6 meses']].map(([v, r]) =>
+        `<button class="chip" data-atraso="${v}" aria-pressed="${(est.periodoAtraso || 'todos') === v}">${r}</button>`).join('')}</div>` : ''}
+      <div class="nota">Posição de hoje${topP ? ' · pelo vencimento do título' : ''}</div>
       <div class="tabela-wrap"><table>
         <thead><tr><th>Cliente</th><th class="n">Títulos</th><th class="n">Maior atraso</th><th class="n">Valor vencido</th></tr></thead>
-        <tbody>${d.topAtraso.length ? d.topAtraso.map(x => `<tr><td>${esc(x.nome)}</td><td class="n">${x.qtd}</td><td class="n">${x.dias} dias</td><td class="n">${R(x.valor)}</td></tr>`).join('') : '<tr><td colspan="4" class="vazio">Nenhum título vencido 🎉</td></tr>'}</tbody>
+        <tbody>${top.length ? top.map(x => `<tr><td>${esc(x.nome)}</td><td class="n">${x.qtd}</td><td class="n">${x.dias} dias</td><td class="n">${R(x.valor)}</td></tr>`).join('') : '<tr><td colspan="4" class="vazio">Nenhum título vencido 🎉</td></tr>'}</tbody>
       </table></div>
     </div>
   </div>`;
@@ -1055,27 +1113,9 @@ function desenhar(c) {
   if (est.aba === 'bancos') {
     document.querySelectorAll('.spark').forEach(el => sparkline(el, c.contas[Number(el.dataset.i)].serie));
   }
-  if (est.aba === 'pagar') {
-    const g = agrupar(d.pagar, 0, [4, 5]);
-    $('#nPag').textContent = g.longo ? 'Por semana de vencimento' : 'Por dia de vencimento';
-    graficoBarras($('#gPag'), {
-      cats: g.cats, rotulo: rotCat(g.longo),
-      series: [
-        { nome: 'Pago', cor: 'var(--s1)', valores: g.valores[0].map((t, i) => t - g.valores[1][i]) },
-        { nome: 'Em aberto', cor: 'var(--s2)', valores: g.valores[1] },
-      ],
-    });
-  }
+  if (est.aba === 'pagar') ligarQuem();
   if (est.aba === 'receber') {
-    const g = agrupar(d.receber, 0, [2, 3]);
-    $('#nRec').textContent = g.longo ? 'Por semana de vencimento' : 'Por dia de vencimento';
-    graficoBarras($('#gRec'), {
-      cats: g.cats, rotulo: rotCat(g.longo),
-      series: [
-        { nome: 'Recebido', cor: 'var(--s1)', valores: g.valores[0].map((t, i) => t - g.valores[1][i]) },
-        { nome: 'Em aberto', cor: 'var(--s2)', valores: g.valores[1] },
-      ],
-    });
+    ligarQuem();
     barrasHorizontais($('#gFaixas'), [1, 2, 3, 4, 5].map(f => {
       const x = d.faixas.find(y => y.faixa === f) || { qtd: 0, valor: 0 };
       return { rot: FAIXAS[f], valor: x.valor, det: `${inteiro.format(x.qtd)} títulos` };
