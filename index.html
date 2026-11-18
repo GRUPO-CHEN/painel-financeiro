@@ -334,7 +334,7 @@ const APLICACOES = { 887: 'Aplicação Safra', 888: 'Aplicação Itaú', 3411: '
 function ehAplicacao(banco) { return Object.prototype.hasOwnProperty.call(APLICACOES, Number(banco)); }
 // Plano de contas tratado como transferência entre contas (não é receita nem despesa).
 // Para incluir outras, acrescente o código "conta.sub_conta" nesta lista.
-const CONTAS_TRANSFERENCIA = ['08.01'];
+const CONTAS_TRANSFERENCIA = ['08.01', '11.01.98'];
 function ehTransferencia(conta) { return CONTAS_TRANSFERENCIA.includes(String(conta || '').trim()); }
 
 // Plano de contas: código "conta.sub_conta" -> descrição. Mostra o texto no lugar do número.
