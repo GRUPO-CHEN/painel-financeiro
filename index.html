@@ -227,6 +227,15 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
   table.dre tr.g:hover td { background: var(--s1-soft); }
   table.dre tr.t td { font-weight: 700; border-top: 1px solid var(--line); }
   table.dre tr.t.d td { font-size: 1.05em; background: var(--s1-soft); }
+  @media (max-width: 700px) {
+    table.dre { font-size: 12px; }
+    table.dre td, table.dre th { padding: 6px 7px; }
+    table.dre td:first-child, table.dre th:first-child { min-width: 0; width: 40vw; max-width: 40vw; white-space: normal;
+      line-height: 1.25; box-shadow: 3px 0 5px -3px rgba(0,0,0,.35); }
+    table.dre td span.sub { display: none; }
+    table.dre td[style*="padding-left:26px"] { padding-left: 12px !important; }
+    table.dre td[style*="padding-left:46px"] { padding-left: 20px !important; }
+  }
   table.dre tr.sep td { color: var(--text-3); font-size: .8em; padding-top: 16px; text-transform: uppercase; letter-spacing: .04em; }
 </style>
 <script src="config.js"></script>
@@ -1068,7 +1077,7 @@ function renderDre(el) {
   const mesHoje = hojeISO().slice(0, 7);
   const disp = [...new Set(L.map(r => r.mes))].filter(m => m <= mesHoje).sort();
   const ultimos = n => { const fim = somaMes(mesHoje, -1); return Array.from({ length: n }, (_, k) => somaMes(fim, k - n + 1)); };
-  const cfg = est.dreCfg ||= { sel: ultimos(12), meses: true, abertos: ['rec'], anosAbertos: [], perAberto: false, ir: 'prov' };
+  const cfg = est.dreCfg ||= { sel: ultimos(12), meses: window.innerWidth > 700, abertos: ['rec'], anosAbertos: [], perAberto: false, ir: 'prov' };
   const sel = new Set(cfg.sel);
   const meses = disp.filter(m => sel.has(m));
   const anos = [...new Set(disp.map(m => m.slice(0, 4)))].sort().reverse();
