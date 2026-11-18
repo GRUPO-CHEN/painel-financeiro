@@ -102,6 +102,8 @@ body.menu-aberto .abas { transform: none; }
 .abas .aba[aria-selected="true"] { border-left-color: var(--accent); background: var(--s1-soft); }
 #menuFundo { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 59; display: none; }
 body.menu-aberto #menuFundo { display: block; }
+.abas .menu-rodape { margin-top: auto; border-top: 1px solid var(--line); padding: 14px 6px 4px; display: flex; flex-direction: column; gap: 8px; }
+.abas .menu-acao { text-align: left; }
 #btnMenu { font-size: 22px; line-height: 1; padding: 6px 11px; }
 .aba-atual { font-size: 1.2em; font-weight: 700; margin: 4px 0 14px; }
 .aba {
@@ -258,9 +260,6 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
     </label>
     <button id="btnAtualizar" title="Buscar os dados agora">Atualizar</button>
     <button id="btnTema" title="Tema claro/escuro" aria-label="Alternar tema">🌙</button>
-    <span class="sub" id="usuario"></span>
-    <button id="btnSenha" hidden>Trocar senha</button>
-    <button id="btnSair" hidden>Sair</button>
   </header>
 
   <div class="demo-banner" id="demo" hidden>
@@ -303,6 +302,11 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
     <button class="aba" role="tab" data-aba="dre" aria-selected="false">DRE</button>
     <button class="aba" role="tab" data-aba="importacoes" aria-selected="false">Importações</button>
     <button class="aba" role="tab" data-aba="usuarios" aria-selected="false">Usuários</button>
+    <div class="menu-rodape">
+      <span class="sub" id="usuario"></span>
+      <button id="btnSenha" class="menu-acao" hidden>🔑 Trocar senha</button>
+      <button id="btnSair" class="menu-acao" hidden>↩ Sair / trocar de usuário</button>
+    </div>
   </nav>
 
   <main id="conteudo"></main>
@@ -2090,6 +2094,7 @@ for (const id of ['#dtIni', '#dtFim']) {
 const fecharMenu = () => document.body.classList.remove('menu-aberto');
 $('#btnMenu').onclick = () => document.body.classList.toggle('menu-aberto');
 $('#menuFundo').onclick = fecharMenu;
+['#btnSenha', '#btnSair'].forEach(id => $(id).addEventListener('click', fecharMenu));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharMenu(); });
 document.querySelectorAll('.aba').forEach(b => b.onclick = () => {
   est.aba = b.dataset.aba; fecharMenu();
