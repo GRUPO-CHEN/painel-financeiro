@@ -1,0 +1,2467 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Painel Financeiro</title>
+<meta name="theme-color" content="#2F64E0">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Painel">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f3f2ef;
+  --surface: #fcfcfb;
+  --line: #e4e2dd;
+  --grid: #ebe9e4;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --text-3: #7a7974;
+  --accent: #2F64E0;  /* azul Feromax */
+  --s1: #2F64E0;   /* série 1 — azul Feromax */
+  --s2: #eb6834;   /* série 2 — laranja */
+  --s1-soft: #bcd0f7;
+  --s2-soft: #f7c3ad;
+  --critical: #d03b3b;
+  --good: #00AD57;  /* verde Feromax */
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.03);
+}
+html.tema-escuro {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --line: #2c2c2a; --grid: #262624;
+  --text: #f0efec; --text-2: #c3c2b7; --text-3: #92918a;
+  --accent: #5b85f2; --s1: #5b85f2; --s2: #d95926; --s1-soft: #1e3f86; --s2-soft: #6e3218;
+  --good: #1fc472; --shadow: none;
+}
+@media (prefers-color-scheme: dark) {
+  html:not(.tema-claro) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --line: #2c2c2a; --grid: #262624;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #92918a;
+    --accent: #5b85f2; --s1: #5b85f2; --s2: #d95926; --s1-soft: #1e3f86; --s2-soft: #6e3218;
+    --good: #1fc472; --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+header h1 { font-size: 20px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+header .sub { color: var(--text-3); font-size: 12.5px; }
+header .spacer { flex: 1; }
+button, .btn {
+  font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--text-3); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.demo-banner {
+  background: #fff4d6; color: #5c4400; border: 1px solid #f0d58a; border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 14px; font-size: 13px;
+}
+html.tema-escuro .demo-banner { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; }
+@media (prefers-color-scheme: dark) { html:not(.tema-claro) .demo-banner { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; } }
+
+/* filtros — uma linha acima de tudo */
+.filtros {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 14px; box-shadow: var(--shadow); margin-bottom: 14px;
+}
+.filtros label { color: var(--text-2); font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+.filtros input[type=date] {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 8px;
+}
+.grupo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip {
+  border: 1px solid var(--line); background: var(--bg); color: var(--text-2);
+  border-radius: 999px; padding: 5px 11px; font-size: 13px; cursor: pointer; user-select: none;
+}
+.chip[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+.sep { width: 1px; align-self: stretch; background: var(--line); }
+
+/* abas */
+.abas { position: fixed; top: 0; left: 0; bottom: 0; width: 260px; display: flex; flex-direction: column; gap: 2px;
+  padding: 18px 10px; background: var(--surface); border-right: 1px solid var(--line); box-shadow: var(--shadow);
+  z-index: 60; transform: translateX(-105%); transition: transform .2s ease; overflow-y: auto; }
+body.menu-aberto .abas { transform: none; }
+.abas .menu-tit { font-weight: 700; padding: 6px 14px 12px; color: var(--text-3); font-size: .85em; text-transform: uppercase; letter-spacing: .05em; }
+.abas .aba { text-align: left; border-bottom: 0; border-left: 3px solid transparent; border-radius: 6px; padding: 12px 14px; margin: 0; }
+.abas .aba[aria-selected="true"] { border-left-color: var(--accent); background: var(--s1-soft); }
+#menuFundo { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 59; display: none; }
+body.menu-aberto #menuFundo { display: block; }
+.abas .menu-rodape { margin-top: auto; border-top: 1px solid var(--line); padding: 14px 6px 4px; display: flex; flex-direction: column; gap: 8px; }
+.abas .menu-acao { text-align: left; }
+#btnMenu { font-size: 22px; line-height: 1; padding: 6px 11px; }
+.aba-atual { font-size: 1.2em; font-weight: 700; margin: 4px 0 14px; }
+.aba {
+  border: 0; background: none; border-radius: 0; padding: 10px 14px; color: var(--text-3);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-weight: 550;
+}
+.aba[aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); }
+
+/* cartões */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.kpi, .card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.kpi { padding: 14px 16px; }
+.kpi .rot { color: var(--text-2); font-size: 12.5px; }
+.kpi .val { font-size: 22px; white-space: nowrap; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.kpi .det { color: var(--text-3); font-size: 12px; margin-top: 2px; }
+.kpi .alerta { color: var(--critical); }
+.grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+@media (max-width: 520px) { .opc { display: none; } .sep { display: none; } .grade { grid-template-columns: 1fr; } .wrap { padding: 14px 12px 40px; } }
+.card { padding: 14px 16px 12px; min-width: 0; }
+.card h2 { font-size: 14px; font-weight: 620; margin: 0; }
+.card .nota { color: var(--text-3); font-size: 12px; margin: 2px 0 8px; }
+.card.cheio { grid-column: 1 / -1; }
+.legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin: 4px 0 6px; }
+.legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.grafico { position: relative; width: 100%; }
+.grafico svg { display: block; width: 100%; height: auto; overflow: visible; }
+.grafico text { fill: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* tabelas */
+.tabela-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; }
+th { color: var(--text-3); font-weight: 550; font-size: 12px; }
+td.n, th.n { text-align: right; }
+tr.total td { font-weight: 650; border-bottom: 0; border-top: 1px solid var(--line); }
+tbody tr:hover td { background: var(--bg); }
+.neg { color: var(--critical); }
+
+/* tooltip */
+.tip {
+  position: fixed; pointer-events: none; z-index: 10; opacity: 0; transition: opacity .08s;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 150px;
+}
+.tip .t { color: var(--text-3); font-size: 12px; margin-bottom: 4px; }
+.tip .l { display: flex; justify-content: space-between; gap: 14px; }
+.tip .l i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.tip .l b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.carregando { opacity: .55; transition: opacity .15s; }
+.erro { background: #fde8e8; color: #8a1f1f; border: 1px solid #f3b9b9; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+html.tema-escuro .erro { background: #3d1616; color: #f4b4b4; border-color: #6b2525; }
+@media (prefers-color-scheme: dark) { html:not(.tema-claro) .erro { background: #3d1616; color: #f4b4b4; border-color: #6b2525; } }
+.vazio { color: var(--text-3); padding: 28px 0; text-align: center; }
+[hidden] { display: none !important; }
+.controles { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
+.controles .rot { color: var(--text-2); font-size: 12.5px; }
+.controles input[type=date] { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+.seta { padding: 5px 10px; }
+.info { color: var(--text-2); font-size: 12.5px; background: var(--surface); border: 1px dashed var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; }
+.rolagem { max-height: 520px; overflow: auto; }
+.rolagem thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+td.sub { color: var(--text-3); font-size: 12.5px; }
+.pop-wrap { position: relative; }
+.pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 240px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.14);
+}
+.pop h3 { font-size: 12px; color: var(--text-3); font-weight: 600; margin: 8px 0 4px; }
+.pop h3:first-child { margin-top: 0; }
+.pop label { display: flex; gap: 8px; align-items: center; padding: 4px 0; color: var(--text); font-size: 13px; cursor: pointer; }
+.pop .acoes { display: flex; gap: 8px; margin-top: 8px; border-top: 1px solid var(--grid); padding-top: 8px; }
+.pop .acoes button { padding: 4px 10px; font-size: 12.5px; }
+.chip.ativo-filtro { border-color: var(--accent); color: var(--accent); }
+/* login */
+.tela-login { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--bg); padding: 16px; }
+.caixa-login, .modal-caixa { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+.caixa-login h2, .modal-caixa h2 { margin: 0 0 4px; font-size: 19px; }
+.caixa-login p { color: var(--text-2); margin: 0 0 14px; font-size: 13px; }
+.campo { display: block; margin: 10px 0 0; }
+.campo span { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 4px; }
+.campo input, .campo select, .campo textarea {
+  width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+}
+.campo textarea { min-height: 60px; resize: vertical; }
+.campo-linha { display: flex; gap: 10px; } .campo-linha .campo { flex: 1; min-width: 0; }
+.btn-pri { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.btn-pri:hover { filter: brightness(1.05); border-color: var(--accent); }
+.btn-perigo { color: var(--critical); }
+.msg-erro { color: var(--critical); font-size: 13px; min-height: 1em; margin-top: 10px; }
+.msg-ok { color: var(--good); font-size: 13px; margin-top: 10px; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; }
+.modal { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 16px; overflow: auto; }
+.modal-caixa { max-width: 560px; }
+.modal-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.selo { display: inline-block; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
+.aviso { background: #fff4d6; color: #5c4400; border: 1px solid #f0d58a; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px; }
+html.tema-escuro .aviso { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; }
+@media (prefers-color-scheme: dark) { html:not(.tema-claro) .aviso { background: #3a2e0c; color: #f5dc9a; border-color: #5e4a12; } }
+td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3px 9px; font-size: 12.5px; }
+.estimado { color: var(--text-3); font-style: italic; }
+.tab-usuarios td { vertical-align: middle; } .tab-usuarios label { display: inline-flex; gap: 4px; align-items: center; margin-right: 8px; font-size: 12.5px; white-space: nowrap; }
+.marca { display: flex; align-items: center; gap: 12px; }
+.marca .logo { height: 30px; width: auto; display: block; }
+.login-logo { height: 42px; width: auto; display: block; margin: 2px auto 14px; }
+@media (max-width: 520px) { .marca .logo { height: 24px; } }
+  .dre-per { position: relative; display: inline-block; }
+  .dre-per summary { list-style: none; cursor: pointer; }
+  .dre-per summary::-webkit-details-marker { display: none; }
+  .dre-per .arvore { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: var(--shadow); padding: 10px 14px; min-width: 230px; max-height: 380px; overflow: auto; }
+  .arvore label { display: flex; gap: 6px; align-items: center; padding: 3px 0; cursor: pointer; white-space: nowrap; }
+  .arvore .ano { display: grid; grid-template-columns: 20px 1fr; align-items: center; }
+  .arvore .tg { cursor: pointer; color: var(--text-3); user-select: none; }
+  .arvore .meses { grid-column: 2; padding-left: 4px; }
+  .secao { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 22px 0 10px; font-size: 1.05em; }
+  .secao:first-child { margin-top: 4px; }
+  .secao .tag { font-size: .72em; font-weight: 500; color: var(--text-2); background: var(--s1-soft); padding: 3px 10px; border-radius: 999px; }
+  .secao .tag.fixo { background: var(--s2-soft); }
+  .secao .tag.filtro, .nota-filtro { background: #fff3cd; color: #7a5a00; }
+  .nota-filtro { font-size: .8em; padding: 3px 10px; border-radius: 999px; align-self: center; }
+  .inds { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .ind { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+  .ind-tit { font-size: .82em; color: var(--text-2); font-weight: 600; }
+  .ind-val { font-size: 1.55em; font-weight: 700; line-height: 1.15; }
+  .ind-det { font-size: .78em; color: var(--text-3); }
+  .ind .bom { color: #1a9e55; font-weight: 600; } .ind .ruim { color: #d23c3c; font-weight: 600; }
+  .ind svg.spark { width: 100%; height: 30px; margin-top: 4px; }
+  table.dre td, table.dre th { white-space: nowrap; }
+  table.dre tr[hidden] { display: none; }
+  table.dre .parcial { border-left: 2px solid var(--line); background: var(--s2-soft); }
+  table.dre .pc.parcial { border-left: 0; }
+  table.dre td.pc, table.dre th.pc { font-size: .74em; color: var(--text-3); padding-left: 2px; padding-right: 12px; }
+  table.dre td:first-child, table.dre th:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 230px; }
+  table.dre tr.g td:first-child { cursor: pointer; font-weight: 600; }
+  table.dre tr.g:hover td { background: var(--s1-soft); }
+  table.dre tr.t td { font-weight: 700; border-top: 1px solid var(--line); }
+  table.dre tr.t.d td { font-size: 1.05em; background: var(--s1-soft); }
+  @media (max-width: 700px) {
+    table.dre { font-size: 12px; }
+    table.dre td, table.dre th { padding: 6px 7px; }
+    table.dre td:first-child, table.dre th:first-child { min-width: 0; width: 40vw; max-width: 40vw; white-space: normal;
+      line-height: 1.25; box-shadow: 3px 0 5px -3px rgba(0,0,0,.35); }
+    table.dre td span.sub { display: none; }
+    table.dre td[style*="padding-left:26px"] { padding-left: 12px !important; }
+    table.dre td[style*="padding-left:46px"] { padding-left: 20px !important; }
+  }
+  table.dre tr.sep td { color: var(--text-3); font-size: .8em; padding-top: 16px; text-transform: uppercase; letter-spacing: .04em; }
+</style>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <button id="btnMenu" title="Menu" aria-label="Abrir menu">☰</button>
+    <div class="marca">
+      <img src="logo-feromax.png" alt="Grupo Feromax" class="logo">
+      <div>
+        <h1>Painel Financeiro</h1>
+        <div class="sub" id="status">Carregando…</div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <label class="sub" style="display:flex;gap:6px;align-items:center">
+      <input type="checkbox" id="auto" checked title="Atualiza sozinho a cada 2 horas e sempre às 17:45"> Atualização automática
+    </label>
+    <button id="btnAtualizar" title="Buscar os dados agora">Atualizar</button>
+    <button id="btnTema" title="Tema claro/escuro" aria-label="Alternar tema">🌙</button>
+  </header>
+
+  <div class="demo-banner" id="demo" hidden>
+    Modo demonstração: os números abaixo são <b>fictícios</b>. Com o Supabase configurado, o painel mostra os dados reais do ERP.
+  </div>
+  <div class="aviso" id="aviso" hidden></div>
+  <div class="erro" id="erro" hidden></div>
+
+  <section class="filtros" aria-label="Filtros">
+    <div class="grupo" id="periodo">
+    <label>De <input type="date" id="dtIni"></label>
+    <label>Até <input type="date" id="dtFim"></label>
+    <div class="grupo" id="atalhos">
+      <button class="chip" data-p="hoje">Hoje</button>
+      <button class="chip" data-p="mes">Mês atual</button>
+      <button class="chip" data-p="30">Últimos 30 dias</button>
+      <button class="chip" data-p="90">Últimos 90 dias</button>
+      <button class="chip" data-p="ano">Ano</button>
+    </div>
+    <span class="nota-filtro" id="notaPeriodo" hidden>⬅ na Visão geral, este filtro vale só para o bloco ⏮ Passado</span>
+    </div>
+    <div class="sep" id="sepPeriodo"></div>
+    <div class="grupo" id="empresas" aria-label="Empresas"></div>
+    <div class="sep"></div>
+    <div class="pop-wrap">
+      <button class="chip" id="btnBancos" aria-haspopup="true" aria-expanded="false">Bancos: todos ▾</button>
+      <div class="pop" id="popBancos" hidden></div>
+    </div>
+  </section>
+
+  <div id="menuFundo"></div>
+  <div class="aba-atual" id="abaAtual"></div>
+  <nav class="abas" role="tablist">
+    <div class="menu-tit">Menu</div>
+    <button class="aba" role="tab" data-aba="dia" aria-selected="true">Resumo do dia</button>
+    <button class="aba" role="tab" data-aba="geral" aria-selected="false">Visão geral</button>
+    <button class="aba" role="tab" data-aba="projecao" aria-selected="false">Fluxo projetado</button>
+    <button class="aba" role="tab" data-aba="bancos" aria-selected="false">Bancos</button>
+    <button class="aba" role="tab" data-aba="pagar" aria-selected="false">A pagar</button>
+    <button class="aba" role="tab" data-aba="receber" aria-selected="false">A receber</button>
+    <button class="aba" role="tab" data-aba="dre" aria-selected="false">DRE</button>
+    <button class="aba" role="tab" data-aba="indicadores" aria-selected="false">Indicadores</button>
+    <button class="aba" role="tab" data-aba="importacoes" aria-selected="false">Importações</button>
+    <button class="aba" role="tab" data-aba="usuarios" aria-selected="false">Usuários</button>
+    <div class="menu-rodape">
+      <span class="sub" id="usuario"></span>
+      <button id="btnSenha" class="menu-acao" hidden>🔑 Trocar senha</button>
+      <button id="btnSair" class="menu-acao" hidden>↩ Sair / trocar de usuário</button>
+    </div>
+  </nav>
+
+  <main id="conteudo"></main>
+</div>
+<div class="tip" id="tip"></div>
+
+<div class="tela-login" id="telaLogin" hidden>
+  <form class="caixa-login" id="formLogin" autocomplete="on">
+    <img src="logo-feromax.png" alt="Grupo Feromax" class="login-logo">
+    <h2>Painel Financeiro</h2>
+    <p>Entre com seu e-mail e senha.</p>
+    <label class="campo"><span>E-mail</span><input id="lEmail" type="email" autocomplete="username" required></label>
+    <label class="campo"><span>Senha</span><input id="lSenha" type="password" autocomplete="current-password" required></label>
+    <button class="btn-pri" id="lBotao" style="width:100%;margin-top:16px">Entrar</button>
+    <div class="msg-erro" id="lErro" role="alert"></div>
+    <button type="button" class="link" id="lEsqueci">Esqueci minha senha</button>
+  </form>
+</div>
+<div class="modal" id="modal" hidden><div class="modal-caixa" id="modalCaixa" role="dialog" aria-modal="true"></div></div>
+
+<script>
+'use strict';
+// ======================= utilidades =======================
+const $ = s => document.querySelector(s);
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const brlCurto = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 });
+const brlEixo = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 2 });
+const inteiro = new Intl.NumberFormat('pt-BR');
+const R = v => brl.format(v || 0);
+const brl0 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const R0 = v => brl0.format(Math.round(v || 0));
+const Rc = v => brlCurto.format(v || 0);
+const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const hojeISO = () => iso(new Date());
+const parseISO = s => { const [a, m, d] = s.split('-').map(Number); return new Date(a, m - 1, d); };
+const ddmm = s => s.slice(8, 10) + '/' + s.slice(5, 7);
+const ddmmaa = s => s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(2, 4);
+const somaDias = (s, n) => { const d = parseISO(s); d.setDate(d.getDate() + n); return iso(d); };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const FAIXAS = { 1: '1 a 30 dias', 2: '31 a 60 dias', 3: '61 a 90 dias', 4: '91 a 180 dias', 5: 'Mais de 180 dias' };
+
+// ======================= estado =======================
+const est = {
+  demo: false,
+  empresasDisp: {},
+  nomesBancos: {},
+  empresas: [],
+  inicio: null,
+  fim: null,
+  aba: 'dia',
+  dados: null,
+  carregando: false,
+  bancosDisp: {},      // { empresa: [bancos] }
+  bancosSel: null,     // null = todos; senão Set de 'empresa-banco'
+  dia: null,           // resumo do dia
+  baseDia: 'conciliacao',
+  dadosDia: null,
+  horizonte: 90,       // fluxo projetado (dias)
+  inclVencidos: false,
+  dadosProj: null,
+};
+const DEMO_BANCOS = { 1: [[1, 180000], [341, 420000], [888, 25000], [422, 90000], [887, 12000]], 2: [[1, 60000], [341, 210000], [422, 45000], [3411, 30000]] };
+const bancoSelecionado = (e, b) => !est.bancosSel || est.bancosSel.has(`${e}-${b}`);
+
+// Contas de aplicação (investimento) — separadas das contas operacionais.
+// Para incluir/mudar uma aplicação, basta editar aqui: { codigoBanco: 'Nome' }.
+const APLICACOES = { 887: 'Aplicação Safra', 888: 'Aplicação Itaú', 3411: 'Aplicação Itaú' };
+function ehAplicacao(banco) { return Object.prototype.hasOwnProperty.call(APLICACOES, Number(banco)); }
+// Plano de contas tratado como transferência entre contas (não é receita nem despesa).
+// Para incluir outras, acrescente o código "conta.sub_conta" nesta lista.
+const CONTAS_TRANSFERENCIA = ['08.01', '11.01.98'];
+function ehTransferencia(conta) { return CONTAS_TRANSFERENCIA.includes(String(conta || '').trim()); }
+
+// Plano de contas: código "conta.sub_conta" -> descrição. Mostra o texto no lugar do número.
+const PLANO_CONTAS = {
+  '10.00.00': 'Receita operacional', '10.01.00': 'Receita operacional',
+  '10.01.01': 'Receita Vendas', '10.01.02': 'Manutenções', '10.01.03': 'Receitas não lançadas',
+  '10.01.05': 'SmartHub', '10.01.06': 'SHService', '10.01.07': 'SHComissão',
+  '11.00.00': 'Outras receitas / não operacional', '11.01.00': 'Outras receitas / não operacional',
+  '11.01.01': 'Comissões Recebidas', '11.01.02': 'Reembolso Clientes', '11.01.03': 'Rendimentos de Aplicações',
+  '11.01.06': 'Empréstimos Bancos', '11.01.08': 'Aporte Capital Sócios', '11.01.10': 'Reembolso Fortify',
+  '11.01.11': 'Reembolso - Despesa Importação', '11.01.12': 'Desbloqueio Judicial', '11.01.13': 'Reembolso - Fornecedor',
+  '11.01.14': 'Devolução - Retirada de sócio', '11.01.15': 'Reembolso de Impostos', '11.01.16': 'Desconto de Títulos',
+  '11.01.98': 'Transferência entre Contas - Crédito', '11.01.99': 'Nota de Devolução',
+  '20.00.00': 'Despesas operacional', '20.01.00': 'Recursos Humanos',
+  '20.01.01': 'Folha de Pagamento', '20.01.02': 'Medicina do Trabalho', '20.01.03': '13º Salário',
+  '20.01.04': 'Férias', '20.01.06': 'Rescisão Contratual', '20.01.20': 'Encargos',
+  '20.01.21': 'GPS - Sobre a Folha e Pró-Labore', '20.01.22': 'FGTS', '20.01.30': 'Sócios',
+  '20.01.31': 'Pró-Labore', '20.01.32': 'Retirada Sócio', '20.01.33': 'Retirada Sócio 2',
+  '20.01.40': 'Benefícios', '20.01.41': 'Plano de Saúde', '20.01.42': 'Alimentação',
+  '20.01.43': 'Seguro de Vida', '20.01.45': 'Treinamento/Cursos', '20.01.46': 'Vale Transporte', '20.01.47': 'Endomarketing',
+  '20.02.00': 'Fornecedores de Compras', '20.02.01': 'Importação - Numerários', '20.02.02': 'Fretes Compras Nacionais',
+  '20.02.03': 'SHService', '20.02.05': 'Fretes Compras Importadas', '20.02.07': 'Material de Embalagem',
+  '20.02.10': 'Insumo de produção ou indiretos', '20.02.11': 'Materiais de Revenda', '20.02.12': 'Importação',
+  '20.03.00': 'Despesas Fixa e Estrutura', '20.03.01': 'Aluguel', '20.03.03': 'Luz', '20.03.04': 'Água',
+  '20.03.05': 'Seguros', '20.03.07': 'Sistemas RH', '20.03.08': 'Sistemas ERP', '20.03.09': 'Telefone Fixo',
+  '20.03.10': 'Telefone Celular', '20.03.11': 'Internet', '20.03.12': 'Contabilidade', '20.03.13': 'Serviços',
+  '20.03.20': 'Taxas/Impostos', '20.03.21': 'IPTU', '20.03.22': 'Taxa do Lixo', '20.03.23': 'Impostos Diversos - Custo Fixo',
+  '20.04.00': 'Despesas Adm e Diversas', '20.04.01': 'Material de Escritório/Limpeza', '20.04.02': 'Despesa Diretoria',
+  '20.04.03': 'Ativo - Material de Informática e Telecom', '20.04.04': 'Ativo - Móveis e Utensílios e Melhorias',
+  '20.04.05': 'Manutenção', '20.04.08': 'Ferramentas/Manutenção PAC', '20.04.12': 'Despesas Diversas', '20.04.13': 'Certificado Digital',
+  '20.05.00': 'Despesas Comerciais Diretas', '20.05.01': 'Comissões Vendedores', '20.05.02': 'Comissões Parceiros', '20.05.10': 'Despesas Visita Cliente',
+  '20.06.00': 'Marketing', '20.06.01': 'Serviços de Marketing', '20.06.03': 'Brindes', '20.06.04': 'Site',
+  '20.06.05': 'Eventos', '20.06.08': 'Material Gráfico', '20.06.09': 'Divulgação', '20.06.99': 'Outros',
+  '20.07.00': 'Despesas Bancárias', '20.07.01': 'Tarifas', '20.07.02': 'Taxas sobre Vendas', '20.07.04': 'Manutenção de Conta',
+  '20.08.00': 'Despesas Financeiras', '20.08.01': 'Juros', '20.08.02': 'Cobrança de IOF',
+  '20.09.00': 'Empréstimos', '20.09.04': 'Empréstimos - Capital Giro',
+  '20.11.00': 'Fornecedores de Serviços', '20.11.01': 'Serviços Advocatícios', '20.11.04': 'Despesas de fretes e carretos',
+  '20.12.00': 'Impostos sobre Vendas', '20.12.01': 'PIS', '20.12.02': 'COFINS', '20.12.03': 'IPI', '20.12.04': 'GNRE',
+  '20.12.05': 'ICMS', '20.12.06': 'ICMS ST', '20.12.07': 'ISS', '20.12.08': 'Simples Nacional',
+  '21.00.00': 'Outras despesas / não operacional', '21.01.00': 'Despesas não operacional',
+  '21.01.04': 'Empréstimo Diretoria', '21.01.07': 'Despesas não lançadas',
+  '21.02.00': 'Encargos', '21.02.01': 'IRPJ 2089', '21.02.04': 'ISS', '21.02.11': 'CSLL', '21.02.13': 'Simples Nacional',
+  '21.02.15': 'GNRE', '21.02.19': 'Darf 5952', '21.02.20': 'Darf 1708', '21.02.21': 'Darf 3208',
+};
+function descConta(codigo) {
+  const c = String(codigo || '').trim();
+  return PLANO_CONTAS[c] || c;
+}
+function nomeBanco(emp, banco) {
+  if (ehAplicacao(banco)) return APLICACOES[Number(banco)];
+  return est.nomesBancos[`${emp}-${banco}`] || est.nomesBancos[String(banco)] || `Banco ${banco}`;
+}
+function nomeEmpresa(e) { return est.empresasDisp[e] || `Empresa ${e}`; }
+
+// ======================= dados de demonstração =======================
+function gerarDemo(inicio, fim, empresas) {
+  let semente = 7;
+  const rnd = () => (semente = (semente * 16807) % 2147483647) / 2147483647;
+  const cfg = DEMO_BANCOS;
+  const ate = fim < hojeISO() ? fim : hojeISO();
+  const bancos = [], pagar = [], receber = [];
+  for (const e of [1, 2]) {
+    for (const [b, base] of cfg[e]) {
+      let saldo = base;
+      for (let d = inicio; d <= ate; d = somaDias(d, 1)) {
+        const dow = parseISO(d).getDay();
+        const util = dow !== 0 && dow !== 6;
+        const ent = util ? Math.round(base * (0.02 + rnd() * 0.06)) : 0;
+        const sai = util ? Math.round(base * (0.02 + rnd() * 0.065)) : 0;
+        saldo += ent - sai;
+        if (empresas.includes(e) && bancoSelecionado(e, b)) bancos.push([e, b, d, saldo, ent, sai]);
+      }
+    }
+  }
+  for (let d = inicio; d <= fim; d = somaDias(d, 1)) {
+    const dow = parseISO(d).getDay();
+    if (dow === 0 || dow === 6) continue;
+    for (const e of empresas) {
+      const k = e === 1 ? 1 : 0.45;
+      const venc = d < hojeISO();
+      for (const [conta, sub] of [[20, 1], [20, 3], [21, 2]]) {
+        const tot = Math.round(k * (4000 + rnd() * 26000));
+        pagar.push([d, e, conta, sub, tot, venc ? (rnd() < 0.12 ? tot : 0) : tot]);
+      }
+      const tr = Math.round(k * (15000 + rnd() * 55000));
+      receber.push([d, e, tr, venc ? Math.round(tr * (rnd() < 0.3 ? rnd() * 0.5 : 0)) : tr]);
+    }
+  }
+  const k = empresas.reduce((s, e) => s + (e === 1 ? 1 : 0.45), 0);
+  const faixas = [[1, 38, 186000], [2, 14, 72400], [3, 9, 41800], [4, 6, 30500], [5, 11, 58900]]
+    .map(([faixa, qtd, valor]) => ({ faixa, qtd: Math.round(qtd * k), valor: Math.round(valor * k) }));
+  const nomes = ['Mercado Bom Preço', 'Construtora Horizonte', 'Distribuidora Sul', 'Padaria Real', 'Auto Peças Leste',
+    'Hotel Mirante', 'Clínica Vida', 'Transportes Rápido', 'Loja do Bairro', 'Escola Saber'];
+  const topAtraso = nomes.map((nome, i) => ({ cod: 100 + i, nome, qtd: 6 - Math.floor(i / 2), valor: Math.round(k * (52000 / (1 + i * 0.45))), dias: 12 + ((i * 37) % 160) }));
+  return { atualizadoEm: new Date().toISOString(), bancos, pagar, receber, faixas, topAtraso };
+}
+
+// ======================= Supabase / login =======================
+const CFG = window.PAINEL_CONFIG || {};
+let sb = null;
+Object.assign(est, {
+  perfil: null, geracoes: {}, syncStatus: [], syncInfo: null,
+  contas: { pagar: [20, 21], projecao: [] }, ptax: null, cambio: { modo: 'manual', manual: 5.5 },
+  importacoes: [], usuarios: [], empresasTodas: {}, impFiltro: { status: '', soFluxo: false },
+});
+
+const ABAS = {
+  dia: ['caixa'], geral: ['caixa', 'titulos'], projecao: ['caixa', 'titulos'], bancos: ['caixa'],
+  pagar: ['titulos'], receber: ['titulos'], dre: ['dre'], indicadores: ['dre'], importacoes: ['importacoes'], usuarios: ['admin'],
+};
+const temArea = a => !!est.perfil && (est.perfil.admin || (a !== 'admin' && (est.perfil.areas || []).includes(a)));
+const podeEditar = () => !!est.perfil && (est.perfil.admin || est.perfil.editor);
+const cambioAtual = () => (est.cambio.modo === 'ptax' && est.ptax && est.ptax.valor) ? Number(est.ptax.valor) : Number(est.cambio.manual || 0);
+const valorImp = i => (i.valor_brl !== null && i.valor_brl !== undefined && i.valor_brl !== '') ? Number(i.valor_brl) : Number(i.fob_usd || 0) * cambioAtual();
+
+// busca todas as linhas (o Supabase devolve no máximo 1000 por vez)
+async function buscarTodos(fazConsulta) {
+  const TAM = 1000; let de = 0, todos = [];
+  for (;;) {
+    const { data, error } = await fazConsulta().range(de, de + TAM - 1);
+    if (error) throw new Error(error.message);
+    todos = todos.concat(data || []);
+    if (!data || data.length < TAM) break;
+    de += TAM;
+  }
+  return todos;
+}
+
+async function iniciar() {
+  if (!CFG.SUPABASE_URL || !CFG.SUPABASE_CHAVE_PUBLICA || !window.supabase) return iniciarDemo();
+  sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_CHAVE_PUBLICA);
+  sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') abrirTrocaSenha(true); });
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return mostrarLogin();
+  await entrar();
+}
+
+function mostrarLogin() {
+  $('#telaLogin').hidden = false;
+  setTimeout(() => $('#lEmail').focus(), 50);
+}
+
+async function entrar() {
+  $('#telaLogin').hidden = true;
+  $('#btnSair').hidden = false; $('#btnSenha').hidden = false;
+  const { data: { user } } = await sb.auth.getUser();
+  const { data: perfil, error } = await sb.from('perfis').select('*').eq('id', user.id).maybeSingle();
+  if (error) return mostrarErro('Não consegui ler seu perfil: ' + error.message);
+  est.perfil = perfil;
+  $('#usuario').textContent = (perfil && perfil.nome) || user.email;
+  if (!perfil || !perfil.ativo) {
+    document.querySelector('.filtros').hidden = true; document.querySelector('.abas').hidden = true;
+    $('#status').textContent = '';
+    $('#conteudo').innerHTML = `<div class="card"><div class="vazio">Olá, ${esc(user.email)}. Seu acesso ainda não foi liberado.<br>Peça ao administrador do painel para ativar seu usuário.</div></div>`;
+    return;
+  }
+  try { await carregarConfig(); } catch (e) { return mostrarErro('Não consegui ler a configuração: ' + e.message); }
+  prepararPainel();
+}
+
+async function carregarConfig() {
+  const { data, error } = await sb.from('config_painel').select('chave,valor');
+  if (error) throw new Error(error.message);
+  const c = Object.fromEntries((data || []).map(r => [r.chave, r.valor]));
+  if (!c.empresas) throw new Error('o sincronizador ainda não rodou nenhuma vez.');
+  est.empresasTodas = c.empresas;
+  est.empresasDisp = est.perfil.admin ? c.empresas
+    : Object.fromEntries(Object.entries(c.empresas).filter(([k]) => (est.perfil.empresas || []).includes(Number(k))));
+  est.bancosDisp = c.bancos || {};
+  est.nomesBancos = c.nomes_bancos || {};
+  est.contas = c.contas || est.contas;
+  est.ptax = c.ptax || null;
+  est.syncInfo = c.sincronizador || null;
+  const { data: par } = await sb.from('parametros').select('chave,valor');
+  const cam = (par || []).find(p => p.chave === 'cambio');
+  if (cam) est.cambio = cam.valor;
+}
+
+function iniciarDemo() {
+  est.demo = true;
+  est.perfil = { nome: 'Demonstração', ativo: true, admin: true, editor: true, areas: ['caixa', 'titulos', 'importacoes'], empresas: [1, 2] };
+  est.empresasDisp = est.empresasTodas = { 1: 'Empresa 1', 2: 'Empresa 2' };
+  est.nomesBancos = { '1': 'Banco do Brasil', '341': 'Itaú', '422': 'Safra', '1-888': 'Conta 888', '1-887': 'Conta 887', '2-3411': 'Itaú 3411' };
+  est.bancosDisp = Object.fromEntries(Object.entries(DEMO_BANCOS).map(([e, l]) => [e, l.map(x => x[0])]));
+  est.ptax = { valor: 5.4183, data: somaDias(hojeISO(), -1) };
+  est.cambio = { modo: 'manual', manual: 5.5 };
+  const h = hojeISO();
+  est.importacoes = [
+    { id: 1, empresa: 2, previsao: somaDias(h, 3), tipo: 'Câmbio', fornecedor: 'Fornecedor Ásia A', pedido: '2047', fob_usd: 2338.47, valor_brl: null, status: 'Embarque', observacao: '', no_fluxo: true },
+    { id: 2, empresa: 2, previsao: somaDias(h, 5), tipo: 'Numerário', fornecedor: 'Fornecedor Ásia B', pedido: '2072', fob_usd: null, valor_brl: 24000, status: 'Nacionalização', observacao: 'Impostos de importação', no_fluxo: true },
+    { id: 3, empresa: 2, previsao: somaDias(h, 12), tipo: 'Numerário', fornecedor: 'Fornecedor Ásia C', pedido: '2015', fob_usd: null, valor_brl: 39000, status: 'Chegada Brasil', observacao: '', no_fluxo: true },
+    { id: 4, empresa: 1, previsao: somaDias(h, 20), tipo: 'Câmbio', fornecedor: 'Fornecedor Europa', pedido: '2074', fob_usd: 18500, valor_brl: null, status: 'Produção', observacao: '50% na produção', no_fluxo: true },
+  ];
+  est.usuarios = [
+    { id: 'a', email: 'voce@empresa.com.br', nome: 'Você', ativo: true, admin: true, editor: true, areas: ['caixa', 'titulos', 'importacoes'], empresas: [1, 2] },
+    { id: 'b', email: 'diretor@empresa.com.br', nome: 'Diretor', ativo: true, admin: false, editor: false, areas: ['caixa', 'titulos', 'importacoes'], empresas: [1, 2] },
+    { id: 'c', email: 'comercial@empresa.com.br', nome: 'Comercial', ativo: false, admin: false, editor: false, areas: [], empresas: [] },
+  ];
+  $('#demo').hidden = false;
+  $('#usuario').textContent = 'Demonstração';
+  prepararPainel();
+}
+
+function prepararPainel() {
+  configurarAbas();
+  let salvo = {};
+  try { salvo = JSON.parse(localStorage.getItem('painel-filtros') || '{}'); } catch (_) {}
+  est.empresas = (salvo.empresas || Object.keys(est.empresasDisp).map(Number)).filter(e => est.empresasDisp[e]);
+  if (!est.empresas.length) est.empresas = Object.keys(est.empresasDisp).map(Number);
+  aplicarAtalho(salvo.atalho || 'mes', false);
+  if (salvo.atalho === 'custom' && salvo.inicio && salvo.fim) { est.inicio = salvo.inicio; est.fim = salvo.fim; }
+  if (Array.isArray(salvo.bancos)) est.bancosSel = new Set(salvo.bancos);
+  est.dia = hojeISO();
+  montarFiltros();
+  carregar();
+}
+
+function configurarAbas() {
+  const permitidas = Object.keys(ABAS).filter(a => ABAS[a].every(temArea));
+  document.querySelectorAll('.aba').forEach(b => { b.hidden = !permitidas.includes(b.dataset.aba); });
+  if (!permitidas.includes(est.aba)) est.aba = permitidas[0] || null;
+  document.querySelectorAll('.aba').forEach(b => b.setAttribute('aria-selected', String(b.dataset.aba === est.aba)));
+  { const at = document.querySelector(`.aba[data-aba="${est.aba}"]`); $('#abaAtual').textContent = at ? at.textContent : ''; }
+  if (!est.aba) $('#conteudo').innerHTML = '<div class="card"><div class="vazio">Seu usuário não tem nenhuma área liberada.</div></div>';
+}
+
+function mostrarErro(msg) { $('#erro').textContent = msg; $('#erro').hidden = false; }
+
+// ---------- leitura dos dados no Supabase ----------
+async function lerGeracoes() {
+  const { data, error } = await sb.from('sync_status').select('tabela,geracao,atualizado_em,erro,erro_em');
+  if (error) throw new Error(error.message);
+  est.syncStatus = data || [];
+  est.geracoes = Object.fromEntries(est.syncStatus.map(r => [r.tabela, r.geracao ?? -1]));
+}
+const ger = t => est.geracoes[t] ?? -1;
+
+async function lerPainel() {
+  await lerGeracoes();
+  const emps = est.empresas;
+  const querAbertos = temArea('titulos') && ['geral', 'pagar', 'receber'].includes(est.aba) && ger('titulos_abertos') >= 0;
+  const geral = est.aba === 'geral';
+  const [saldos, tits, faixas, venc, abertos, saldoHoje, dre] = await Promise.all([
+    temArea('caixa') ? buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,data,saldo,entradas,saidas')
+      .eq('geracao', ger('saldo_diario')).in('empresa', emps).gte('data', est.inicio).lte('data', est.fim)
+      .order('data').order('empresa').order('banco')) : [],
+    temArea('titulos') ? buscarTodos(() => sb.from('titulos').select('tipo,empresa,vencimento,conta,sub_conta,total,aberto')
+      .eq('geracao', ger('titulos')).in('empresa', emps).gte('vencimento', est.inicio).lte('vencimento', est.fim)
+      .order('vencimento').order('tipo').order('empresa').order('conta').order('sub_conta')) : [],
+    temArea('titulos') ? buscarTodos(() => sb.from('inadimplencia').select('empresa,faixa,qtd,valor')
+      .eq('geracao', ger('inadimplencia')).in('empresa', emps).order('empresa').order('faixa')) : [],
+    temArea('titulos') ? buscarTodos(() => sb.from('vencidos_cliente').select('empresa,cod_cliente,nome,qtd,valor,dias_max')
+      .eq('geracao', ger('vencidos_cliente')).in('empresa', emps).order('valor', { ascending: false })) : [],
+    querAbertos ? buscarTodos(() => sb.from('titulos_abertos').select('tipo,empresa,vencimento,titulo,parcela,cod,nome,conta,aberto')
+      .eq('geracao', ger('titulos_abertos')).in('empresa', emps).order('vencimento').order('tipo').order('titulo')) : null,
+    // saldo da data mais recente (posição de hoje, independe do filtro)
+    geral && temArea('caixa') ? (async () => {
+      const { data: u } = await sb.from('saldo_diario').select('data').eq('geracao', ger('saldo_diario')).in('empresa', emps)
+        .lte('data', hojeISO()).order('data', { ascending: false }).limit(1);
+      const dt = u && u[0] && u[0].data; if (!dt) return null;
+      const rows = await buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,saldo').eq('geracao', ger('saldo_diario'))
+        .in('empresa', emps).eq('data', dt).order('empresa').order('banco'));
+      return { data: dt, rows };
+    })() : null,
+    geral && temArea('dre') && ger('dre_mensal') >= 0 ? buscarTodos(() => sb.from('dre_mensal').select('empresa,mes,conta,familia,valor')
+      .eq('geracao', ger('dre_mensal')).in('empresa', emps).order('mes').order('conta').order('familia')) : null,
+  ]);
+  const contasPagar = (est.contas.pagar || []).map(Number);
+  const semTransf = tits.filter(r => !ehTransferencia(`${r.conta}.${r.sub_conta}`));
+  const pagar = semTransf.filter(r => r.tipo === 'P' && (!contasPagar.length || contasPagar.includes(Number(r.conta))))
+    .map(r => [r.vencimento, r.empresa, r.conta, r.sub_conta, Number(r.total), Number(r.aberto)]);
+  const rec = new Map();
+  for (const r of semTransf.filter(t => t.tipo === 'R')) {
+    const k = r.vencimento + '|' + r.empresa;
+    const x = rec.get(k) || [r.vencimento, r.empresa, 0, 0];
+    x[2] += Number(r.total); x[3] += Number(r.aberto); rec.set(k, x);
+  }
+  const fx = new Map();
+  for (const f of faixas) { const x = fx.get(f.faixa) || { faixa: f.faixa, qtd: 0, valor: 0 }; x.qtd += f.qtd; x.valor += Number(f.valor); fx.set(f.faixa, x); }
+  const cli = new Map();
+  for (const v of venc) {
+    const k = v.cod_cliente || v.nome;
+    const x = cli.get(k) || { cod: v.cod_cliente, nome: v.nome || `Cliente ${v.cod_cliente}`, qtd: 0, valor: 0, dias: 0 };
+    x.qtd += v.qtd; x.valor += Number(v.valor); x.dias = Math.max(x.dias, v.dias_max); cli.set(k, x);
+  }
+  return {
+    atualizadoEm: new Date().toISOString(),
+    bancos: saldos.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => [r.empresa, r.banco, r.data, Number(r.saldo), Number(r.entradas), Number(r.saidas)]),
+    pagar, receber: [...rec.values()], faixas: [...fx.values()],
+    topAtraso: [...cli.values()].sort((a, b) => b.valor - a.valor).slice(0, 10),
+    abertos: abertos ? abertos.filter(t => !ehTransferencia(t.conta)).map(t => ({ ...t, aberto: Number(t.aberto) })) : null,
+    saldoHoje: saldoHoje ? { data: saldoHoje.data, contas: saldoHoje.rows.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => [r.empresa, r.banco, Number(r.saldo)]) } : null,
+    dre: dre ? dre.map(r => ({ ...r, valor: Number(r.valor) })) : null,
+  };
+}
+
+async function lerDia() {
+  await lerGeracoes();
+  const campo = est.baseDia === 'pagamento' ? 'dt_pagamento' : 'dt_conciliacao';
+  const [saldos, movs] = await Promise.all([
+    buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,saldo,entradas,saidas')
+      .eq('geracao', ger('saldo_diario')).in('empresa', est.empresas).eq('data', est.dia).order('empresa').order('banco')),
+    buscarTodos(() => sb.from('movimentos').select('tipo,empresa,banco,titulo,parcela,cod,nome,vencimento,conta,valor')
+      .eq('geracao', ger('movimentos')).in('empresa', est.empresas).eq(campo, est.dia)
+      .order('tipo').order('valor', { ascending: false }).order('titulo')),
+  ]);
+  return {
+    atualizadoEm: new Date().toISOString(), dia: est.dia, base: est.baseDia,
+    bancos: saldos.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => [r.empresa, r.banco, Number(r.saldo), Number(r.entradas), Number(r.saidas)]),
+    movimentos: movs.filter(m => !est.bancosSel || bancoSelecionado(m.empresa, m.banco)).map(m => ({
+      tipo: m.tipo, emp: m.empresa, banco: m.banco, titulo: m.titulo, parcela: m.parcela, cod: m.cod,
+      nome: m.nome || (m.tipo === 'R' ? `Cliente ${m.cod}` : `Fornecedor ${m.cod}`), vencimento: m.vencimento, conta: m.conta, valor: Number(m.valor),
+    })),
+  };
+}
+
+async function lerProj() {
+  await lerGeracoes();
+  const hoje = hojeISO(), ate = somaDias(hoje, est.horizonte);
+  const [saldos, tits] = await Promise.all([
+    buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,data,saldo')
+      .eq('geracao', ger('saldo_diario')).in('empresa', est.empresas).gte('data', somaDias(hoje, -10)).lte('data', hoje)
+      .order('data').order('empresa').order('banco')),
+    buscarTodos(() => sb.from('titulos').select('tipo,empresa,vencimento,conta,qtd_aberto,aberto')
+      .eq('geracao', ger('titulos')).in('empresa', est.empresas).gt('aberto', 0).lte('vencimento', ate)
+      .order('vencimento').order('tipo').order('empresa').order('conta')),
+  ]);
+  if (temArea('importacoes')) await lerImportacoes();
+  const ultimo = new Map();   // último saldo de cada banco (até hoje)
+  for (const r of saldos) if (bancoSelecionado(r.empresa, r.banco)) ultimo.set(r.empresa + '-' + r.banco, Number(r.saldo));
+  const contasProj = (est.contas.projecao || []).map(Number);
+  const junta = lista => {
+    const m = new Map();
+    for (const r of lista) {
+      const k = r.vencimento < hoje ? null : r.vencimento;
+      const x = m.get(k) || [k, 0, 0]; x[1] += r.qtd_aberto; x[2] += Number(r.aberto); m.set(k, x);
+    }
+    return [...m.values()];
+  };
+  return {
+    atualizadoEm: new Date().toISOString(), hoje, ate,
+    saldoHoje: [...ultimo.values()].reduce((s, v) => s + v, 0),
+    receber: junta(tits.filter(r => r.tipo === 'R')),
+    pagar: junta(tits.filter(r => r.tipo === 'P' && (!contasProj.length || contasProj.includes(Number(r.conta))))),
+  };
+}
+
+async function lerImportacoes() {
+  if (est.demo) return;
+  const lista = await buscarTodos(() => sb.from('importacoes').select('*').order('previsao').order('id'));
+  est.importacoes = lista;
+  const { data: par } = await sb.from('parametros').select('chave,valor');
+  const cam = (par || []).find(p => p.chave === 'cambio'); if (cam) est.cambio = cam.valor;
+  const { data: cfg } = await sb.from('config_painel').select('valor').eq('chave', 'ptax').maybeSingle();
+  if (cfg) est.ptax = cfg.valor;
+}
+
+async function lerUsuarios() {
+  if (est.demo) return;
+  est.usuarios = await buscarTodos(() => sb.from('perfis').select('*').order('email'));
+}
+
+// importações entram como saídas no fluxo projetado
+function importacoesNoFluxo(hoje, ate) {
+  if (!temArea('importacoes')) return [];
+  return est.importacoes.filter(i => i.no_fluxo && est.empresas.includes(i.empresa) && i.previsao <= ate && i.status !== 'Estoque')
+    .sort((a, b) => a.previsao.localeCompare(b.previsao));
+}
+
+function avisoSincronizacao() {
+  if (est.demo || !est.syncStatus.length) { $('#aviso').hidden = true; return ''; }
+  const datas = est.syncStatus.map(r => r.atualizado_em).filter(Boolean).map(d => new Date(d));
+  const ultima = datas.length ? new Date(Math.min(...datas)) : null;
+  const erros = est.syncStatus.filter(r => r.erro);
+  const intervalo = (est.syncInfo && est.syncInfo.intervalo_min) || 5;
+  const atrasado = !ultima || (Date.now() - ultima) > Math.max(30, intervalo * 4) * 60e3;
+  const partes = [];
+  if (atrasado) partes.push(`Os dados do ERP não são atualizados desde ${ultima ? ultima.toLocaleString('pt-BR') : '—'}. Verifique se o computador do sincronizador está ligado.`);
+  if (erros.length) partes.push(`Erro ao atualizar: ${erros.map(r => r.tabela).join(', ')}.`);
+  $('#aviso').textContent = partes.join(' ');
+  $('#aviso').hidden = !partes.length;
+  return ultima ? `Dados do ERP de ${ultima.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '';
+}
+
+function salvarFiltros(atalho) {
+  try { localStorage.setItem('painel-filtros', JSON.stringify({ empresas: est.empresas, atalho, inicio: est.inicio, fim: est.fim, bancos: est.bancosSel ? [...est.bancosSel] : null })); } catch (_) {}
+}
+
+function aplicarAtalho(p, recarregar = true) {
+  const h = hojeISO();
+  const d = new Date();
+  if (p === 'hoje') { est.inicio = h; est.fim = h; }
+  if (p === 'mes') { est.inicio = iso(new Date(d.getFullYear(), d.getMonth(), 1)); est.fim = h; }
+  if (p === '30') { est.inicio = somaDias(h, -29); est.fim = h; }
+  if (p === '90') { est.inicio = somaDias(h, -89); est.fim = h; }
+  if (p === 'ano') { est.inicio = `${d.getFullYear()}-01-01`; est.fim = h; }
+  document.querySelectorAll('#atalhos .chip').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.p === p)));
+  $('#dtIni').value = est.inicio; $('#dtFim').value = est.fim;
+  if (recarregar) { salvarFiltros(p); carregar(); }
+}
+
+function montarFiltros() {
+  $('#dtIni').value = est.inicio; $('#dtFim').value = est.fim;
+  const box = $('#empresas');
+  box.innerHTML = '';
+  for (const [cod, nome] of Object.entries(est.empresasDisp)) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.textContent = nome;
+    b.setAttribute('aria-pressed', String(est.empresas.includes(Number(cod))));
+    b.onclick = () => {
+      const c = Number(cod);
+      const sel = est.empresas.includes(c) ? est.empresas.filter(x => x !== c) : [...est.empresas, c];
+      if (!sel.length) return; // sempre ao menos uma
+      est.empresas = sel.sort();
+      b.setAttribute('aria-pressed', String(sel.includes(c)));
+      montarPopBancos();
+      salvarFiltros(document.querySelector('#atalhos .chip[aria-pressed=true]')?.dataset.p || 'custom');
+      carregar();
+    };
+    box.appendChild(b);
+  }
+  montarPopBancos();
+}
+
+// ---------- filtro de bancos ----------
+function montarPopBancos() {
+  const pop = $('#popBancos');
+  let html = '';
+  for (const e of est.empresas) {
+    const lista = est.bancosDisp[e] || [];
+    if (!lista.length) continue;
+    html += `<h3>${esc(nomeEmpresa(e))}</h3>` + lista.map(b =>
+      `<label><input type="checkbox" data-k="${e}-${b}" ${bancoSelecionado(e, b) ? 'checked' : ''}> ${esc(nomeBanco(e, b))} <span class="sub" style="color:var(--text-3)">(${b})</span></label>`).join('');
+  }
+  html += `<div class="acoes"><button data-a="todos">Todos</button><button data-a="nenhum">Limpar</button></div>`;
+  pop.innerHTML = html;
+  pop.querySelectorAll('input').forEach(i => i.onchange = () => {
+    const marcados = [...pop.querySelectorAll('input:checked')].map(x => x.dataset.k);
+    const todos = [...pop.querySelectorAll('input')].map(x => x.dataset.k);
+    est.bancosSel = marcados.length === todos.length ? null : new Set(marcados);
+    aposMudarBancos();
+  });
+  pop.querySelector('[data-a=todos]').onclick = () => { est.bancosSel = null; montarPopBancos(); aposMudarBancos(); };
+  pop.querySelector('[data-a=nenhum]').onclick = () => { est.bancosSel = new Set(); montarPopBancos(); aposMudarBancos(false); };
+  rotuloBancos();
+}
+function rotuloBancos() {
+  const visiveis = est.empresas.flatMap(e => (est.bancosDisp[e] || []).map(b => `${e}-${b}`));
+  const n = visiveis.filter(k => !est.bancosSel || est.bancosSel.has(k)).length;
+  const btn = $('#btnBancos');
+  btn.textContent = !est.bancosSel || n === visiveis.length ? 'Bancos: todos ▾' : n === 1
+    ? `Banco: ${nomeBanco(...visiveis.find(k => est.bancosSel.has(k)).split('-').map(Number))} ▾` : `Bancos: ${n} de ${visiveis.length} ▾`;
+  btn.classList.toggle('ativo-filtro', !!est.bancosSel && n !== visiveis.length);
+}
+let tBancos;
+function aposMudarBancos(recarregar = true) {
+  rotuloBancos();
+  salvarFiltros(document.querySelector('#atalhos .chip[aria-pressed=true]')?.dataset.p || 'custom');
+  clearTimeout(tBancos);
+  if (recarregar) tBancos = setTimeout(carregar, 350);
+}
+function paramBancos() {
+  if (!est.bancosSel) return {};
+  const lista = est.empresas.flatMap(e => (est.bancosDisp[e] || []).map(b => `${e}-${b}`)).filter(k => est.bancosSel.has(k));
+  return { bancos: lista.length ? lista.join(',') : '0-0' };
+}
+
+let seq = 0;
+async function carregar() {
+  if (!est.aba) return;
+  const meu = ++seq;
+  $('#conteudo').classList.add('carregando');
+  $('#erro').hidden = true;
+  try {
+    const aba = est.aba;
+    let desc = '';
+    if (aba === 'dia') {
+      const d = est.demo ? gerarDemoDia(est.dia, est.baseDia) : await lerDia();
+      if (meu !== seq) return; est.dadosDia = d; desc = `dia ${ddmmaa(est.dia)}`;
+    } else if (aba === 'projecao') {
+      const d = est.demo ? gerarDemoProj(est.horizonte) : await lerProj();
+      if (meu !== seq) return; est.dadosProj = d; desc = `projeção de ${est.horizonte} dias`;
+    } else if (aba === 'indicadores') {
+      const d = est.demo ? { dre: [], abertos: null, saldos: null, movs: null } : await lerIndicadores();
+      if (meu !== seq) return; est.dadosInd = d; desc = 'Indicadores';
+    } else if (aba === 'dre') {
+      const d = est.demo ? { linhas: [] } : await lerDre();
+      if (meu !== seq) return; est.dadosDre = d; desc = 'DRE';
+    } else if (aba === 'importacoes') {
+      if (!est.demo) { await lerGeracoes(); await lerImportacoes(); }
+      if (meu !== seq) return; desc = 'importações';
+    } else if (aba === 'usuarios') {
+      if (!est.demo) { await lerGeracoes(); await lerUsuarios(); }
+      if (meu !== seq) return; desc = 'usuários';
+    } else {
+      const d = est.demo ? gerarDemo(est.inicio, est.fim, est.empresas) : await lerPainel();
+      if (meu !== seq) return; est.dados = d; desc = `${ddmmaa(est.inicio)} a ${ddmmaa(est.fim)}`;
+    }
+    const erp = avisoSincronizacao();
+    $('#status').textContent = [erp || `Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`, desc].filter(Boolean).join(' · ');
+    render();
+  } catch (e) {
+    mostrarErro('Não foi possível carregar os dados: ' + e.message);
+  } finally {
+    if (meu === seq) $('#conteudo').classList.remove('carregando');
+  }
+}
+
+// ======================= cálculos =======================
+function calcular() {
+  const d = est.dados;
+  // bancos
+  const porConta = new Map();
+  const totalDia = new Map();
+  for (const [e, b, data, saldo, ent, sai] of d.bancos) {
+    const k = e + '-' + b;
+    if (!porConta.has(k)) porConta.set(k, { e, b, nome: nomeBanco(e, b), serie: [], ent: 0, sai: 0 });
+    const c = porConta.get(k);
+    c.serie.push([data, saldo]); c.ent += ent; c.sai += sai;
+    if (c.serie.length === 1) c.ini = saldo - ent + sai;
+    c.fim = saldo;
+    const t = totalDia.get(data) || { saldo: 0, ent: 0, sai: 0 };
+    t.saldo += saldo; t.ent += ent; t.sai += sai;
+    totalDia.set(data, t);
+  }
+  const contas = [...porConta.values()].sort((a, b) => a.e - b.e || b.fim - a.fim);
+  const dias = [...totalDia.keys()].sort();
+  const serieSaldo = dias.map(x => [x, totalDia.get(x).saldo]);
+  const saldoFim = contas.reduce((s, c) => s + c.fim, 0);
+  const saldoIni = contas.reduce((s, c) => s + c.ini, 0);
+  const entradas = contas.reduce((s, c) => s + c.ent, 0);
+  const saidas = contas.reduce((s, c) => s + c.sai, 0);
+  // separa contas operacionais de aplicações (investimento)
+  const oper = contas.filter(c => !ehAplicacao(c.b)), aplic = contas.filter(c => ehAplicacao(c.b));
+  const saldoContas = oper.reduce((s, c) => s + c.fim, 0), iniContas = oper.reduce((s, c) => s + c.ini, 0);
+  const saldoAplic = aplic.reduce((s, c) => s + c.fim, 0), iniAplic = aplic.reduce((s, c) => s + c.ini, 0);
+  const temAplic = aplic.length > 0;
+
+  // pagar / receber
+  const pagTot = d.pagar.reduce((s, r) => s + r[4], 0);
+  const pagAb = d.pagar.reduce((s, r) => s + r[5], 0);
+  const recTot = d.receber.reduce((s, r) => s + r[2], 0);
+  const recAb = d.receber.reduce((s, r) => s + r[3], 0);
+  const vencido = d.faixas.reduce((s, f) => s + f.valor, 0);
+  const vencidoQtd = d.faixas.reduce((s, f) => s + f.qtd, 0);
+  return { contas, serieSaldo, saldoFim, saldoIni, saldoContas, iniContas, saldoAplic, iniAplic, temAplic, entradas, saidas, pagTot, pagAb, recTot, recAb, vencido, vencidoQtd };
+}
+
+// agrupa por dia (ou por semana quando o período é longo)
+function agrupar(linhas, idxData, idxValores) {
+  const longo = (parseISO(est.fim) - parseISO(est.inicio)) / 864e5 > 62;
+  const chave = s => {
+    if (!longo) return s;
+    const dt = parseISO(s); const dow = (dt.getDay() + 6) % 7; dt.setDate(dt.getDate() - dow); return iso(dt);
+  };
+  const m = new Map();
+  for (const r of linhas) {
+    const k = chave(r[idxData]);
+    const acc = m.get(k) || idxValores.map(() => 0);
+    idxValores.forEach((ix, i) => { acc[i] += r[ix]; });
+    m.set(k, acc);
+  }
+  const ks = [...m.keys()].sort();
+  return { longo, cats: ks, valores: idxValores.map((_, i) => ks.map(k => m.get(k)[i])) };
+}
+
+// ======================= render =======================
+function render() {
+  const el = $('#conteudo');
+  const aba = est.aba;
+  if (!aba) return;
+  const periodo = !['dia', 'projecao', 'dre', 'indicadores', 'importacoes', 'usuarios'].includes(aba);
+  $('#periodo').hidden = !periodo; $('#sepPeriodo').hidden = !periodo;
+  $('#notaPeriodo').hidden = aba !== 'geral';
+  document.querySelector('.filtros').hidden = aba === 'usuarios';
+  try {
+    if (aba === 'importacoes') return renderImportacoes(el);
+    if (aba === 'usuarios') return renderUsuarios(el);
+    if (aba === 'dia') { el.innerHTML = est.dadosDia ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosDia) renderDia(el); return; }
+    if (aba === 'indicadores') { if (est.dadosInd) renderIndicadores(el); else el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
+    if (aba === 'dre') { if (est.dadosDre) renderDre(el); else el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
+    if (aba === 'projecao') { el.innerHTML = est.dadosProj ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosProj) renderProj(el); return; }
+    if (!est.dados) { el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
+    const c = calcular();
+    if (aba === 'geral') el.innerHTML = htmlGeral(c);
+    if (aba === 'bancos') el.innerHTML = htmlBancos(c);
+    if (aba === 'pagar') el.innerHTML = htmlPagar();
+    if (aba === 'receber') el.innerHTML = htmlReceber(c);
+    desenhar(c);
+  } catch (e) {
+    el.innerHTML = `<div class="card"><div class="vazio">Não foi possível montar esta aba: ${esc(e.message)}</div></div>`;
+  }
+}
+
+const kpi = (rot, val, det = '', cls = '') =>
+  `<div class="kpi"><div class="rot">${rot}</div><div class="val ${cls}" >${val}</div><div class="det">${det}</div></div>`;
+
+// fluxo projetado: saldo de hoje + recebimentos − pagamentos em aberto, dia a dia (até 12 meses)
+function fluxoProjetado(saldo0, ab, hoje) {
+  const net = new Map();
+  for (const t of ab.R) if (t.vencimento >= hoje) net.set(t.vencimento, (net.get(t.vencimento) || 0) + t.aberto);
+  for (const t of ab.P) if (t.vencimento >= hoje) net.set(t.vencimento, (net.get(t.vencimento) || 0) - t.aberto);
+  let sd = saldo0, des = null; const serie = [];
+  for (let i = 0; i <= 365; i++) {
+    const dia = somaDias(hoje, i); sd += net.get(dia) || 0;
+    if (i <= 30) serie.push([dia, sd]);
+    if (!des && sd < 0) des = { data: dia, saldo: sd };
+    if (i >= 30 && des) break;
+  }
+  return { serie, des };
+}
+function htmlGeral(c) {
+  const d = est.dados, hoje = hojeISO();
+  const somaAb = l => l.reduce((t, x) => t + x.aberto, 0);
+  // HOJE — posição atual, não muda com os filtros
+  const sh = d.saldoHoje;
+  const shC = sh ? sh.contas.filter(x => !ehAplicacao(x[1])).reduce((t, x) => t + x[2], 0) : null;
+  const shA = sh ? sh.contas.filter(x => ehAplicacao(x[1])).reduce((t, x) => t + x[2], 0) : 0;
+  const temAplicH = !!sh && sh.contas.some(x => ehAplicacao(x[1]));
+  const ab = d.abertos ? { R: abertosDoTipo('R'), P: abertosDoTipo('P') } : null;
+  const totRec = ab ? somaAb(ab.R) : 0;
+  // PASSADO — filtro De/Até (até hoje)
+  const fimP = est.fim < hoje ? est.fim : hoje, varC = c.saldoContas - c.iniContas, resCx = c.entradas - c.saidas;
+  // PRÓXIMOS 30 DIAS — fixo
+  const ate = somaDias(hoje, 30);
+  const fut = l => somaAb(l.filter(t => t.vencimento >= hoje && t.vencimento <= ate));
+  const fR = ab ? fut(ab.R) : 0, fP = ab ? fut(ab.P) : 0;
+  const fx = est._fluxo = ab && shC !== null ? fluxoProjetado(shC, ab, hoje) : null;
+  const des = fx && fx.des, des30 = des && des.data <= ate;
+  // RESULTADO — DRE, mesmo período da aba DRE
+  let blocoDre = '';
+  est._dreGeral = null;
+  if (d.dre && d.dre.length) {
+    const D = est._dreGeral = calcDre(d.dre);
+    const { gV, tot, med, recT, nM } = D, t = id => tot(gV[id]);
+    const mc2p = recT ? t('mc2') / recT : 0, recMed = med(gV.rec), fixos = -med(gV.dop);
+    const pe = mc2p > 0 && fixos > 0 ? fixos / mc2p : 0, folga = pe ? recMed / pe - 1 : 0;
+    blocoDre = `
+  <h3 class="secao">📊 Resultado <span class="tag">DRE por competência · mesmo período da aba DRE${D.sepAt ? ' · sem o mês parcial' : ''}</span></h3>
+  <div class="controles">${htmlPeriodoDre(D)}</div>
+  ${!nM ? '<div class="vazio">Selecione pelo menos um mês no período.</div>' : `<div class="kpis">
+    ${kpi('Total faturado', R0(recT), `média ${R0(recMed)}/mês`)}
+    ${kpi('Margem de contribuição 2', R0(t('mc2')), pctTxt(mc2p) + ' da receita', t('mc2') < 0 ? 'neg' : '')}
+    ${kpi('EBITDA', R0(t('ebitda')), recT ? pctTxt(t('ebitda') / recT) + ' da receita' : '', t('ebitda') < 0 ? 'neg' : '')}
+    ${kpi('Lucro líquido', R0(t('lucro')), recT ? pctTxt(t('lucro') / recT) + ' da receita' : '', t('lucro') < 0 ? 'neg' : '')}
+    ${pe ? kpi('Ponto de equilíbrio', R0(pe) + '/mês', `faturamento p/ EBITDA zero · média atual ${folga >= 0 ? '▲' : '▼'} ${pctTxt(Math.abs(folga))} ${folga >= 0 ? 'acima' : 'abaixo'}`, folga < 0 ? 'alerta' : '') : ''}
+  </div>`}`;
+  }
+  return `
+  <h3 class="secao">📍 Hoje <span class="tag fixo">posição atual · não muda com os filtros</span></h3>
+  <div class="kpis">
+    ${shC !== null ? kpi('Saldo em contas', R0(shC), `em ${ddmmaa(sh.data)}`, shC < 0 ? 'neg' : '') : ''}
+    ${temAplicH ? kpi('Saldo em aplicações', R0(shA), `em ${ddmmaa(sh.data)} · investimentos`) : ''}
+    ${ab ? kpi('Total a receber', R0(totRec), `${inteiro.format(ab.R.length)} títulos em aberto · todos os vencimentos`) : ''}
+    ${kpi('⚠ Vencido a receber', R0(c.vencido), `${inteiro.format(c.vencidoQtd)} títulos vencidos`, c.vencido > 0 ? 'alerta' : '')}
+  </div>
+  <h3 class="secao">⏮ Passado <span class="tag filtro">📅 usa o filtro De/Até lá em cima: ${ddmmaa(est.inicio)} a ${ddmmaa(fimP)}</span></h3>
+  <div class="kpis">
+    ${kpi('Entradas', R0(c.entradas), 'recebimentos conciliados')}
+    ${kpi('Saídas', R0(c.saidas), 'pagamentos conciliados')}
+    ${kpi('Resultado de caixa', R0(resCx), 'entradas − saídas', resCx < 0 ? 'neg' : '')}
+    ${kpi('Variação do saldo', `${varC >= 0 ? '▲' : '▼'} ${R0(Math.abs(varC))}`, `de ${R0(c.iniContas)} para ${R0(c.saldoContas)}`)}
+  </div>
+  <div class="grade"><div class="card cheio">
+    <h2>Saldo total em bancos</h2>
+    <div class="nota">Soma das contas das empresas selecionadas, dia a dia, no período do filtro</div>
+    <div class="grafico" id="gSaldo"></div>
+  </div></div>
+  <h3 class="secao">⏭ Próximos 30 dias <span class="tag fixo">títulos em aberto a vencer · não muda com os filtros</span></h3>
+  ${ab ? `<div class="kpis">
+    ${kpi('Total a receber', R0(fR), `de ${ddmmaa(hoje)} a ${ddmmaa(ate)}`)}
+    ${kpi('Total a pagar', R0(fP), `de ${ddmmaa(hoje)} a ${ddmmaa(ate)}`)}
+    ${fx ? kpi('Saldo em 30 dias', R0(fx.serie.at(-1)[1]), 'saldo de hoje + a receber − a pagar', fx.serie.at(-1)[1] < 0 ? 'neg' : '') : ''}
+    ${fx ? kpi('Próximo desencaixe', des ? ddmmaa(des.data) : 'nenhum previsto',
+      des ? `saldo projetado fica em ${R0(des.saldo)}${des30 ? '' : ' (após os 30 dias)'}` : 'saldo não fica negativo nos próximos 12 meses', des30 ? 'alerta' : '') : ''}
+  </div>
+  <div class="grade">
+    <div class="card cheio">
+      <h2>Recebimentos × pagamentos por dia</h2>
+      <div class="nota">Só o valor em aberto · os vencidos não entram (ficam no bloco "Hoje")</div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>A receber</span><span><i style="background:var(--s2)"></i>A pagar</span></div>
+      <div class="grafico" id="gRxP"></div>
+    </div>
+    ${fx ? `<div class="card cheio">
+      <h2>Saldo projetado dia a dia</h2>
+      <div class="nota">Saldo em contas de hoje + recebimentos − pagamentos${des30 ? ` · ⚠ fica negativo em ${ddmmaa(des.data)}` : ''}</div>
+      <div class="grafico" id="gFluxo"></div>
+    </div>` : ''}
+  </div>` : '<div class="vazio">Disponível depois da próxima atualização do sincronizador.</div>'}
+  ${blocoDre}`;
+}
+
+function htmlBancos(c) {
+  if (!c.contas.length) return `<div class="card"><div class="vazio">Nenhuma conta bancária para as empresas selecionadas.</div></div>`;
+  const multi = est.empresas.length > 1;
+  const linhas = c.contas.map((x, i) => `
+    <tr>
+      ${multi ? `<td>${esc(nomeEmpresa(x.e))}</td>` : ''}
+      <td>${esc(x.nome)}</td>
+      <td class="n">${R(x.ini)}</td>
+      <td class="n">${R(x.ent)}</td>
+      <td class="n">${R(x.sai)}</td>
+      <td class="n ${x.fim < 0 ? 'neg' : ''}"><b>${R(x.fim)}</b></td>
+      <td><div class="spark" data-i="${i}" style="width:120px;height:28px"></div></td>
+    </tr>`).join('');
+  return `
+  <div class="kpis">
+    ${kpi('Saldo inicial', R0(c.saldoIni), `em ${ddmmaa(est.inicio)}`)}
+    ${kpi('Entradas', R0(c.entradas))}
+    ${kpi('Saídas', R0(c.saidas))}
+    ${kpi('Saldo final', R0(c.saldoFim), `em ${ddmmaa(c.serieSaldo.at(-1)?.[0] || est.fim)}`, c.saldoFim < 0 ? 'neg' : '')}
+  </div>
+  <div class="card">
+    <h2>Saldo por conta bancária</h2>
+    <div class="nota">Movimentos conciliados (baixas com data de conciliação)</div>
+    <div class="tabela-wrap"><table>
+      <thead><tr>${multi ? '<th>Empresa</th>' : ''}<th>Banco</th><th class="n">Saldo inicial</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Saldo final</th><th>Evolução</th></tr></thead>
+      <tbody>${linhas}
+        <tr class="total">${multi ? '<td></td>' : ''}<td>Total</td><td class="n">${R(c.saldoIni)}</td><td class="n">${R(c.entradas)}</td><td class="n">${R(c.saidas)}</td><td class="n">${R(c.saldoFim)}</td><td></td></tr>
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+// ======================= DRE (competência) =======================
+// linha comercial do ERP -> família (aba "familia" da planilha)
+const FAMILIA_LINHA = {
+  'ACESSORIOS - GENERAL': 'Pneumática', 'ACESSORIOS - GISON': 'Pneumática', 'ACESSORIOS - KILEWS': 'Parafusadeira',
+  'COBOT': 'Robô Colaborativo', 'DUROFIX': 'Linha Bateria', 'GENERAL AIR TOOLS': 'Pneumática', 'GISON': 'Pneumática',
+  'JHC': 'Linha Industrial', 'KILEWS': 'Parafusadeira', 'LINHA INDUSTRIAL': 'Linha Industrial', 'LIXAS STAR': 'Lixas',
+  'NEW RAPID': 'Pneumática', 'PECAS - GENERAL': 'Peças de Reposição GENERAL', 'PECAS - GISON': 'Peças de Reposição GISON',
+  'PECAS - JHC': 'Peças de Reposição', 'PECAS - KILEWS': 'Peças de Reposição KILEWS', 'PONTAS': 'Pontas',
+  'SERVIÇOS': 'MOB', 'SMART HUB': 'Assessória', 'SHI TEN': 'Parafusadeira', 'FRETE': 'Frete',
+};
+const famDe = l => FAMILIA_LINHA[String(l || '').trim().toUpperCase()] || (l ? 'Outras' : 'Sem família');
+// estrutura do DRE (aba PLANEJAMENTO). "x.*" = todas as subcontas.
+const DRE_GRUPOS = [
+  { id: 'rec', nome: 'Receitas', contas: ['10.01.01', '10.01.02', '11.01.02', '11.01.01'] },
+  { id: 'imp', nome: '(-) Impostos sobre vendas', contas: ['20.12.*', '21.02.04', '21.02.13', '21.02.15'] },
+  { id: 'rl', nome: '(=) Receita líquida', soma: ['rec', 'imp'] },
+  { id: 'cmv', nome: '(-) CMV', contas: ['CMV'] },
+  { id: 'mc', nome: '(=) Margem de contribuição', soma: ['rl', 'cmv'], d: 1 },
+  { id: 'dv', nome: '(-) Despesas variáveis', contas: ['20.05.01', '20.05.02', '20.02.07', '20.07.02', '20.11.04'] },
+  { id: 'mc2', nome: '(=) Margem de contribuição 2', soma: ['mc', 'dv'] },
+  { id: 'cf', nome: '(-) Custo fixo', contas: ['11.01.10', '20.03.*', '21.02.19', '21.02.20', '21.02.21'] },
+  { id: 'rh', nome: '(-) RH', contas: ['20.01.01', '20.01.02', '20.01.03', '20.01.04', '20.01.06', '20.01.20', '20.01.21', '20.01.22', '20.01.31', '20.01.40', '20.01.41', '20.01.42', '20.01.43', '20.01.45', '20.01.46', '20.01.47'] },
+  { id: 'mkt', nome: '(-) Marketing', contas: ['20.06.*'] },
+  { id: 'desp', nome: '(-) Despesas', contas: ['20.04.01', '20.04.05', '20.04.08', '20.04.12', '20.04.13', '20.05.10', '20.07.01', '20.07.04', '20.11.01', '20.02.10', '21.01.07', '10.01.03'] },
+  { id: 'dop', nome: '(=) Despesas operacionais', soma: ['cf', 'rh', 'mkt', 'desp'] },
+  { id: 'ebitda', nome: '(=) EBITDA', soma: ['mc2', 'dop'], d: 1 },
+  { id: 'fin', nome: '(-) Despesas financeiras', contas: ['11.01.03', '20.08.*'] },
+  { id: 'lair', nome: '(=) LAIR', soma: ['ebitda', 'fin'] },
+  { id: 'ir', nome: '(-) Impostos sobre a renda', contas: ['21.02.01', '21.02.11'] },
+  { id: 'lucro', nome: '(=) Lucro ou prejuízo', soma: ['lair', 'ir'], d: 1 },
+  { id: 'socios', nome: 'Sócios', contas: ['11.01.08', '11.01.14', '21.01.04', '20.01.32', '20.01.33', '20.04.02'], fora: 1 },
+  { id: 'ativos', nome: 'Ativos', contas: ['20.04.03', '20.04.04'], fora: 1 },
+  { id: 'compras', nome: 'Compras', contas: ['11.01.13', '20.02.01', '20.02.02', '20.02.05', '20.02.11', '20.02.12'], fora: 1 },
+  { id: 'outros', nome: 'Outros (empréstimos, reembolsos…)', contas: ['20.09.*', '11.01.06', '11.01.11', '11.01.12', '11.01.15', '11.01.16', '11.01.99'], fora: 1 },
+  { id: 'nc', nome: 'Não classificado', contas: [], fora: 1 },
+];
+const _grupoCache = {};
+function grupoDre(c) {
+  if (_grupoCache[c]) return _grupoCache[c];
+  const g = DRE_GRUPOS.find(x => x.contas && x.contas.includes(c))
+    || DRE_GRUPOS.find(x => x.contas && x.contas.some(p => p.endsWith('.*') && c.startsWith(p.slice(0, -1))));
+  return (_grupoCache[c] = g ? g.id : 'nc');
+}
+const sinalDre = c => (c.startsWith('10.') || c.startsWith('11.')) ? 1 : -1;
+const MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const rotMes = m => MESES_ABREV[Number(m.slice(5, 7)) - 1] + '/' + m.slice(2, 4);
+const somaMes = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+const pctTxt = x => isFinite(x) ? (x * 100).toFixed(1).replace('.', ',') + '%' : '';
+
+async function lerDre() {
+  await lerGeracoes();
+  if (ger('dre_mensal') < 0) return { linhas: [] };
+  const rows = await buscarTodos(() => sb.from('dre_mensal').select('empresa,mes,conta,familia,valor')
+    .eq('geracao', ger('dre_mensal')).in('empresa', est.empresas).order('mes').order('conta').order('familia'));
+  return { linhas: rows.map(r => ({ ...r, valor: Number(r.valor) })) };
+}
+
+// filtro de período do DRE (árvore ano → meses + atalhos), usado no DRE e na Visão geral (mesma seleção)
+const MESES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function rotPeriodoDre(D) {
+  const { meses, nM } = D;
+  return nM ? `${rotMes(meses[0])} a ${rotMes(meses[nM - 1])} · ${nM} ${nM > 1 ? 'meses' : 'mês'}` : 'nenhum mês';
+}
+function htmlPeriodoDre(D) {
+  const { cfg, disp, anos, sel, nM } = D;
+  const arvore = `<div class="arvore">
+    <label><input type="checkbox" data-tudo ${nM === disp.length ? 'checked' : ''}> (Selecionar tudo)</label>
+    ${anos.map(a => {
+      const ms = disp.filter(m => m.startsWith(a)), n = ms.filter(m => sel.has(m)).length, ab = cfg.anosAbertos.includes(a);
+      return `<div class="ano"><span class="tg" data-tg="${a}">${ab ? '⊟' : '⊞'}</span>
+        <label><input type="checkbox" data-ano="${a}" ${n === ms.length ? 'checked' : ''} ${n && n < ms.length ? 'data-meio="1"' : ''}> ${a}</label>
+        ${ab ? `<div class="meses">${ms.map(m => `<label><input type="checkbox" data-mes="${m}" ${sel.has(m) ? 'checked' : ''}> ${MESES_NOME[Number(m.slice(5, 7)) - 1]}</label>`).join('')}</div>` : ''}</div>`;
+    }).join('')}
+  </div>`;
+  return `<details class="dre-per" ${cfg.perAberto ? 'open' : ''}><summary class="chip">📅 ${rotPeriodoDre(D)} ▾</summary>${arvore}</details>
+      <button class="chip" data-atalho="12">Últimos 12</button><button class="chip" data-atalho="6">6</button><button class="chip" data-atalho="3">3</button><button class="chip" data-atalho="ano">Este ano</button>`;
+}
+function ligarPeriodoDre(el, D, re) {
+  const { cfg, disp, ultimos, mesHoje } = D;
+  const setSel = lista => { cfg.sel = [...new Set(lista)].sort(); re(); };
+  el.querySelectorAll('[data-meio]').forEach(i => { i.indeterminate = true; });
+  const det = el.querySelector('.dre-per'); if (det) det.ontoggle = () => { cfg.perAberto = det.open; };
+  const tudo = el.querySelector('[data-tudo]'); if (tudo) tudo.onchange = e => setSel(e.target.checked ? disp : []);
+  el.querySelectorAll('[data-ano]').forEach(c => c.onchange = () => {
+    const ms = disp.filter(m => m.startsWith(c.dataset.ano));
+    setSel(c.checked ? [...cfg.sel, ...ms] : cfg.sel.filter(m => !ms.includes(m)));
+  });
+  el.querySelectorAll('[data-mes]').forEach(c => c.onchange = () =>
+    setSel(c.checked ? [...cfg.sel, c.dataset.mes] : cfg.sel.filter(m => m !== c.dataset.mes)));
+  el.querySelectorAll('[data-tg]').forEach(t => t.onclick = () => {
+    const a = t.dataset.tg, k = cfg.anosAbertos.indexOf(a); if (k < 0) cfg.anosAbertos.push(a); else cfg.anosAbertos.splice(k, 1); re();
+  });
+  el.querySelectorAll('[data-atalho]').forEach(b => b.onclick = () => {
+    cfg.perAberto = false;
+    setSel(b.dataset.atalho === 'ano' ? disp.filter(m => m.startsWith(mesHoje.slice(0, 4))) : [...ultimos(Number(b.dataset.atalho)), mesHoje]);
+  });
+}
+
+function calcDre(L) {
+  const mesHoje = hojeISO().slice(0, 7);
+  const disp = [...new Set(L.map(r => r.mes))].filter(m => m <= mesHoje).sort();
+  const ultimos = n => { const fim = somaMes(mesHoje, -1); return Array.from({ length: n }, (_, k) => somaMes(fim, k - n + 1)); };
+  const cfg = est.dreCfg ||= { sel: [...ultimos(12), mesHoje], meses: window.innerWidth > 700, abertos: ['rec'], anosAbertos: [], perAberto: false };
+  const sel = new Set(cfg.sel);
+  const meses = disp.filter(m => sel.has(m));
+  const anos = [...new Set(disp.map(m => m.slice(0, 4)))].sort().reverse();
+  const nM = meses.length, idx = new Map(meses.map((m, i) => [m, i])), vaz = () => new Array(nM).fill(0);
+  const porConta = new Map(), porFam = new Map();
+  const acc = (map, k, i, v) => { let a = map.get(k); if (!a) map.set(k, a = vaz()); a[i] += v; };
+  for (const r of L) {
+    const i = idx.get(r.mes); if (i === undefined || ehTransferencia(r.conta)) continue;
+    const v = sinalDre(r.conta) * r.valor;
+    acc(porConta, r.conta, i, v);
+    if (r.conta === '10.01.01' || r.conta === 'CMV') acc(porFam, r.conta + '|' + famDe(r.familia), i, v);
+  }
+  const gV = {}, gC = {};
+  for (const g of DRE_GRUPOS) { gV[g.id] = vaz(); gC[g.id] = []; }
+  // IR/CSLL = títulos pela data de emissão (já cadastrados rateados mês a mês).
+  // Mês atual (parcial), sem título ainda: provisão = receita da empresa 1 no mês × % do mês anterior da empresa 1.
+  const CONTAS_REC = DRE_GRUPOS[0].contas;
+  const iAtual = meses.indexOf(mesHoje);
+  let notaIr = '';
+  if (iAtual >= 0) {
+    const ant = somaMes(mesHoje, -1);
+    const s1 = (mes, ok) => L.reduce((t, r) => t + (Number(r.empresa) === 1 && r.mes === mes && ok(r.conta) ? r.valor : 0), 0);
+    const recAnt = s1(ant, c => CONTAS_REC.includes(c)), recAtu = s1(mesHoje, c => CONTAS_REC.includes(c)), tx = {};
+    for (const c of ['21.02.01', '21.02.11']) {
+      tx[c] = recAnt ? s1(ant, x => x === c) / recAnt : 0;
+      if (!s1(mesHoje, x => x === c) && tx[c]) { let a = porConta.get(c); if (!a) porConta.set(c, a = vaz()); a[iAtual] -= recAtu * tx[c]; }
+    }
+    if (tx['21.02.01'] || tx['21.02.11']) notaIr = ` · ${rotMes(mesHoje)} parcial: IRPJ/CSLL provisionados com ${pctTxt(tx['21.02.01'])} / ${pctTxt(tx['21.02.11'])} da receita da empresa 1 (% de ${rotMes(ant)})`;
+  }
+  for (const [c, a] of porConta) { const g = grupoDre(c); gC[g].push(c); a.forEach((v, i) => { gV[g][i] += v; }); }
+  for (const g of DRE_GRUPOS) if (g.soma) gV[g.id] = meses.map((_, i) => g.soma.reduce((s, id) => s + gV[id][i], 0));
+  // mês atual (parcial) fica numa coluna à parte, depois da média; total e média só com meses fechados
+  const sepAt = iAtual >= 0 && nM > 1;
+  const idxs = meses.map((_, k) => k).filter(k => !sepAt || k !== iAtual);
+  const tot = a => idxs.reduce((s, k) => s + a[k], 0);
+  const med = a => tot(a) / idxs.length;
+  const recT = tot(gV.rec);
+  return { mesHoje, disp, ultimos, cfg, sel, meses, anos, nM, porConta, porFam, gV, gC, iAtual, notaIr, sepAt, idxs, tot, med, recT };
+}
+
+function renderDre(el) {
+  const L = est.dadosDre.linhas;
+  if (!L.length) { el.innerHTML = '<div class="card"><div class="vazio">O DRE aparece aqui depois da próxima atualização do sincronizador.</div></div>'; return; }
+  const D = calcDre(L);
+  const { mesHoje, disp, cfg, sel, meses, anos, nM, porConta, porFam, gV, gC, iAtual, notaIr, sepAt, idxs, tot, med, recT } = D;
+  const f = v => Math.abs(v) < 0.5 ? '–' : R0(v);
+  // % de cada linha sobre a receita do próprio mês (como na planilha)
+  const pc2 = x => isFinite(x) && Math.abs(x) > 0.00005 ? (x * 100).toFixed(2).replace('.', ',') + '%' : '';
+  const pcM = (v, k, extra = '') => `<td class="n pc${extra}">${gV.rec[k] ? pc2(v / gV.rec[k]) : ''}</td>`;
+  const cel = (a, neg) => (cfg.meses ? idxs.map(k => `<td class="n ${neg && a[k] < 0 ? 'neg' : ''}">${f(a[k])}</td>${pcM(a[k], k)}`).join('') : '')
+    + `<td class="n ${neg && tot(a) < 0 ? 'neg' : ''}"><b>${f(tot(a))}</b></td><td class="n">${f(med(a))}</td>`
+    + (sepAt ? `<td class="n parcial ${neg && a[iAtual] < 0 ? 'neg' : ''}">${f(a[iAtual])}</td>${pcM(a[iAtual], iAtual, ' parcial')}` : '')
+    + `<td class="n pc">${recT ? pc2(tot(a) / recT) : ''}</td>`;
+  const linhas = []; let sep = false;
+  for (const g of DRE_GRUPOS) {
+    if (g.fora && !gC[g.id].length) continue;
+    if (g.fora && !sep) { sep = true; linhas.push(`<tr class="sep"><td colspan="${(cfg.meses ? idxs.length * 2 : 0) + 4 + (sepAt ? 2 : 0)}">Abaixo do resultado — não entram no lucro</td></tr>`); }
+    if (g.soma) { linhas.push(`<tr class="t ${g.d ? 'd' : ''}"><td>${g.nome}</td>${cel(gV[g.id], true)}</tr>`); continue; }
+    const aberto = cfg.abertos.includes(g.id);
+    const h = aberto ? '' : ' hidden';
+    linhas.push(`<tr class="g" data-g="${g.id}"><td><span class="seta-g">${aberto ? '▾' : '▸'}</span> ${g.nome}</td>${cel(gV[g.id])}</tr>`);
+    for (const c of gC[g.id].sort((a, b) => Math.abs(tot(porConta.get(b))) - Math.abs(tot(porConta.get(a))))) {
+      linhas.push(`<tr data-pai="${g.id}"${h}><td style="padding-left:26px">${esc(c === 'CMV' ? 'Custo das mercadorias vendidas' : descConta(c))} <span class="sub">${c === 'CMV' ? '' : c}</span></td>${cel(porConta.get(c))}</tr>`);
+      if (c === '10.01.01' || c === 'CMV') {
+        const fams = [...porFam.entries()].filter(([k]) => k.startsWith(c + '|')).sort((a, b) => Math.abs(tot(b[1])) - Math.abs(tot(a[1])));
+        for (const [k, a] of fams) linhas.push(`<tr data-pai="${g.id}"${h}><td style="padding-left:46px" class="sub">${esc(k.split('|')[1])}</td>${cel(a)}</tr>`);
+      }
+    }
+  }
+  const t = id => tot(gV[id]);
+  const rotPer = rotPeriodoDre(D);
+  el.innerHTML = `
+  <div class="kpis">
+    ${kpi('Receita', R0(recT), `média ${R0(med(gV.rec))}/mês${sepAt ? ` · ${rotMes(mesHoje)} parcial: ${R0(gV.rec[iAtual])}` : ''}`)}
+    ${kpi('Margem de contribuição', R0(t('mc')), recT ? pctTxt(t('mc') / recT) + ' da receita' : '', t('mc') < 0 ? 'neg' : '')}
+    ${kpi('EBITDA', R0(t('ebitda')), recT ? pctTxt(t('ebitda') / recT) + ' da receita' : '', t('ebitda') < 0 ? 'neg' : '')}
+    ${kpi('Lucro ou prejuízo', R0(t('lucro')), recT ? pctTxt(t('lucro') / recT) + ' da receita' : '', t('lucro') < 0 ? 'neg' : '')}
+  </div>
+  <div class="card cheio">
+    <div class="controles">
+      ${htmlPeriodoDre(D)}
+      <div class="sep"></div>
+      <label class="rot"><input type="checkbox" id="dreMeses" ${cfg.meses ? 'checked' : ''}> mostrar meses</label>
+
+      <button class="chip" id="dreAbrir">Expandir tudo</button><button class="chip" id="dreFechar">Recolher tudo</button>
+    </div>
+    <div class="nota">Competência (data de emissão) · ${rotPer}${notaIr} · clique num grupo para abrir as contas</div>
+    ${!nM ? '<div class="vazio">Selecione pelo menos um mês no período.</div>' : `<div class="tabela-wrap rolagem"><table class="dre">
+      <thead><tr><th>Conta</th>${cfg.meses ? idxs.map(k => `<th class="n">${rotMes(meses[k])}</th><th class="n pc">%</th>`).join('') : ''}<th class="n">Total</th><th class="n">Média/mês</th>${sepAt ? `<th class="n parcial">${rotMes(mesHoje)} parcial</th><th class="n pc parcial">%</th>` : ''}<th class="n pc">% total</th></tr></thead>
+      <tbody>${linhas.join('')}</tbody>
+    </table></div>`}
+  </div>`;
+  // re-desenha mantendo a posição da tela e da rolagem lateral da tabela
+  const re = () => {
+    const y = window.scrollY, w = el.querySelector('.tabela-wrap'), x = w ? w.scrollLeft : 0, yt = w ? w.scrollTop : 0;
+    renderDre(el); window.scrollTo(0, y);
+    const w2 = el.querySelector('.tabela-wrap'); if (w2) { w2.scrollLeft = x; w2.scrollTop = yt; }
+  };
+  ligarPeriodoDre(el, D, re);
+  $('#dreMeses').onchange = e => { cfg.meses = e.target.checked; re(); };
+  const marcar = (id, ab) => {
+    const k = cfg.abertos.indexOf(id); if (ab && k < 0) cfg.abertos.push(id); if (!ab && k >= 0) cfg.abertos.splice(k, 1);
+    el.querySelectorAll(`tr[data-pai="${id}"]`).forEach(r => { r.hidden = !ab; });
+    const sp = el.querySelector(`tr.g[data-g="${id}"] .seta-g`); if (sp) sp.textContent = ab ? '▾' : '▸';
+  };
+  el.querySelectorAll('tr.g').forEach(tr => tr.onclick = () => marcar(tr.dataset.g, !cfg.abertos.includes(tr.dataset.g)));
+  $('#dreAbrir').onclick = () => DRE_GRUPOS.filter(g => !g.soma).forEach(g => marcar(g.id, true));
+  $('#dreFechar').onclick = () => DRE_GRUPOS.filter(g => !g.soma).forEach(g => marcar(g.id, false));
+}
+
+// ======================= INDICADORES =======================
+async function lerIndicadores() {
+  await lerGeracoes();
+  const emps = est.empresas, hoje = hojeISO(), d90 = somaDias(hoje, -90);
+  const [dre, abertos, saldos, movs] = await Promise.all([
+    ger('dre_mensal') >= 0 ? buscarTodos(() => sb.from('dre_mensal').select('empresa,mes,conta,familia,valor')
+      .eq('geracao', ger('dre_mensal')).in('empresa', emps).order('mes').order('conta').order('familia')) : [],
+    temArea('titulos') && ger('titulos_abertos') >= 0 ? buscarTodos(() => sb.from('titulos_abertos').select('tipo,empresa,vencimento,cod,nome,conta,aberto')
+      .eq('geracao', ger('titulos_abertos')).in('empresa', emps).order('vencimento').order('tipo').order('titulo').order('parcela')) : null,
+    temArea('caixa') ? buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,data,saldo,saidas')
+      .eq('geracao', ger('saldo_diario')).in('empresa', emps).gte('data', d90).lte('data', hoje).order('data').order('empresa').order('banco')) : null,
+    temArea('caixa') && ger('movimentos') >= 0 ? buscarTodos(() => sb.from('movimentos').select('tipo,empresa,vencimento,dt_pagamento,dt_conciliacao,conta,valor')
+      .eq('geracao', ger('movimentos')).in('empresa', emps).eq('tipo', 'R').gte('dt_conciliacao', d90)
+      .order('dt_conciliacao').order('empresa').order('titulo').order('parcela')) : null,
+  ]);
+  return {
+    dre: dre.map(r => ({ ...r, valor: Number(r.valor) })),
+    abertos: abertos ? abertos.filter(t => !ehTransferencia(t.conta)).map(t => ({ ...t, aberto: Number(t.aberto) })) : null,
+    saldos: saldos ? saldos.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => ({ ...r, saldo: Number(r.saldo), saidas: Number(r.saidas) })) : null,
+    movs: movs ? movs.filter(m => !ehTransferencia(m.conta)).map(m => ({ ...m, valor: Number(m.valor) })) : null,
+  };
+}
+// totais do DRE por mês e grupo (sem provisões), para comparações e tendências
+function serieDre(L) {
+  const S = {};
+  for (const r of L) {
+    if (ehTransferencia(r.conta)) continue;
+    const o = S[r.mes] ||= {}, v = sinalDre(r.conta) * r.valor, g = grupoDre(r.conta);
+    o[g] = (o[g] || 0) + v;
+    if (r.conta.startsWith('20.08.')) o.juros = (o.juros || 0) + v;
+  }
+  for (const o of Object.values(S)) for (const g of DRE_GRUPOS) if (g.soma) o[g.id] = g.soma.reduce((t, id) => t + (o[id] || 0), 0);
+  return S;
+}
+function spark(vals) {
+  const v = vals.map(x => isFinite(x) ? x : 0); if (v.length < 2) return '';
+  const mn = Math.min(...v), mx = Math.max(...v), r = mx - mn || 1, w = 120, h = 30;
+  const pts = v.map((x, i) => `${(i / (v.length - 1) * w).toFixed(1)},${(h - 3 - (x - mn) / r * (h - 6)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--s1)" stroke-width="1.8" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function renderIndicadores(el) {
+  const X = est.dadosInd, L = X.dre, hoje = hojeISO();
+  if (!L.length) { el.innerHTML = '<div class="card"><div class="vazio">Os indicadores aparecem depois da próxima atualização do sincronizador.</div></div>'; return; }
+  const D = calcDre(L), S = serieDre(L);
+  const ms = D.idxs.map(k => D.meses[k]), msAnt = ms.map(m => somaMes(m, -12)), u12 = D.ultimos(12), u3 = D.ultimos(3);
+  const G = (meses, id) => meses.reduce((t, m) => t + ((S[m] || {})[id] || 0), 0);
+  const rec = G(ms, 'rec'), recAnt = G(msAnt, 'rec');
+  const card = (tit, val, det, sp) => `<div class="ind"><div class="ind-tit">${tit}</div><div class="ind-val">${val}</div><div class="ind-det">${det}</div>${sp || ''}</div>`;
+  const pp = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(1).replace('.', ',') + ' p.p.';
+  const comp = (atual, ant, bomAlto, fmt) => {
+    if (!isFinite(ant) || !ant && !atual) return '';
+    const dif = atual - ant, bom = bomAlto ? dif > 0 : dif < 0;
+    return ` · <span class="${Math.abs(dif) < 1e-9 ? '' : bom ? 'bom' : 'ruim'}">${fmt(dif)}</span> vs ano anterior`;
+  };
+  // ---- resultado (filtro do DRE)
+  const cresc = recAnt ? rec / recAnt - 1 : NaN;
+  const cards = [card('Faturamento', R0(rec), `média ${R0(ms.length ? rec / ms.length : 0)}/mês${isFinite(cresc) ? ` · <span class="${cresc >= 0 ? 'bom' : 'ruim'}">${cresc >= 0 ? '▲' : '▼'} ${pctTxt(Math.abs(cresc))}</span> vs ano anterior` : ''}`,
+    spark(u12.map(m => (S[m] || {}).rec || 0)))];
+  const IND = [
+    ['CMV', 'cmv', -1, false], ['Carga tributária sobre vendas', 'imp', -1, false], ['Folha (RH)', 'rh', -1, false],
+    ['Marketing', 'mkt', -1, false], ['Despesas operacionais', 'dop', -1, false], ['Margem de contribuição 2', 'mc2', 1, true],
+    ['EBITDA', 'ebitda', 1, true], ['Lucro líquido', 'lucro', 1, true], ['Juros pagos', 'juros', -1, false],
+  ];
+  for (const [nome, id, sinal, bomAlto] of IND) {
+    const pc = rec ? sinal * G(ms, id) / rec : 0, pcAnt = recAnt ? sinal * G(msAnt, id) / recAnt : NaN;
+    cards.push(card(nome + ' % da receita', pctTxt(pc), `${R0(sinal * G(ms, id))} no período${comp(pc, pcAnt, bomAlto, pp)}`,
+      spark(u12.map(m => { const o = S[m] || {}; return o.rec ? sinal * (o[id] || 0) / o.rec : 0; }))));
+  }
+  const mc2p = rec ? G(ms, 'mc2') / rec : 0, fixos = ms.length ? -G(ms, 'dop') / ms.length : 0;
+  const pe = mc2p > 0 && fixos > 0 ? fixos / mc2p : 0, ms_ = pe ? (rec / ms.length) / pe - 1 : NaN;
+  if (pe) cards.push(card('Margem de segurança', pctTxt(ms_), `faturamento médio vs ponto de equilíbrio (${R0(pe)}/mês)`,
+    spark(u12.map(m => { const o = S[m] || {}, p = o.rec && o.mc2 > 0 ? -(o.dop || 0) / (o.mc2 / o.rec) : 0; return p ? o.rec / p - 1 : 0; }))));
+  // ---- mix e margem por família
+  const setMs = new Set(ms), fam = new Map();
+  for (const r of L) {
+    if (!setMs.has(r.mes) || !r.familia) continue;
+    const tipo = r.conta === '10.01.01' ? 'rec' : r.conta === 'CMV' ? 'cmv' : r.conta.startsWith('20.12.') ? 'imp' : null;
+    if (!tipo) continue;
+    const f = famDe(r.familia), x = fam.get(f) || { rec: 0, imp: 0, cmv: 0 }; x[tipo] += r.valor; fam.set(f, x);
+  }
+  const fams = [...fam.entries()].filter(([, x]) => x.rec).sort((a, b) => b[1].rec - a[1].rec), recF = fams.reduce((t, [, x]) => t + x.rec, 0);
+  // ---- hoje (fixo)
+  const ab = X.abertos, cp = (est.contas.pagar || []).map(Number);
+  const R = ab ? ab.filter(t => t.tipo === 'R') : [], P = ab ? ab.filter(t => t.tipo === 'P' && (!cp.length || cp.includes(Number(String(t.conta).split('.')[0])))) : [];
+  const soma = l => l.reduce((t, x) => t + x.aberto, 0), totR = soma(R), venR = soma(R.filter(t => t.vencimento < hoje));
+  const fat3 = G(u3, 'rec'), compras3 = -G(u3, 'compras');
+  const fornec = soma(P.filter(t => String(t.conta).startsWith('20.02.')));
+  const hj = [];
+  if (X.saldos && X.saldos.length) {
+    const ult = X.saldos.at(-1).data, oper = X.saldos.filter(r => !ehAplicacao(r.banco));
+    const saldoHoje = oper.filter(r => r.data === ult).reduce((t, r) => t + r.saldo, 0);
+    const dias = new Set(oper.map(r => r.data)).size || 1, saidaDia = oper.reduce((t, r) => t + r.saidas, 0) / dias;
+    hj.push(card('Fôlego de caixa', saidaDia ? Math.round(saldoHoje / saidaDia) + ' dias' : '–', `saldo ${R0(saldoHoje)} ÷ saídas médias ${R0(saidaDia)}/dia (90 dias)`));
+  }
+  if (ab) {
+    if (fat3) hj.push(card('PMR — prazo médio de recebimento', Math.round(totR / (fat3 / 90)) + ' dias', `a receber ${R0(totR)} ÷ faturamento médio diário (3 meses)`));
+    if (compras3 > 0) hj.push(card('PMP — prazo médio de pagamento', Math.round(fornec / (compras3 / 90)) + ' dias', `fornecedores a pagar ${R0(fornec)} ÷ compras médias diárias (3 meses)`));
+    hj.push(card('Inadimplência', pctTxt(totR ? venR / totR : 0), `vencido ${R0(venR)} de ${R0(totR)} a receber`));
+    const cli = new Map(); for (const t of R) cli.set(t.cod || t.nome, (cli.get(t.cod || t.nome) || 0) + t.aberto);
+    const top10 = [...cli.values()].sort((a, b) => b - a).slice(0, 10).reduce((t, v) => t + v, 0);
+    hj.push(card('Concentração — 10 maiores clientes', pctTxt(totR ? top10 / totR : 0), `${R0(top10)} do total a receber (${inteiro.format(cli.size)} clientes)`));
+  }
+  if (X.movs && X.movs.length) {
+    let v = 0, emDia = 0, atrasoP = 0;
+    for (const m of X.movs) {
+      const pg = m.dt_pagamento || m.dt_conciliacao; if (!m.vencimento || !pg) continue;
+      const dd = Math.round((parseISO(pg) - parseISO(m.vencimento)) / 864e5);
+      v += m.valor; if (dd <= 0) emDia += m.valor; atrasoP += Math.max(0, dd) * m.valor;
+    }
+    if (v) {
+      hj.push(card('Pontualidade dos clientes', pctTxt(emDia / v), 'do valor recebido nos últimos 90 dias foi pago até o vencimento'));
+      hj.push(card('Atraso médio no recebimento', (atrasoP / v).toFixed(1).replace('.', ',') + ' dias', 'média ponderada pelo valor, últimos 90 dias'));
+    }
+  }
+  el.innerHTML = `
+  <h3 class="secao">📊 Resultado <span class="tag filtro">📅 usa o filtro de período abaixo (o mesmo da aba DRE)${D.sepAt ? ' · sem o mês parcial' : ''}</span></h3>
+  <div class="controles">${htmlPeriodoDre(D)}</div>
+  ${!ms.length ? '<div class="vazio">Selecione pelo menos um mês fechado.</div>' : `<div class="inds">${cards.join('')}</div>
+  <div class="card cheio">
+    <h2>Mix e margem por família</h2>
+    <div class="nota">Margem = receita − impostos da nota − CMV, no período selecionado</div>
+    <div class="tabela-wrap rolagem"><table>
+      <thead><tr><th>Família</th><th class="n">Receita</th><th class="n">Mix</th><th class="n opc">Impostos</th><th class="n opc">CMV</th><th class="n">Margem</th><th class="n">Margem %</th></tr></thead>
+      <tbody>${fams.map(([f, x]) => { const mg = x.rec - x.imp - x.cmv; return `<tr><td>${esc(f)}</td><td class="n">${R0(x.rec)}</td><td class="n">${pctTxt(x.rec / recF)}</td>
+        <td class="n opc">${R0(x.imp)}</td><td class="n opc">${R0(x.cmv)}</td><td class="n ${mg < 0 ? 'neg' : ''}">${R0(mg)}</td><td class="n">${pctTxt(mg / x.rec)}</td></tr>`; }).join('')}</tbody>
+    </table></div>
+  </div>`}
+  <h3 class="secao">📍 Hoje <span class="tag fixo">posição atual · não muda com os filtros</span></h3>
+  ${hj.length ? `<div class="inds">${hj.join('')}</div>` : '<div class="vazio">Sem dados de caixa/títulos para este usuário.</div>'}`;
+  const re = () => { const y = window.scrollY; renderIndicadores(el); window.scrollTo(0, y); };
+  ligarPeriodoDre(el, D, re);
+}
+
+// ---------- títulos em aberto por data (A pagar / A receber) ----------
+function abertosDoTipo(tipo) {
+  const d = est.dados; if (!d.abertos) return null;
+  const cp = (est.contas.pagar || []).map(Number);
+  return d.abertos.filter(t => t.tipo === tipo && (tipo !== 'P' || !cp.length || cp.includes(Number(String(t.conta).split('.')[0]))));
+}
+function htmlQuem(tipo) {
+  const quem = tipo === 'P' ? 'Fornecedor' : 'Cliente';
+  const titulo = tipo === 'P' ? 'Quem vamos pagar' : 'Quem vamos receber';
+  const lista0 = abertosDoTipo(tipo);
+  if (!lista0) return `<div class="card cheio"><h2>${titulo}</h2><div class="vazio">Disponível depois que a atualização do sistema (migração + sincronizador) for concluída.</div></div>`;
+  est.diaTit ||= hojeISO();
+  const lista = lista0.filter(t => t.vencimento === est.diaTit).sort((a, b) => b.aberto - a.aberto);
+  const tot = lista.reduce((s, t) => s + t.aberto, 0);
+  const multi = est.empresas.length > 1;
+  const dow = parseISO(est.diaTit).toLocaleDateString('pt-BR', { weekday: 'long' });
+  return `<div class="card cheio">
+    <h2>${titulo}</h2>
+    <div class="controles">
+      <button class="seta" data-tit="-1" title="Dia anterior">‹</button>
+      <input type="date" id="diaTit" value="${est.diaTit}">
+      <button class="seta" data-tit="1" title="Próximo dia">›</button>
+      <button class="chip" data-tit="0">Hoje</button>
+      <span class="rot" style="text-transform:capitalize">${dow}</span>
+    </div>
+    <div class="nota">Títulos em aberto com vencimento neste dia</div>
+    ${!lista.length ? '<div class="vazio">Nenhum título em aberto vencendo neste dia</div>' : `<div class="tabela-wrap rolagem"><table>
+      <thead><tr><th>${quem}</th><th class="opc">Título</th><th class="opc">Conta</th>${multi ? '<th class="opc">Empresa</th>' : ''}<th class="n">Em aberto</th></tr></thead>
+      <tbody>${lista.map(t => `<tr><td>${esc(t.nome || (quem + ' ' + (t.cod || '')))}</td><td class="sub opc">${esc(t.titulo || '')}/${esc(t.parcela || '')}</td>
+        <td class="sub opc">${esc(descConta(t.conta))}</td>${multi ? `<td class="sub opc">${esc(nomeEmpresa(t.empresa))}</td>` : ''}<td class="n">${R(t.aberto)}</td></tr>`).join('')}
+        <tr class="total"><td>Total · ${lista.length} título${lista.length > 1 ? 's' : ''}</td><td class="opc" colspan="${multi ? 3 : 2}"></td><td class="n">${R(tot)}</td></tr>
+      </tbody></table></div>`}
+  </div>`;
+}
+function ligarQuem() {
+  const ir = dia => { if (dia) { est.diaTit = dia; render(); } };
+  document.querySelectorAll('[data-tit]').forEach(b => b.onclick = () => {
+    const n = Number(b.dataset.tit); ir(n ? somaDias(est.diaTit, n) : hojeISO());
+  });
+  const inp = $('#diaTit'); if (inp) inp.onchange = ev => ir(ev.target.value);
+  document.querySelectorAll('[data-atraso]').forEach(b => b.onclick = () => { est.periodoAtraso = b.dataset.atraso; render(); });
+}
+// maiores clientes em atraso, com filtro de período pelo vencimento
+function topAtrasoPeriodo() {
+  const lista0 = abertosDoTipo('R');
+  if (!lista0) return null;
+  const hoje = hojeISO(), per = est.periodoAtraso || 'todos';
+  const desde = per === 'ano' ? hoje.slice(0, 4) + '-01-01'
+    : per === '6m' ? (() => { const x = parseISO(hoje); x.setMonth(x.getMonth() - 6); return iso(x); })() : '';
+  const m = new Map();
+  for (const t of lista0) {
+    if (!(t.vencimento < hoje) || (desde && t.vencimento < desde)) continue;
+    const k = t.cod || t.nome;
+    const x = m.get(k) || { nome: t.nome || `Cliente ${t.cod}`, qtd: 0, valor: 0, dias: 0 };
+    x.qtd++; x.valor += t.aberto; x.dias = Math.max(x.dias, Math.round((parseISO(hoje) - parseISO(t.vencimento)) / 864e5));
+    m.set(k, x);
+  }
+  return [...m.values()].sort((a, b) => b.valor - a.valor).slice(0, 15);
+}
+
+function htmlPagar() {
+  const d = est.dados;
+  const porConta = new Map();
+  for (const [, , conta, sub, tot, ab] of d.pagar) {
+    const k = conta + '.' + sub;
+    const x = porConta.get(k) || { k, tot: 0, ab: 0 };
+    x.tot += tot; x.ab += ab; porConta.set(k, x);
+  }
+  const contas = [...porConta.values()].sort((a, b) => b.tot - a.tot);
+  const tot = contas.reduce((s, x) => s + x.tot, 0), ab = contas.reduce((s, x) => s + x.ab, 0);
+  const hoje = hojeISO();
+  const atrasado = d.pagar.filter(r => r[0] < hoje).reduce((s, r) => s + r[5], 0);
+  return `
+  <div class="kpis">
+    ${kpi('Total com vencimento no período', R0(tot))}
+    ${kpi('Já pago', R0(tot - ab))}
+    ${kpi('Em aberto', R0(ab))}
+    ${kpi('⚠ Em aberto já vencido', R0(atrasado), 'vencimento antes de hoje', atrasado > 0 ? 'alerta' : '')}
+  </div>
+  <div class="grade">
+    ${htmlQuem('P')}
+    <div class="card cheio">
+      <h2>Por conta / subconta</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Conta</th><th class="n">Total</th><th class="n">Pago</th><th class="n">Em aberto</th><th class="n">% do total</th></tr></thead>
+        <tbody>${contas.map(x => `<tr><td>${esc(descConta(x.k))}<span class="sub"> · ${esc(x.k)}</span></td><td class="n">${R(x.tot)}</td><td class="n">${R(x.tot - x.ab)}</td><td class="n">${R(x.ab)}</td><td class="n">${tot ? (x.tot / tot * 100).toFixed(1).replace('.', ',') : '0'}%</td></tr>`).join('')}
+        <tr class="total"><td>Total</td><td class="n">${R(tot)}</td><td class="n">${R(tot - ab)}</td><td class="n">${R(ab)}</td><td class="n">100%</td></tr></tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+function htmlReceber(c) {
+  const d = est.dados;
+  const topP = topAtrasoPeriodo();
+  const top = topP || d.topAtraso;
+  return `
+  <div class="kpis">
+    ${kpi('Total com vencimento no período', R0(c.recTot))}
+    ${kpi('Já recebido', R0(c.recTot - c.recAb))}
+    ${kpi('Em aberto', R0(c.recAb))}
+    ${kpi('⚠ Inadimplência hoje', R0(c.vencido), `${inteiro.format(c.vencidoQtd)} títulos vencidos (todas as datas)`, c.vencido > 0 ? 'alerta' : '')}
+    ${d.abertos ? kpi('Total a receber hoje', R0(abertosDoTipo('R').reduce((t, x) => t + x.aberto, 0)), 'todos os títulos em aberto · não muda com o filtro') : ''}
+  </div>
+  <div class="grade">
+    ${htmlQuem('R')}
+    <div class="card">
+      <h2>Inadimplência por faixa de atraso</h2>
+      <div class="nota">Títulos vencidos e não baixados, posição de hoje</div>
+      <div class="grafico" id="gFaixas"></div>
+    </div>
+    <div class="card">
+      <h2>Maiores clientes em atraso</h2>
+      ${topP ? `<div class="controles">${[['todos', 'Todos'], ['ano', 'Este ano'], ['6m', 'Últimos 6 meses']].map(([v, r]) =>
+        `<button class="chip" data-atraso="${v}" aria-pressed="${(est.periodoAtraso || 'todos') === v}">${r}</button>`).join('')}</div>` : ''}
+      <div class="nota">Posição de hoje${topP ? ' · pelo vencimento do título' : ''}</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Cliente</th><th class="n">Títulos</th><th class="n">Maior atraso</th><th class="n">Valor vencido</th></tr></thead>
+        <tbody>${top.length ? top.map(x => `<tr><td>${esc(x.nome)}</td><td class="n">${x.qtd}</td><td class="n">${x.dias} dias</td><td class="n">${R(x.valor)}</td></tr>`).join('') : '<tr><td colspan="4" class="vazio">Nenhum título vencido 🎉</td></tr>'}</tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+function desenhar(c) {
+  const d = est.dados;
+  const rotCat = longo => longo ? (s => 'sem ' + ddmm(s)) : ddmm;
+  if (est.aba === 'geral') {
+    graficoLinha($('#gSaldo'), c.serieSaldo, { altura: 240 });
+    if (d.abertos && $('#gRxP')) {
+      const hoje = hojeISO(), ate = somaDias(hoje, 30), longo = false;
+      const chave = x => { if (!longo) return x; const dt = parseISO(x); dt.setDate(dt.getDate() - (dt.getDay() + 6) % 7); return iso(dt); };
+      const m = new Map();
+      for (const [tipo, k] of [['R', 0], ['P', 1]]) for (const t of abertosDoTipo(tipo)) {
+        if (t.vencimento < hoje || t.vencimento > ate) continue;
+        const ch = chave(t.vencimento), a = m.get(ch) || [0, 0]; a[k] += t.aberto; m.set(ch, a);
+      }
+      const cats = [...m.keys()].sort();
+      graficoBarras($('#gRxP'), { cats, rotulo: rotCat(longo), agrupado: true, series: [
+        { nome: 'A receber', cor: 'var(--s1)', valores: cats.map(k => m.get(k)[0]) },
+        { nome: 'A pagar', cor: 'var(--s2)', valores: cats.map(k => m.get(k)[1]) },
+      ] });
+    }
+    if (est._fluxo && $('#gFluxo')) graficoLinha($('#gFluxo'), est._fluxo.serie, { altura: 200 });
+    const cont = $('#conteudo'), manter = () => { const y = window.scrollY; render(); window.scrollTo(0, y); };
+    if (est._dreGeral) ligarPeriodoDre(cont, est._dreGeral, manter);
+  }
+  if (est.aba === 'bancos') {
+    document.querySelectorAll('.spark').forEach(el => sparkline(el, c.contas[Number(el.dataset.i)].serie));
+  }
+  if (est.aba === 'pagar') ligarQuem();
+  if (est.aba === 'receber') {
+    ligarQuem();
+    barrasHorizontais($('#gFaixas'), [1, 2, 3, 4, 5].map(f => {
+      const x = d.faixas.find(y => y.faixa === f) || { qtd: 0, valor: 0 };
+      return { rot: FAIXAS[f], valor: x.valor, det: `${inteiro.format(x.qtd)} títulos` };
+    }));
+  }
+}
+
+// ======================= resumo do dia =======================
+function gerarDemoDia(dia, base) {
+  const ini = somaDias(dia, -60);
+  const todos = gerarDemo(ini, dia, est.empresas).bancos.filter(r => r[2] === dia);
+  const clientes = ['Mercado Bom Preço', 'Construtora Horizonte', 'Distribuidora Sul', 'Padaria Real', 'Hotel Mirante',
+    'Clínica Vida', 'Escola Saber', 'Auto Peças Leste', 'Loja do Bairro', 'Transportes Rápido', 'Farmácia Central', 'Restaurante Sabor'];
+  const fornecedores = ['Energia Elétrica', 'Atacadão Alimentos', 'Folha de pagamento', 'Aluguel Matriz', 'Simples Nacional',
+    'Fornecedor de Embalagens', 'Telefonia e Internet', 'Manutenção Predial', 'Combustível', 'Contabilidade'];
+  let sem = Number(dia.replace(/-/g, '')) % 997 + 3;
+  const rnd = () => (sem = (sem * 16807) % 2147483647) / 2147483647;
+  const movimentos = [];
+  const quebrar = (total, tipo, e, b) => {
+    let resto = total;
+    const partes = total > 0 ? 1 + Math.floor(rnd() * 4) : 0;
+    for (let i = 0; i < partes; i++) {
+      const v = i === partes - 1 ? resto : Math.round(resto * (0.25 + rnd() * 0.4));
+      resto -= v;
+      const nomes = tipo === 'R' ? clientes : fornecedores;
+      movimentos.push({ tipo, emp: e, banco: b, titulo: 10000 + Math.floor(rnd() * 9000), parcela: 1 + Math.floor(rnd() * 3),
+        cod: 100 + Math.floor(rnd() * 900), nome: nomes[Math.floor(rnd() * nomes.length)],
+        vencimento: somaDias(dia, -Math.floor(rnd() * 12)), conta: tipo === 'R' ? '10.1' : ['20.1', '20.3', '21.2'][Math.floor(rnd() * 3)], valor: v });
+    }
+  };
+  for (const [e, b, , , ent, sai] of todos) { quebrar(ent, 'R', e, b); quebrar(sai, 'P', e, b); }
+  movimentos.sort((a, b) => a.tipo.localeCompare(b.tipo) || b.valor - a.valor);
+  return { atualizadoEm: new Date().toISOString(), dia, base, bancos: todos.map(r => [r[0], r[1], r[3], r[4], r[5]]), movimentos };
+}
+
+function renderDia(el) {
+  const d = est.dadosDia;
+  const contas = d.bancos.map(([e, b, fim, ent, sai]) => ({ e, b, nome: nomeBanco(e, b), fim, ent, sai, ini: fim - ent + sai }))
+    .sort((a, b) => a.e - b.e || b.fim - a.fim);
+  const oper = contas.filter(c => !ehAplicacao(c.b)), aplic = contas.filter(c => ehAplicacao(c.b));
+  const somaC = k => oper.reduce((s, c) => s + c[k], 0);
+  const somaA = k => aplic.reduce((s, c) => s + c[k], 0);
+  const soma = k => contas.reduce((s, c) => s + c[k], 0);
+  const transf = d.movimentos.filter(m => ehTransferencia(m.conta));
+  const rec = d.movimentos.filter(m => m.tipo === 'R' && !ehTransferencia(m.conta));
+  const pag = d.movimentos.filter(m => m.tipo === 'P' && !ehTransferencia(m.conta));
+  const totRec = rec.reduce((s, m) => s + m.valor, 0), totPag = pag.reduce((s, m) => s + m.valor, 0);
+  const transfEnt = transf.filter(m => m.tipo === 'R').reduce((s, m) => s + m.valor, 0);
+  const transfSai = transf.filter(m => m.tipo === 'P').reduce((s, m) => s + m.valor, 0);
+  const multi = est.empresas.length > 1;
+  const futuro = d.dia > hojeISO();
+  const dow = parseISO(d.dia).toLocaleDateString('pt-BR', { weekday: 'long' });
+
+  const tabelaMov = (lista, quem, total) => !lista.length
+    ? `<div class="vazio">Nenhum lançamento neste dia</div>`
+    : `<div class="tabela-wrap rolagem"><table>
+        <thead><tr><th>${quem}</th><th class="opc">Título</th><th class="opc">Venc.</th><th class="opc">Conta</th><th class="opc">Banco</th><th class="n">Valor</th></tr></thead>
+        <tbody>${lista.map(m => `<tr>
+          <td>${esc(m.nome)}</td>
+          <td class="sub opc">${m.titulo}/${m.parcela}</td>
+          <td class="sub opc">${m.vencimento ? ddmmaa(m.vencimento) : '—'}</td>
+          <td class="sub opc">${esc(descConta(m.conta))}</td>
+          <td class="sub opc">${esc(nomeBanco(m.emp, m.banco))}${multi ? ' · ' + esc(nomeEmpresa(m.emp)) : ''}</td>
+          <td class="n">${R(m.valor)}</td></tr>`).join('')}
+          <tr class="total"><td>Total · ${lista.length} lançamento${lista.length > 1 ? 's' : ''}</td><td class="opc" colspan="4"></td><td class="n">${R(total)}</td></tr>
+        </tbody></table></div>`;
+
+  // por cliente / fornecedor (soma)
+  const porNome = lista => {
+    const m = new Map();
+    for (const x of lista) m.set(x.nome, (m.get(x.nome) || 0) + x.valor);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  };
+
+  el.innerHTML = `
+  <div class="controles">
+    <button class="seta" id="diaAnt" title="Dia anterior">‹</button>
+    <input type="date" id="diaSel" value="${d.dia}">
+    <button class="seta" id="diaProx" title="Próximo dia">›</button>
+    <button class="chip" id="diaHoje">Hoje</button>
+    <span class="rot" style="text-transform:capitalize">${dow}</span>
+    <div class="sep"></div>
+    <span class="rot">Data usada:</span>
+    <button class="chip" data-base="conciliacao" aria-pressed="${est.baseDia === 'conciliacao'}" title="Data em que o valor entrou/saiu no extrato (bate com o saldo)">Conciliação</button>
+    <button class="chip" data-base="pagamento" aria-pressed="${est.baseDia === 'pagamento'}" title="Data informada na baixa (dt_referencia)">Pagamento</button>
+  </div>
+  ${futuro ? '<div class="info">Data futura: ainda não há movimento. Veja a aba <b>Fluxo projetado</b>.</div>' : ''}
+  ${est.baseDia === 'pagamento' ? '<div class="info">As listas usam a <b>data de pagamento</b>; os saldos por banco continuam pela data de conciliação, então os totais podem não bater.</div>' : ''}
+  <div class="kpis">
+    ${kpi('Saldo no início do dia', R0(somaC('ini')), 'contas operacionais')}
+    ${kpi('Recebimentos', R0(totRec), `${rec.length} lançamentos`)}
+    ${kpi('Pagamentos', R0(totPag), `${pag.length} lançamentos`)}
+    ${transf.length ? kpi('Transferências', R0(Math.max(transfEnt, transfSai)), `${transf.length} lançamento${transf.length > 1 ? 's' : ''} · entre contas`) : ''}
+    ${kpi('Saldo no fim do dia', R0(somaC('fim')), `contas · ${somaC('ent') - somaC('sai') >= 0 ? '▲' : '▼'} ${R0(Math.abs(somaC('ent') - somaC('sai')))} no dia`, somaC('fim') < 0 ? 'neg' : '')}
+    ${aplic.length ? kpi('Aplicações', R0(somaA('fim')), 'saldo aplicado (investimentos)') : ''}
+  </div>
+  <div class="grade">
+    <div class="card cheio">
+      <h2>Recebimentos — de quem</h2>
+      <div class="nota">Clientes que pagaram neste dia</div>
+      ${tabelaMov(rec, 'Cliente', totRec)}
+    </div>
+    <div class="card cheio">
+      <h2>Pagamentos — para quem</h2>
+      <div class="nota">Contas pagas neste dia</div>
+      ${tabelaMov(pag, 'Fornecedor', totPag)}
+    </div>
+    ${transf.length ? `<div class="card cheio">
+      <h2>Transferências entre contas</h2>
+      <div class="nota">Movimentações internas (conta ${CONTAS_TRANSFERENCIA.join(', ')}) — não contam como recebimento nem pagamento</div>
+      <div class="tabela-wrap rolagem"><table>
+        <thead><tr><th>Direção</th><th>Banco</th><th class="opc">Título</th><th class="opc">Contraparte</th><th class="n">Valor</th></tr></thead>
+        <tbody>${transf.map(m => `<tr>
+          <td>${m.tipo === 'R' ? '↓ Entrou' : '↑ Saiu'}</td>
+          <td>${esc(nomeBanco(m.emp, m.banco))}${multi ? ' · ' + esc(nomeEmpresa(m.emp)) : ''}</td>
+          <td class="sub opc">${m.titulo}/${m.parcela}</td>
+          <td class="sub opc">${esc(m.nome || '')}</td>
+          <td class="n">${R(m.valor)}</td></tr>`).join('')}
+          <tr class="total"><td>Entrou ${R0(transfEnt)} · Saiu ${R0(transfSai)}</td><td class="opc" colspan="3"></td><td class="n ${(transfEnt - transfSai) < 0 ? 'neg' : ''}">${R(transfEnt - transfSai)}</td></tr>
+        </tbody></table></div>
+    </div>` : ''}
+    <div class="card">
+      <h2>Saldo por banco no dia</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr>${multi ? '<th>Empresa</th>' : ''}<th>Banco</th><th class="n">Início</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Fim</th></tr></thead>
+        <tbody>${contas.map(c => `<tr>${multi ? `<td>${esc(nomeEmpresa(c.e))}</td>` : ''}<td>${esc(c.nome)}</td><td class="n">${R(c.ini)}</td><td class="n">${R(c.ent)}</td><td class="n">${R(c.sai)}</td><td class="n ${c.fim < 0 ? 'neg' : ''}"><b>${R(c.fim)}</b></td></tr>`).join('')}
+        <tr class="total">${multi ? '<td></td>' : ''}<td>Total</td><td class="n">${R(soma('ini'))}</td><td class="n">${R(soma('ent'))}</td><td class="n">${R(soma('sai'))}</td><td class="n">${R(soma('fim'))}</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Maiores valores do dia</h2>
+      <div class="nota">Somando todos os títulos de cada cliente / fornecedor</div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>Recebido de</span><span><i style="background:var(--s2)"></i>Pago a</span></div>
+      <div class="grafico" id="gTopDia"></div>
+    </div>
+  </div>`;
+
+  const top = [...porNome(rec).slice(0, 5).map(([n, v]) => ({ rot: n, valor: v, cor: 'var(--s1)' })),
+               ...porNome(pag).slice(0, 5).map(([n, v]) => ({ rot: n, valor: v, cor: 'var(--s2)' }))];
+  barrasHorizontais($('#gTopDia'), top.map(t => ({ ...t, det: '' })), { larguraRotulo: 150 });
+
+  const irPara = dia => { est.dia = dia; carregar(); };
+  $('#diaAnt').onclick = () => irPara(somaDias(est.dia, -1));
+  $('#diaProx').onclick = () => irPara(somaDias(est.dia, 1));
+  $('#diaHoje').onclick = () => irPara(hojeISO());
+  $('#diaSel').onchange = ev => ev.target.value && irPara(ev.target.value);
+  el.querySelectorAll('[data-base]').forEach(b => b.onclick = () => { est.baseDia = b.dataset.base; carregar(); });
+}
+
+// ======================= fluxo de caixa projetado =======================
+function gerarDemoProj(dias) {
+  const hoje = hojeISO(), ate = somaDias(hoje, dias);
+  const k = est.empresas.reduce((s, e) => s + (e === 1 ? 1 : 0.45), 0);
+  const saldoHoje = gerarDemo(somaDias(hoje, -60), hoje, est.empresas).bancos.filter(r => r[2] === hoje).reduce((s, r) => s + r[3], 0);
+  let sem = 11;
+  const rnd = () => (sem = (sem * 16807) % 2147483647) / 2147483647;
+  const receber = [[null, Math.round(78 * k), Math.round(389600 * k)]], pagar = [[null, Math.round(9 * k), Math.round(61300 * k)]];
+  for (let d = hoje; d <= ate; d = somaDias(d, 1)) {
+    const dt = parseISO(d), dow = dt.getDay(), dm = dt.getDate();
+    if (dow === 0 || dow === 6) continue;
+    const fator = Math.max(0.15, 1 - (parseISO(d) - parseISO(hoje)) / 864e5 / (dias * 1.4)); // menos títulos lançados no futuro distante
+    receber.push([d, 3, Math.round(k * fator * (14000 + rnd() * 30000))]);
+    let p = k * (6000 + rnd() * 20000);
+    if (dm >= 5 && dm <= 7 && dow === 1 || dm === 5) p += k * 160000;   // folha
+    if (dm === 20) p += k * 95000;                                       // impostos
+    if (dm === 10) p += k * 38000;                                       // aluguel
+    pagar.push([d, 4, Math.round(p)]);
+  }
+  return { atualizadoEm: new Date().toISOString(), hoje, ate, saldoHoje, receber, pagar };
+}
+
+function calcularProj() {
+  const d = est.dadosProj;
+  const mapa = lista => { const m = new Map(); for (const [dt, , v] of lista) if (dt) m.set(dt, (m.get(dt) || 0) + v); return m; };
+  const imps = importacoesNoFluxo(d.hoje, d.ate);
+  const impLinhas = imps.map(i => [i.previsao < d.hoje ? null : i.previsao, 1, valorImp(i)]);
+  const pagarTudo = d.pagar.concat(impLinhas);
+  const mr = mapa(d.receber), mp = mapa(pagarTudo);
+  const vencRec = d.receber.filter(r => !r[0]).reduce((s, r) => s + r[2], 0);
+  const vencRecQtd = d.receber.filter(r => !r[0]).reduce((s, r) => s + r[1], 0);
+  const vencPag = pagarTudo.filter(r => !r[0]).reduce((s, r) => s + r[2], 0);
+  const vencPagQtd = pagarTudo.filter(r => !r[0]).reduce((s, r) => s + r[1], 0);
+  const totImp = impLinhas.reduce((s, r) => s + r[2], 0);
+  const dias = [];
+  let saldo = d.saldoHoje;
+  for (let dt = d.hoje; dt <= d.ate; dt = somaDias(dt, 1)) {
+    let ent = mr.get(dt) || 0, sai = mp.get(dt) || 0;
+    if (est.inclVencidos && dt === d.hoje) { ent += vencRec; sai += vencPag; }
+    saldo += ent - sai;
+    dias.push({ dt, ent, sai, saldo });
+  }
+  const menor = dias.reduce((m, x) => x.saldo < m.saldo ? x : m, dias[0] || { saldo: d.saldoHoje, dt: d.hoje });
+  const primeiroNeg = dias.find(x => x.saldo < 0);
+  return { dias, menor, primeiroNeg, vencRec, vencRecQtd, vencPag, vencPagQtd, imps, totImp,
+    ent: dias.reduce((s, x) => s + x.ent, 0), sai: dias.reduce((s, x) => s + x.sai, 0) };
+}
+
+function renderProj(el) {
+  const d = est.dadosProj, p = calcularProj();
+  const fim = p.dias.at(-1) || { saldo: d.saldoHoje, dt: d.ate };
+  const semanal = est.horizonte > 62;
+  // agrupar por semana (segunda-feira)
+  const semana = s => { const x = parseISO(s); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return iso(x); };
+  const grupos = new Map();
+  for (const x of p.dias) {
+    const k = semanal ? semana(x.dt) : x.dt;
+    const g = grupos.get(k) || { k, ent: 0, sai: 0, saldo: 0, menor: Infinity };
+    g.ent += x.ent; g.sai += x.sai; g.saldo = x.saldo; g.menor = Math.min(g.menor, x.saldo);
+    grupos.set(k, g);
+  }
+  const gs = [...grupos.values()];
+  const tabSem = new Map();
+  for (const x of p.dias) {
+    const k = semana(x.dt);
+    const g = tabSem.get(k) || { k, ent: 0, sai: 0, saldo: 0, menor: Infinity };
+    g.ent += x.ent; g.sai += x.sai; g.saldo = x.saldo; g.menor = Math.min(g.menor, x.saldo);
+    tabSem.set(k, g);
+  }
+
+  el.innerHTML = `
+  <div class="controles">
+    <span class="rot">Horizonte:</span>
+    ${[30, 60, 90, 180].map(h => `<button class="chip" data-h="${h}" aria-pressed="${est.horizonte === h}">${h} dias</button>`).join('')}
+    <div class="sep"></div>
+    <label class="rot" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="inclVenc" ${est.inclVencidos ? 'checked' : ''}> Incluir títulos já vencidos no 1º dia</label>
+  </div>
+  ${est.inclVencidos ? '' : `<div class="info">Fora da projeção (já vencidos e em aberto): <b>${R0(p.vencRec)}</b> a receber (${inteiro.format(p.vencRecQtd)} títulos) e <b>${R0(p.vencPag)}</b> a pagar (${inteiro.format(p.vencPagQtd)} lançamentos, incluindo importações atrasadas).</div>`}
+  <div class="kpis">
+    ${kpi('Saldo em bancos hoje', R0(d.saldoHoje), est.bancosSel ? 'bancos selecionados' : 'todos os bancos', d.saldoHoje < 0 ? 'neg' : '')}
+    ${kpi('Entradas previstas', R0(p.ent), 'contas a receber em aberto')}
+    ${kpi('Saídas previstas', R0(p.sai), p.totImp ? `inclui ${R0(p.totImp)} de importações` : 'contas a pagar em aberto')}
+    ${kpi(`Saldo projetado em ${ddmmaa(fim.dt)}`, R0(fim.saldo), '', fim.saldo < 0 ? 'neg' : '')}
+    ${kpi(p.menor.saldo < 0 ? '⚠ Menor saldo previsto' : 'Menor saldo previsto', R0(p.menor.saldo),
+        p.primeiroNeg ? `fica negativo a partir de ${ddmmaa(p.primeiroNeg.dt)}` : `em ${ddmmaa(p.menor.dt)}`, p.menor.saldo < 0 ? 'alerta' : '')}
+  </div>
+  <div class="grade">
+    <div class="card cheio">
+      <h2>Saldo projetado</h2>
+      <div class="nota">Saldo de hoje + a receber − a pagar − importações, pela data de vencimento</div>
+      <div class="grafico" id="gProj"></div>
+    </div>
+    <div class="card cheio">
+      <h2>Entradas × saídas previstas</h2>
+      <div class="nota">${semanal ? 'Por semana' : 'Por dia'} de vencimento</div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>Entradas</span><span><i style="background:var(--s2)"></i>Saídas</span></div>
+      <div class="grafico" id="gProjBar"></div>
+    </div>
+    ${p.imps.length ? `<div class="card cheio">
+      <h2>Importações no fluxo</h2>
+      <div class="nota">Cadastradas na aba Importações · câmbio usado: ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })}</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Previsão</th><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Status</th><th class="n">Valor</th></tr></thead>
+        <tbody>${p.imps.map(i => `<tr><td>${ddmmaa(i.previsao)}${i.previsao < d.hoje ? ' <span class="selo">atrasada</span>' : ''}</td><td>${esc(nomeEmpresa(i.empresa))}</td><td>${esc(i.tipo)}</td><td>${esc(i.fornecedor || '')}</td><td>${esc(i.status || '')}</td><td class="n">${R(valorImp(i))}</td></tr>`).join('')}
+        <tr class="total"><td colspan="5">Total</td><td class="n">${R(p.totImp)}</td></tr></tbody>
+      </table></div>
+    </div>` : ''}
+    <div class="card cheio">
+      <h2>Semana a semana</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Semana de</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Resultado</th><th class="n">Menor saldo</th><th class="n">Saldo no fim</th></tr></thead>
+        <tbody>${[...tabSem.values()].map(g => `<tr><td>${ddmmaa(g.k < d.hoje ? d.hoje : g.k)}</td><td class="n">${R(g.ent)}</td><td class="n">${R(g.sai)}</td>
+          <td class="n ${g.ent - g.sai < 0 ? 'neg' : ''}">${R(g.ent - g.sai)}</td><td class="n ${g.menor < 0 ? 'neg' : ''}">${R(g.menor)}</td><td class="n ${g.saldo < 0 ? 'neg' : ''}"><b>${R(g.saldo)}</b></td></tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+  </div>`;
+
+  graficoLinha($('#gProj'), p.dias.map(x => [x.dt, x.saldo]), { altura: 260, nome: 'Saldo projetado' });
+  graficoBarras($('#gProjBar'), {
+    cats: gs.map(g => g.k), rotulo: semanal ? (s => 'sem ' + ddmm(s)) : ddmm, agrupado: true,
+    series: [
+      { nome: 'Entradas', cor: 'var(--s1)', valores: gs.map(g => g.ent) },
+      { nome: 'Saídas', cor: 'var(--s2)', valores: gs.map(g => g.sai) },
+    ],
+  });
+  el.querySelectorAll('[data-h]').forEach(b => b.onclick = () => { est.horizonte = Number(b.dataset.h); carregar(); });
+  $('#inclVenc').onchange = ev => { est.inclVencidos = ev.target.checked; render(); };
+}
+
+// ======================= janelas (modal) =======================
+function abrirModal(html) {
+  $('#modalCaixa').innerHTML = html;
+  $('#modal').hidden = false;
+  const primeiro = $('#modalCaixa').querySelector('input, select, textarea, button');
+  if (primeiro) setTimeout(() => primeiro.focus(), 30);
+}
+function fecharModal() { $('#modal').hidden = true; $('#modalCaixa').innerHTML = ''; }
+$('#modal').addEventListener('click', ev => { if (ev.target.id === 'modal') fecharModal(); });
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('#modal').hidden) fecharModal(); });
+
+function confirmar(titulo, texto, rotuloOk = 'Confirmar') {
+  return new Promise(res => {
+    abrirModal(`<h2>${esc(titulo)}</h2><p style="color:var(--text-2)">${texto}</p>
+      <div class="modal-acoes"><button id="cNao">Cancelar</button><button class="btn-pri" id="cSim">${esc(rotuloOk)}</button></div>`);
+    $('#cNao').onclick = () => { fecharModal(); res(false); };
+    $('#cSim').onclick = () => { fecharModal(); res(true); };
+  });
+}
+
+function abrirTrocaSenha(recuperacao) {
+  abrirModal(`<h2>${recuperacao ? 'Criar nova senha' : 'Trocar senha'}</h2>
+    <label class="campo"><span>Nova senha (mínimo 8 caracteres, com letras e números)</span><input type="password" id="ns1" autocomplete="new-password"></label>
+    <label class="campo"><span>Repita a nova senha</span><input type="password" id="ns2" autocomplete="new-password"></label>
+    <div class="msg-erro" id="nsErro"></div>
+    <div class="modal-acoes"><button id="nsCancelar">Cancelar</button><button class="btn-pri" id="nsSalvar">Salvar</button></div>`);
+  $('#nsCancelar').onclick = fecharModal;
+  $('#nsSalvar').onclick = async () => {
+    const a = $('#ns1').value, b = $('#ns2').value;
+    if (a.length < 8 || !/[a-zA-Z]/.test(a) || !/\d/.test(a)) return void ($('#nsErro').textContent = 'Use pelo menos 8 caracteres, com letras e números.');
+    if (a !== b) return void ($('#nsErro').textContent = 'As senhas não conferem.');
+    if (est.demo) { fecharModal(); return; }
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) return void ($('#nsErro').textContent = error.message);
+    fecharModal();
+    if (recuperacao) entrar();
+  };
+}
+
+// ======================= importações =======================
+const TIPOS_IMP = ['Câmbio', 'Numerário', 'Frete', 'Impostos', 'Outros'];
+const STATUS_IMP = ['Produção', 'Embarque', 'Chegada Brasil', 'Nacionalização', 'Estoque'];
+const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' });
+
+function renderImportacoes(el) {
+  const pode = podeEditar();
+  const f = est.impFiltro;
+  const lista = est.importacoes
+    .filter(i => est.empresas.includes(i.empresa))
+    .filter(i => !f.status || i.status === f.status)
+    .filter(i => !f.soFluxo || i.no_fluxo)
+    .sort((a, b) => a.previsao.localeCompare(b.previsao) || a.id - b.id);
+  const hoje = hojeISO();
+  const aberta = i => i.status !== 'Estoque';
+  const tot = lista.filter(aberta).reduce((s, i) => s + valorImp(i), 0);
+  const tot30 = lista.filter(i => aberta(i) && i.previsao <= somaDias(hoje, 30)).reduce((s, i) => s + valorImp(i), 0);
+  const fob = lista.filter(aberta).reduce((s, i) => s + Number(i.fob_usd || 0), 0);
+  const cam = cambioAtual();
+  const ptaxTxt = est.ptax && est.ptax.valor ? `PTAX ${Number(est.ptax.valor).toLocaleString('pt-BR', { minimumFractionDigits: 4 })} (${ddmmaa(est.ptax.data)})` : 'PTAX indisponível';
+
+  el.innerHTML = `
+  <div class="kpis">
+    ${kpi('Previsto nos próximos 30 dias', R0(tot30), 'importações não finalizadas')}
+    ${kpi('Total previsto', R0(tot), `${lista.filter(aberta).length} lançamentos em aberto`)}
+    ${kpi('Total em FOB', usd.format(fob), 'lançamentos com valor em dólar')}
+    ${kpi('Câmbio usado', cam.toLocaleString('pt-BR', { minimumFractionDigits: 4 }), est.cambio.modo === 'ptax' ? 'automático (PTAX venda)' : 'manual')}
+  </div>
+  <div class="grade">
+    <div class="card">
+      <h2>Câmbio</h2>
+      <div class="nota">Usado para converter o FOB quando o valor em R$ não foi informado · ${ptaxTxt}</div>
+      <div class="controles" style="margin:8px 0 0">
+        <label class="rot"><input type="radio" name="camModo" value="manual" ${est.cambio.modo !== 'ptax' ? 'checked' : ''} ${pode ? '' : 'disabled'}> Manual</label>
+        <input type="number" id="camManual" step="0.0001" min="0" value="${Number(est.cambio.manual || 0)}" style="width:110px;font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)" ${pode ? '' : 'disabled'}>
+        <label class="rot"><input type="radio" name="camModo" value="ptax" ${est.cambio.modo === 'ptax' ? 'checked' : ''} ${pode ? '' : 'disabled'}> PTAX automática</label>
+        ${pode ? '<button id="camSalvar">Salvar câmbio</button>' : ''}
+        <span class="msg-ok" id="camMsg" style="margin:0"></span>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="controles" style="margin-bottom:6px">
+      <h2 style="margin-right:auto">Importações</h2>
+      <select id="impStatus" style="font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)">
+        <option value="">Todos os status</option>${STATUS_IMP.map(st => `<option ${f.status === st ? 'selected' : ''}>${st}</option>`).join('')}
+      </select>
+      <label class="rot"><input type="checkbox" id="impSoFluxo" ${f.soFluxo ? 'checked' : ''}> Só as que entram no fluxo</label>
+      ${pode ? '<button class="btn-pri" id="impNova">+ Nova importação</button>' : ''}
+    </div>
+    <div class="tabela-wrap"><table>
+      <thead><tr><th>Previsão</th><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Pedido</th><th class="n">FOB (US$)</th><th class="n">Valor (R$)</th><th>Status</th><th>Fluxo</th><th class="opc">Observação</th>${pode ? '<th></th>' : ''}</tr></thead>
+      <tbody>${lista.length ? lista.map(i => `<tr>
+        <td>${ddmmaa(i.previsao)}${aberta(i) && i.previsao < hoje ? ' <span class="selo">atrasada</span>' : ''}</td>
+        <td>${esc(nomeEmpresa(i.empresa))}</td><td>${esc(i.tipo)}</td><td>${esc(i.fornecedor || '')}</td><td>${esc(i.pedido || '')}</td>
+        <td class="n">${i.fob_usd ? usd.format(i.fob_usd) : ''}</td>
+        <td class="n">${i.valor_brl !== null && i.valor_brl !== undefined ? R(i.valor_brl) : `<span class="estimado" title="FOB × câmbio">${R(valorImp(i))}</span>`}</td>
+        <td><span class="selo">${esc(i.status || '—')}</span></td>
+        <td>${i.no_fluxo ? 'Sim' : 'Não'}</td>
+        <td class="opc sub">${esc(i.observacao || '')}</td>
+        ${pode ? `<td><div class="acoes-linha"><button data-ed="${i.id}">Editar</button><button class="btn-perigo" data-ex="${i.id}">Excluir</button></div></td>` : ''}
+      </tr>`).join('') : `<tr><td colspan="11" class="vazio">Nenhuma importação cadastrada.</td></tr>`}</tbody>
+    </table></div>
+    <div class="nota" style="margin-top:8px"><span class="estimado">Valores em itálico</span> são estimados (FOB × câmbio). Status "Estoque" = finalizada (sai do fluxo).</div>
+  </div>`;
+
+  $('#impStatus').onchange = ev => { f.status = ev.target.value; render(); };
+  $('#impSoFluxo').onchange = ev => { f.soFluxo = ev.target.checked; render(); };
+  if (!pode) return;
+  $('#impNova').onclick = () => formImportacao(null);
+  el.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => formImportacao(est.importacoes.find(i => String(i.id) === b.dataset.ed)));
+  el.querySelectorAll('[data-ex]').forEach(b => b.onclick = async () => {
+    const i = est.importacoes.find(x => String(x.id) === b.dataset.ex);
+    if (!await confirmar('Excluir importação', `Excluir <b>${esc(i.fornecedor || i.tipo)}</b> de ${ddmmaa(i.previsao)} (${R(valorImp(i))})?`, 'Excluir')) return;
+    if (est.demo) est.importacoes = est.importacoes.filter(x => x !== i);
+    else { const { error } = await sb.from('importacoes').delete().eq('id', i.id); if (error) return mostrarErro(error.message); await lerImportacoes(); }
+    render();
+  });
+  $('#camSalvar').onclick = async () => {
+    const modo = el.querySelector('input[name=camModo]:checked').value;
+    const manual = Number($('#camManual').value);
+    if (modo === 'manual' && !(manual > 0)) return void ($('#camMsg').textContent = 'Informe um câmbio válido.');
+    if (modo === 'ptax' && !(est.ptax && est.ptax.valor)) return void ($('#camMsg').textContent = 'PTAX ainda não disponível; use manual.');
+    est.cambio = { modo, manual };
+    if (!est.demo) {
+      const { error } = await sb.from('parametros').update({ valor: est.cambio }).eq('chave', 'cambio');
+      if (error) return mostrarErro(error.message);
+    }
+    render(); $('#camMsg').textContent = 'Câmbio salvo.';
+  };
+}
+
+function formImportacao(i) {
+  const novo = !i;
+  i = i || { empresa: est.empresas[0], previsao: hojeISO(), tipo: 'Câmbio', status: 'Produção', no_fluxo: true };
+  const opt = (lista, v) => lista.map(x => `<option ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('');
+  abrirModal(`<h2>${novo ? 'Nova importação' : 'Editar importação'}</h2>
+    <div class="campo-linha">
+      <label class="campo"><span>Empresa</span><select id="fEmp">${Object.entries(est.empresasDisp).map(([c, n]) => `<option value="${c}" ${Number(c) === i.empresa ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+      <label class="campo"><span>Previsão de pagamento</span><input type="date" id="fPrev" value="${i.previsao}"></label>
+    </div>
+    <div class="campo-linha">
+      <label class="campo"><span>Tipo</span><select id="fTipo">${opt(TIPOS_IMP, i.tipo)}</select></label>
+      <label class="campo"><span>Status</span><select id="fStatus">${opt(STATUS_IMP, i.status)}</select></label>
+    </div>
+    <div class="campo-linha">
+      <label class="campo"><span>Fornecedor</span><input id="fForn" value="${esc(i.fornecedor || '')}"></label>
+      <label class="campo"><span>Pedido</span><input id="fPed" value="${esc(i.pedido || '')}"></label>
+    </div>
+    <div class="campo-linha">
+      <label class="campo"><span>FOB (US$)</span><input type="number" step="0.01" min="0" id="fFob" value="${i.fob_usd ?? ''}"></label>
+      <label class="campo"><span>Valor em R$ (vazio = FOB × câmbio)</span><input type="number" step="0.01" min="0" id="fBrl" value="${i.valor_brl ?? ''}"></label>
+    </div>
+    <div class="nota" id="fEstim" style="margin-top:6px"></div>
+    <label class="campo"><span>Observação</span><textarea id="fObs">${esc(i.observacao || '')}</textarea></label>
+    <label class="rot" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="fFluxo" ${i.no_fluxo ? 'checked' : ''}> Entra no fluxo de caixa projetado</label>
+    <div class="msg-erro" id="fErro"></div>
+    <div class="modal-acoes"><button id="fCancelar">Cancelar</button><button class="btn-pri" id="fSalvar">Salvar</button></div>`);
+  const estim = () => {
+    const fob = Number($('#fFob').value || 0), brl = $('#fBrl').value;
+    $('#fEstim').textContent = !brl && fob ? `Estimado: ${R(fob * cambioAtual())} (câmbio ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })})` : '';
+  };
+  $('#fFob').oninput = estim; $('#fBrl').oninput = estim; estim();
+  $('#fCancelar').onclick = fecharModal;
+  $('#fSalvar').onclick = async () => {
+    const reg = {
+      empresa: Number($('#fEmp').value), previsao: $('#fPrev').value, tipo: $('#fTipo').value, status: $('#fStatus').value,
+      fornecedor: $('#fForn').value.trim() || null, pedido: $('#fPed').value.trim() || null,
+      fob_usd: $('#fFob').value === '' ? null : Number($('#fFob').value),
+      valor_brl: $('#fBrl').value === '' ? null : Number($('#fBrl').value),
+      observacao: $('#fObs').value.trim() || null, no_fluxo: $('#fFluxo').checked,
+    };
+    if (!reg.previsao) return void ($('#fErro').textContent = 'Informe a data prevista.');
+    if (reg.fob_usd === null && reg.valor_brl === null) return void ($('#fErro').textContent = 'Informe o FOB ou o valor em R$.');
+    $('#fSalvar').disabled = true;
+    if (est.demo) {
+      if (novo) est.importacoes.push({ id: Date.now(), ...reg }); else Object.assign(i, reg);
+    } else {
+      const q = novo ? sb.from('importacoes').insert(reg) : sb.from('importacoes').update(reg).eq('id', i.id);
+      const { error } = await q;
+      if (error) { $('#fSalvar').disabled = false; return void ($('#fErro').textContent = error.message); }
+      await lerImportacoes();
+    }
+    fecharModal(); render();
+  };
+}
+
+// ======================= usuários (administrador) =======================
+const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['dre', 'DRE e resultados'], ['importacoes', 'Importações']];
+function renderUsuarios(el) {
+  const emps = Object.entries(est.empresasTodas);
+  el.innerHTML = `
+  <div class="info">
+    Clique em <b>+ Novo usuário</b> para criar um acesso: o login é criado na hora e você recebe uma <b>senha provisória</b> para repassar. A pessoa troca depois no botão "Trocar senha".
+    Nesta tabela você ajusta as permissões de quem já existe (marque e clique em Salvar).
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0">Usuários e permissões</h2>
+      <button class="btn-pri" id="btnNovoUsuario">+ Novo usuário</button>
+    </div>
+    <div class="nota">Áreas: o que a pessoa vê · Empresas: de quais empresas · Pode digitar: cadastrar importações e câmbio · Admin: vê tudo e gerencia usuários</div>
+    <div class="tabela-wrap"><table class="tab-usuarios">
+      <thead><tr><th>Usuário</th><th>Ativo</th><th>Áreas</th><th>Empresas</th><th>Pode digitar</th><th>Admin</th><th></th></tr></thead>
+      <tbody>${est.usuarios.map(u => `<tr data-u="${esc(u.id)}">
+        <td><input class="u-nome" value="${esc(u.nome || '')}" style="font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);width:140px"><div class="sub">${esc(u.email || '')}</div></td>
+        <td><input type="checkbox" class="u-ativo" ${u.ativo ? 'checked' : ''}></td>
+        <td>${AREAS.map(([k, n]) => `<label><input type="checkbox" class="u-area" value="${k}" ${(u.areas || []).includes(k) ? 'checked' : ''}>${n}</label>`).join('')}</td>
+        <td>${emps.map(([c, n]) => `<label><input type="checkbox" class="u-emp" value="${c}" ${(u.empresas || []).includes(Number(c)) ? 'checked' : ''}>${esc(n)}</label>`).join('')}</td>
+        <td><input type="checkbox" class="u-editor" ${u.editor ? 'checked' : ''}></td>
+        <td><input type="checkbox" class="u-admin" ${u.admin ? 'checked' : ''}></td>
+        <td><button class="u-salvar">Salvar</button> <span class="msg-ok u-msg" style="margin:0"></span></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+  el.querySelectorAll('.u-salvar').forEach(b => b.onclick = async () => {
+    const tr = b.closest('tr'), u = est.usuarios.find(x => String(x.id) === tr.dataset.u);
+    const reg = {
+      nome: tr.querySelector('.u-nome').value.trim() || null,
+      ativo: tr.querySelector('.u-ativo').checked,
+      editor: tr.querySelector('.u-editor').checked,
+      admin: tr.querySelector('.u-admin').checked,
+      areas: [...tr.querySelectorAll('.u-area:checked')].map(x => x.value),
+      empresas: [...tr.querySelectorAll('.u-emp:checked')].map(x => Number(x.value)),
+    };
+    if (!est.demo && est.perfil && u.id === est.perfil.id && !reg.admin) {
+      if (!await confirmar('Remover seu próprio acesso de administrador?', 'Você não poderá mais gerenciar usuários.', 'Remover')) return;
+    }
+    if (est.demo) Object.assign(u, reg);
+    else {
+      const { error } = await sb.from('perfis').update(reg).eq('id', u.id);
+      if (error) return mostrarErro(error.message);
+      Object.assign(u, reg);
+    }
+    tr.querySelector('.u-msg').textContent = 'Salvo';
+    setTimeout(() => { const m = tr.querySelector('.u-msg'); if (m) m.textContent = ''; }, 2500);
+  });
+  const bNovo = el.querySelector('#btnNovoUsuario');
+  if (bNovo) bNovo.onclick = () => formNovoUsuario(el);
+}
+
+async function formNovoUsuario(painelEl) {
+  if (est.demo) {
+    abrirModal(`<h3>Novo usuário</h3><p class="sub">No modo demonstração não é possível criar usuários.</p><div class="modal-acoes"><button class="btn-pri" id="nFechar">Fechar</button></div>`);
+    $('#nFechar').onclick = fecharModal; return;
+  }
+  const emps = Object.entries(est.empresasTodas);
+  abrirModal(`
+    <h3>Novo usuário</h3>
+    <div class="nota">Cria o login e aplica as permissões. A senha provisória aparece para você repassar.</div>
+    <label class="campo" style="margin-top:10px"><span>Nome</span><input id="nNome" placeholder="Ex.: Maria Diretora"></label>
+    <label class="campo" style="margin-top:8px"><span>E-mail</span><input id="nEmail" type="email" placeholder="pessoa@grupochen.com.br"></label>
+    <div style="margin-top:12px" class="sub"><b>Áreas</b><br>${AREAS.map(([k, n]) => `<label style="margin:5px 14px 0 0;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" class="n-area" value="${k}"> ${n}</label>`).join('')}</div>
+    <div style="margin-top:10px" class="sub"><b>Empresas</b><br>${emps.map(([c, n]) => `<label style="margin:5px 14px 0 0;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" class="n-emp" value="${c}"> ${esc(n)}</label>`).join('')}</div>
+    <div style="margin-top:12px" class="sub">
+      <label style="margin-right:16px"><input type="checkbox" id="nEditor"> Pode digitar</label>
+      <label style="margin-right:16px"><input type="checkbox" id="nAdmin"> Admin</label>
+      <label><input type="checkbox" id="nAtivo" checked> Ativo</label>
+    </div>
+    <div class="msg-erro" id="nErro" role="alert"></div>
+    <div class="modal-acoes"><button id="nCancelar">Cancelar</button><button class="btn-pri" id="nCriar">Criar usuário</button></div>
+  `);
+  $('#nCancelar').onclick = fecharModal;
+  $('#nCriar').onclick = async () => {
+    const erro = $('#nErro'); erro.textContent = '';
+    const email = $('#nEmail').value.trim();
+    if (!email) { erro.textContent = 'Informe o e-mail.'; return; }
+    const body = {
+      email, nome: $('#nNome').value.trim(),
+      ativo: $('#nAtivo').checked, editor: $('#nEditor').checked, admin: $('#nAdmin').checked,
+      areas: [...document.querySelectorAll('.n-area:checked')].map(x => x.value),
+      empresas: [...document.querySelectorAll('.n-emp:checked')].map(x => Number(x.value)),
+    };
+    const btn = $('#nCriar'); btn.disabled = true; btn.textContent = 'Criando…';
+    try {
+      const { data, error } = await sb.functions.invoke('criar-usuario', { body });
+      if (error) { let msg = error.message; try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (_) {} throw new Error(msg); }
+      abrirModal(`<h3>Usuário criado</h3>
+        <div class="info" style="margin-top:10px">Login: <b>${esc(data.email)}</b><br>Senha provisória: <b style="font-size:16px">${esc(data.senha)}</b></div>
+        <p class="sub" style="margin-top:8px">Repasse esses dados à pessoa. Ela troca a senha depois no botão "Trocar senha".</p>
+        <div class="modal-acoes"><button class="btn-pri" id="nOk">Fechar</button></div>`);
+      $('#nOk').onclick = fecharModal;
+      est.usuarios = await buscarTodos(() => sb.from('perfis').select('*').order('email'));
+      renderUsuarios(painelEl);
+    } catch (e) {
+      erro.textContent = 'Erro ao criar: ' + e.message;
+      btn.disabled = false; btn.textContent = 'Criar usuário';
+    }
+  };
+}
+
+// ======================= gráficos (SVG, sem bibliotecas) =======================
+const NS = 'http://www.w3.org/2000/svg';
+function passoBonito(max, n = 4) {
+  if (max <= 0) return 1;
+  const bruto = max / n, mag = Math.pow(10, Math.floor(Math.log10(bruto))), f = bruto / mag;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+}
+function escalaY(min, max, zero = true) {
+  if (zero) { min = Math.min(0, min); max = Math.max(0, max); }
+  else { const f = Math.max((max - min) * 0.15, Math.abs(max) * 0.08) || 1; min -= f; max += f; }
+  if (min === max) max = 1;
+  const p = passoBonito(max - min);
+  const lo = Math.floor(min / p) * p, hi = Math.ceil(max / p) * p;
+  const ticks = []; for (let v = lo; v <= hi + p / 2; v += p) ticks.push(v);
+  return { lo, hi, ticks };
+}
+function svgEl(tag, attrs, pai) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (pai) pai.appendChild(e);
+  return e;
+}
+const tip = $('#tip');
+function mostrarTip(ev, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY - h - 10;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y < 8) y = ev.clientY + 16;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const esconderTip = () => { tip.style.opacity = 0; };
+// liga mouse e toque (celular) no mesmo comportamento de tooltip
+function ligarToque(alvo, mover, sair) {
+  alvo.addEventListener('mousemove', mover);
+  alvo.addEventListener('mouseleave', sair);
+  const toque = ev => { const t = ev.touches && ev.touches[0]; if (t) mover({ clientX: t.clientX, clientY: t.clientY }); };
+  alvo.addEventListener('touchstart', toque, { passive: true });
+  alvo.addEventListener('touchmove', toque, { passive: true });
+  alvo.addEventListener('touchend', sair);
+  alvo.addEventListener('touchcancel', sair);
+}
+
+function eixos(svg, W, H, m, esc, yPx) {
+  for (const t of esc.ticks) {
+    const y = yPx(t);
+    svgEl('line', { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: t === 0 ? css('--text-3') : css('--grid'), 'stroke-width': 1 }, svg);
+    const tx = svgEl('text', { x: m.l - 8, y: y + 4, 'text-anchor': 'end' }, svg);
+    tx.textContent = brlEixo.format(t);
+  }
+}
+function rotulosX(svg, cats, xCentro, H, m, W, rotulo) {
+  const maxRot = Math.max(2, Math.floor((W - m.l - m.r) / 64));
+  const passo = Math.ceil(cats.length / maxRot);
+  cats.forEach((k, i) => {
+    if (i % passo) return;
+    const t = svgEl('text', { x: xCentro(i), y: H - m.b + 16, 'text-anchor': 'middle' }, svg);
+    t.textContent = rotulo(k);
+  });
+}
+
+function graficoLinha(el, serie, { altura = 240, zero = false, nome = 'Saldo' } = {}) {
+  el.innerHTML = '';
+  if (!serie.length) { el.innerHTML = '<div class="vazio">Sem dados no período</div>'; return; }
+  const W = el.clientWidth || 600, H = altura, m = { l: 74, r: 16, t: 10, b: 26 };
+  const ys = serie.map(p => p[1]);
+  const esc = escalaY(Math.min(...ys), Math.max(...ys), zero || Math.min(...ys) < 0);
+  const yPx = v => m.t + (H - m.t - m.b) * (1 - (v - esc.lo) / (esc.hi - esc.lo));
+  const xPx = i => serie.length === 1 ? (m.l + W - m.r) / 2 : m.l + (W - m.l - m.r) * i / (serie.length - 1);
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': 'Gráfico de linha do saldo' }, el);
+  eixos(svg, W, H, m, esc, yPx);
+  rotulosX(svg, serie.map(p => p[0]), xPx, H, m, W, ddmm);
+  const cor = css('--s1');
+  const dPath = serie.map((p, i) => (i ? 'L' : 'M') + xPx(i).toFixed(1) + ' ' + yPx(p[1]).toFixed(1)).join(' ');
+  // área suave
+  svgEl('path', { d: `${dPath} L ${xPx(serie.length - 1)} ${yPx(Math.max(esc.lo, 0))} L ${xPx(0)} ${yPx(Math.max(esc.lo, 0))} Z`, fill: cor, opacity: .08 }, svg);
+  svgEl('path', { d: dPath, fill: 'none', stroke: cor, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+  // último ponto com rótulo direto
+  const ult = serie.length - 1;
+  svgEl('circle', { cx: xPx(ult), cy: yPx(serie[ult][1]), r: 4, fill: cor, stroke: css('--surface'), 'stroke-width': 2 }, svg);
+  // crosshair + tooltip
+  const guia = svgEl('line', { y1: m.t, y2: H - m.b, stroke: css('--text-3'), 'stroke-width': 1, 'stroke-dasharray': '3 3', opacity: 0 }, svg);
+  const ponto = svgEl('circle', { r: 5, fill: cor, stroke: css('--surface'), 'stroke-width': 2, opacity: 0 }, svg);
+  const alvo = svgEl('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' }, svg);
+  ligarToque(alvo, ev => {
+    const r = svg.getBoundingClientRect();
+    const x = (ev.clientX - r.left) * (W / r.width);
+    const i = Math.max(0, Math.min(serie.length - 1, Math.round((x - m.l) / ((W - m.l - m.r) / Math.max(1, serie.length - 1)))));
+    const [dt, v] = serie[i];
+    guia.setAttribute('x1', xPx(i)); guia.setAttribute('x2', xPx(i)); guia.setAttribute('opacity', 1);
+    ponto.setAttribute('cx', xPx(i)); ponto.setAttribute('cy', yPx(v)); ponto.setAttribute('opacity', 1);
+    mostrarTip(ev, `<div class="t">${ddmmaa(dt)}</div><div class="l"><span><i style="background:${cor}"></i>${nome}</span><b class="${v < 0 ? 'neg' : ''}">${R(v)}</b></div>`);
+  }, () => { guia.setAttribute('opacity', 0); ponto.setAttribute('opacity', 0); esconderTip(); });
+}
+
+function graficoBarras(el, { cats, series, rotulo, agrupado = false, altura = 260 }) {
+  el.innerHTML = '';
+  if (!cats.length) { el.innerHTML = '<div class="vazio">Sem vencimentos no período</div>'; return; }
+  const W = el.clientWidth || 600, H = altura, m = { l: 74, r: 10, t: 10, b: 26 };
+  const somas = cats.map((_, i) => agrupado ? Math.max(...series.map(s => s.valores[i])) : series.reduce((t, s) => t + s.valores[i], 0));
+  const esc = escalaY(0, Math.max(...somas));
+  const yPx = v => m.t + (H - m.t - m.b) * (1 - (v - esc.lo) / (esc.hi - esc.lo));
+  const banda = (W - m.l - m.r) / cats.length;
+  const xCentro = i => m.l + banda * (i + 0.5);
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': 'Gráfico de barras' }, el);
+  eixos(svg, W, H, m, esc, yPx);
+  rotulosX(svg, cats, xCentro, H, m, W, rotulo);
+  const larg = Math.max(2, Math.min(agrupado ? 18 : 28, banda * (agrupado ? 0.38 : 0.7)));
+  const raio = Math.min(4, larg / 2);
+  const grupoHover = svgEl('rect', { y: m.t, height: H - m.t - m.b, width: banda, fill: css('--text'), opacity: 0 }, svg);
+  cats.forEach((k, i) => {
+    let base = 0;
+    series.forEach((s, si) => {
+      const v = Math.max(0, s.valores[i]);
+      if (v <= 0) return;
+      const x = agrupado ? xCentro(i) - larg - 1 + si * (larg + 2) : xCentro(i) - larg / 2;
+      const y0 = agrupado ? yPx(0) : yPx(base);
+      const y1 = agrupado ? yPx(v) : yPx(base + v);
+      const topo = agrupado || si === series.length - 1 || series.slice(si + 1).every(z => !(z.valores[i] > 0));
+      let h = Math.max(1, y0 - y1 - (agrupado || base === 0 ? 0 : 2)); // 2px de respiro entre segmentos
+      const r = topo ? Math.min(raio, h) : 0;
+      const d = `M${x},${y1 + h} L${x},${y1 + r} Q${x},${y1} ${x + r},${y1} L${x + larg - r},${y1} Q${x + larg},${y1} ${x + larg},${y1 + r} L${x + larg},${y1 + h} Z`;
+      svgEl('path', { d, fill: s.cor }, svg);
+      if (!agrupado) base += v;
+    });
+  });
+  const alvo = svgEl('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' }, svg);
+  ligarToque(alvo, ev => {
+    const r = svg.getBoundingClientRect();
+    const x = (ev.clientX - r.left) * (W / r.width);
+    const i = Math.max(0, Math.min(cats.length - 1, Math.floor((x - m.l) / banda)));
+    grupoHover.setAttribute('x', m.l + banda * i); grupoHover.setAttribute('opacity', .05);
+    const linhas = series.map(s => `<div class="l"><span><i style="background:${s.cor}"></i>${s.nome}</span><b>${R(s.valores[i])}</b></div>`).join('');
+    const tot = agrupado ? '' : `<div class="l" style="border-top:1px solid var(--line);margin-top:4px;padding-top:4px"><span>Total</span><b>${R(series.reduce((t, s) => t + s.valores[i], 0))}</b></div>`;
+    mostrarTip(ev, `<div class="t">${rotulo(cats[i])}${rotulo === ddmm ? '/' + cats[i].slice(2, 4) : ''}</div>${linhas}${tot}`);
+  }, () => { grupoHover.setAttribute('opacity', 0); esconderTip(); });
+}
+
+function barrasHorizontais(el, itens, { larguraRotulo = 112 } = {}) {
+  el.innerHTML = '';
+  if (!itens.length) { el.innerHTML = '<div class="vazio">Sem lançamentos</div>'; return; }
+  const W = el.clientWidth || 400, linha = 34, H = itens.length * linha, rotL = larguraRotulo, valR = 104;
+  const maxCar = Math.floor((rotL - 8) / 6.2);
+  const max = Math.max(1, ...itens.map(i => i.valor));
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': 'Inadimplência por faixa' }, el);
+  itens.forEach((it, i) => {
+    const y = i * linha;
+    const t = svgEl('text', { x: 0, y: y + linha / 2 + 4 }, svg);
+    t.textContent = it.rot.length > maxCar ? it.rot.slice(0, maxCar - 1) + '…' : it.rot;
+    const w = Math.max(it.valor > 0 ? 3 : 0, (W - rotL - valR) * it.valor / max);
+    if (w > 0) {
+      const r = Math.min(4, w);
+      const x = rotL, yy = y + 8, h = linha - 16;
+      svgEl('path', { d: `M${x},${yy} L${x + w - r},${yy} Q${x + w},${yy} ${x + w},${yy + r} L${x + w},${yy + h - r} Q${x + w},${yy + h} ${x + w - r},${yy + h} L${x},${yy + h} Z`, style: `fill:${it.cor || 'var(--s2)'}` }, svg);
+    }
+    const v = svgEl('text', { x: rotL + w + 8, y: y + linha / 2 + 4 }, svg);
+    v.textContent = Rc(it.valor);
+    v.setAttribute('style', 'fill:var(--text);font-weight:600');
+    const alvo = svgEl('rect', { x: 0, y, width: W, height: linha, fill: 'transparent' }, svg);
+    ligarToque(alvo, ev => mostrarTip(ev, `<div class="t">${it.rot}</div><div class="l"><span>Valor</span><b>${R(it.valor)}</b></div>${it.det ? `<div class="l"><span>Títulos</span><b>${it.det.split(' ')[0]}</b></div>` : ''}`), esconderTip);
+  });
+}
+
+function sparkline(el, serie) {
+  const W = 120, H = 28;
+  if (serie.length < 2) return;
+  const ys = serie.map(p => p[1]), lo = Math.min(...ys), hi = Math.max(...ys), amp = hi - lo || 1;
+  const d = serie.map((p, i) => (i ? 'L' : 'M') + (2 + (W - 4) * i / (serie.length - 1)).toFixed(1) + ' ' + (2 + (H - 4) * (1 - (p[1] - lo) / amp)).toFixed(1)).join(' ');
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--s1)" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+}
+
+// ======================= eventos =======================
+document.querySelectorAll('#atalhos .chip').forEach(b => b.onclick = () => aplicarAtalho(b.dataset.p));
+for (const id of ['#dtIni', '#dtFim']) {
+  $(id).addEventListener('change', () => {
+    const a = $('#dtIni').value, b = $('#dtFim').value;
+    if (!a || !b) return;
+    est.inicio = a <= b ? a : b; est.fim = a <= b ? b : a;
+    document.querySelectorAll('#atalhos .chip').forEach(x => x.setAttribute('aria-pressed', 'false'));
+    salvarFiltros('custom');
+    carregar();
+  });
+}
+const fecharMenu = () => document.body.classList.remove('menu-aberto');
+$('#btnMenu').onclick = () => document.body.classList.toggle('menu-aberto');
+$('#menuFundo').onclick = fecharMenu;
+['#btnSenha', '#btnSair'].forEach(id => $(id).addEventListener('click', fecharMenu));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharMenu(); });
+document.querySelectorAll('.aba').forEach(b => b.onclick = () => {
+  est.aba = b.dataset.aba; fecharMenu();
+  document.querySelectorAll('.aba').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+  $('#abaAtual').textContent = b.textContent;
+  render();
+  carregar();
+});
+$('#btnBancos').onclick = ev => {
+  ev.stopPropagation();
+  const p = $('#popBancos'); p.hidden = !p.hidden; $('#btnBancos').setAttribute('aria-expanded', String(!p.hidden));
+};
+$('#popBancos').addEventListener('click', ev => ev.stopPropagation());
+document.addEventListener('click', ev => { if (!ev.target.closest('.pop-wrap')) { $('#popBancos').hidden = true; $('#btnBancos').setAttribute('aria-expanded', 'false'); } });
+$('#btnAtualizar').onclick = carregar;
+$('#btnSair').onclick = async () => { if (sb) await sb.auth.signOut(); location.reload(); };
+$('#btnSenha').onclick = () => abrirTrocaSenha(false);
+$('#formLogin').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const b = $('#lBotao'); b.disabled = true; $('#lErro').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email: $('#lEmail').value.trim(), password: $('#lSenha').value });
+  b.disabled = false;
+  if (error) { $('#lErro').textContent = /invalid/i.test(error.message) ? 'E-mail ou senha inválidos.' : error.message; return; }
+  $('#lSenha').value = '';
+  entrar();
+});
+$('#lEsqueci').onclick = async () => {
+  const email = $('#lEmail').value.trim();
+  if (!email) { $('#lErro').textContent = 'Digite seu e-mail acima e clique de novo.'; return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  $('#lErro').textContent = error ? error.message : 'Se o e-mail estiver cadastrado, você vai receber um link para criar uma nova senha.';
+};
+// atualização automática: a cada 2 horas + sempre às 17:45 (quando a opção está ligada)
+setInterval(() => { if ($('#auto').checked && !document.hidden) carregar(); }, 2 * 60 * 60e3);
+let ultimoDiario = '';
+setInterval(() => {
+  if (!$('#auto').checked) return;
+  const agora = new Date();
+  const hhmm = ('0' + agora.getHours()).slice(-2) + ':' + ('0' + agora.getMinutes()).slice(-2);
+  const hoje = agora.toISOString().slice(0, 10);
+  if (hhmm === '17:45' && ultimoDiario !== hoje) { ultimoDiario = hoje; carregar(); }
+}, 30e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#auto').checked) carregar(); });
+let tResize;
+addEventListener('resize', () => { clearTimeout(tResize); tResize = setTimeout(render, 150); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { atualizarIconeTema(); try { render(); } catch (_) {} });
+
+// ===== tema claro/escuro (manual) =====
+function efetivoEscuro() {
+  const h = document.documentElement;
+  if (h.classList.contains('tema-escuro')) return true;
+  if (h.classList.contains('tema-claro')) return false;
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
+function atualizarIconeTema() {
+  const esc = efetivoEscuro();
+  const btn = document.getElementById('btnTema');
+  if (btn) { btn.textContent = esc ? '☀️' : '🌙'; btn.title = esc ? 'Mudar para tema claro' : 'Mudar para tema escuro'; }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', esc ? '#121211' : '#2F64E0');
+}
+function aplicarTema(t) {
+  const h = document.documentElement;
+  h.classList.remove('tema-claro', 'tema-escuro');
+  if (t === 'claro') h.classList.add('tema-claro');
+  else if (t === 'escuro') h.classList.add('tema-escuro');
+  atualizarIconeTema();
+}
+(function () {
+  let t = 'auto'; try { t = localStorage.getItem('painel-tema') || 'auto'; } catch (_) {}
+  aplicarTema(t);
+})();
+document.getElementById('btnTema')?.addEventListener('click', () => {
+  const novo = efetivoEscuro() ? 'claro' : 'escuro';
+  try { localStorage.setItem('painel-tema', novo); } catch (_) {}
+  aplicarTema(novo);
+  try { render(); } catch (_) {}
+});
+
+iniciar();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
