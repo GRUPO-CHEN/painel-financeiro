@@ -223,9 +223,24 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
   .arvore .ano { display: grid; grid-template-columns: 20px 1fr; align-items: center; }
   .arvore .tg { cursor: pointer; color: var(--text-3); user-select: none; }
   .arvore .meses { grid-column: 2; padding-left: 4px; }
+  .secao { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 22px 0 10px; font-size: 1.05em; }
+  .secao:first-child { margin-top: 4px; }
+  .secao .tag { font-size: .72em; font-weight: 500; color: var(--text-2); background: var(--s1-soft); padding: 3px 10px; border-radius: 999px; }
+  .secao .tag.fixo { background: var(--s2-soft); }
+  .secao .tag.filtro, .nota-filtro { background: #fff3cd; color: #7a5a00; }
+  .nota-filtro { font-size: .8em; padding: 3px 10px; border-radius: 999px; align-self: center; }
+  .inds { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .ind { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+  .ind-tit { font-size: .82em; color: var(--text-2); font-weight: 600; }
+  .ind-val { font-size: 1.55em; font-weight: 700; line-height: 1.15; }
+  .ind-det { font-size: .78em; color: var(--text-3); }
+  .ind .bom { color: #1a9e55; font-weight: 600; } .ind .ruim { color: #d23c3c; font-weight: 600; }
+  .ind svg.spark { width: 100%; height: 30px; margin-top: 4px; }
   table.dre td, table.dre th { white-space: nowrap; }
   table.dre tr[hidden] { display: none; }
   table.dre .parcial { border-left: 2px solid var(--line); background: var(--s2-soft); }
+  table.dre .pc.parcial { border-left: 0; }
+  table.dre td.pc, table.dre th.pc { font-size: .74em; color: var(--text-3); padding-left: 2px; padding-right: 12px; }
   table.dre td:first-child, table.dre th:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 230px; }
   table.dre tr.g td:first-child { cursor: pointer; font-weight: 600; }
   table.dre tr.g:hover td { background: var(--s1-soft); }
@@ -281,6 +296,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
       <button class="chip" data-p="90">Últimos 90 dias</button>
       <button class="chip" data-p="ano">Ano</button>
     </div>
+    <span class="nota-filtro" id="notaPeriodo" hidden>⬅ na Visão geral, este filtro vale só para o bloco ⏮ Passado</span>
     </div>
     <div class="sep" id="sepPeriodo"></div>
     <div class="grupo" id="empresas" aria-label="Empresas"></div>
@@ -302,6 +318,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
     <button class="aba" role="tab" data-aba="pagar" aria-selected="false">A pagar</button>
     <button class="aba" role="tab" data-aba="receber" aria-selected="false">A receber</button>
     <button class="aba" role="tab" data-aba="dre" aria-selected="false">DRE</button>
+    <button class="aba" role="tab" data-aba="indicadores" aria-selected="false">Indicadores</button>
     <button class="aba" role="tab" data-aba="importacoes" aria-selected="false">Importações</button>
     <button class="aba" role="tab" data-aba="usuarios" aria-selected="false">Usuários</button>
     <div class="menu-rodape">
@@ -489,7 +506,7 @@ Object.assign(est, {
 
 const ABAS = {
   dia: ['caixa'], geral: ['caixa', 'titulos'], projecao: ['caixa', 'titulos'], bancos: ['caixa'],
-  pagar: ['titulos'], receber: ['titulos'], dre: ['dre'], importacoes: ['importacoes'], usuarios: ['admin'],
+  pagar: ['titulos'], receber: ['titulos'], dre: ['dre'], indicadores: ['dre'], importacoes: ['importacoes'], usuarios: ['admin'],
 };
 const temArea = a => !!est.perfil && (est.perfil.admin || (a !== 'admin' && (est.perfil.areas || []).includes(a)));
 const podeEditar = () => !!est.perfil && (est.perfil.admin || est.perfil.editor);
@@ -621,8 +638,9 @@ const ger = t => est.geracoes[t] ?? -1;
 async function lerPainel() {
   await lerGeracoes();
   const emps = est.empresas;
-  const querAbertos = temArea('titulos') && ['pagar', 'receber'].includes(est.aba) && ger('titulos_abertos') >= 0;
-  const [saldos, tits, faixas, venc, abertos] = await Promise.all([
+  const querAbertos = temArea('titulos') && ['geral', 'pagar', 'receber'].includes(est.aba) && ger('titulos_abertos') >= 0;
+  const geral = est.aba === 'geral';
+  const [saldos, tits, faixas, venc, abertos, saldoHoje, dre] = await Promise.all([
     temArea('caixa') ? buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,data,saldo,entradas,saidas')
       .eq('geracao', ger('saldo_diario')).in('empresa', emps).gte('data', est.inicio).lte('data', est.fim)
       .order('data').order('empresa').order('banco')) : [],
@@ -635,6 +653,17 @@ async function lerPainel() {
       .eq('geracao', ger('vencidos_cliente')).in('empresa', emps).order('valor', { ascending: false })) : [],
     querAbertos ? buscarTodos(() => sb.from('titulos_abertos').select('tipo,empresa,vencimento,titulo,parcela,cod,nome,conta,aberto')
       .eq('geracao', ger('titulos_abertos')).in('empresa', emps).order('vencimento').order('tipo').order('titulo')) : null,
+    // saldo da data mais recente (posição de hoje, independe do filtro)
+    geral && temArea('caixa') ? (async () => {
+      const { data: u } = await sb.from('saldo_diario').select('data').eq('geracao', ger('saldo_diario')).in('empresa', emps)
+        .lte('data', hojeISO()).order('data', { ascending: false }).limit(1);
+      const dt = u && u[0] && u[0].data; if (!dt) return null;
+      const rows = await buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,saldo').eq('geracao', ger('saldo_diario'))
+        .in('empresa', emps).eq('data', dt).order('empresa').order('banco'));
+      return { data: dt, rows };
+    })() : null,
+    geral && temArea('dre') && ger('dre_mensal') >= 0 ? buscarTodos(() => sb.from('dre_mensal').select('empresa,mes,conta,familia,valor')
+      .eq('geracao', ger('dre_mensal')).in('empresa', emps).order('mes').order('conta').order('familia')) : null,
   ]);
   const contasPagar = (est.contas.pagar || []).map(Number);
   const semTransf = tits.filter(r => !ehTransferencia(`${r.conta}.${r.sub_conta}`));
@@ -660,6 +689,8 @@ async function lerPainel() {
     pagar, receber: [...rec.values()], faixas: [...fx.values()],
     topAtraso: [...cli.values()].sort((a, b) => b.valor - a.valor).slice(0, 10),
     abertos: abertos ? abertos.filter(t => !ehTransferencia(t.conta)).map(t => ({ ...t, aberto: Number(t.aberto) })) : null,
+    saldoHoje: saldoHoje ? { data: saldoHoje.data, contas: saldoHoje.rows.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => [r.empresa, r.banco, Number(r.saldo)]) } : null,
+    dre: dre ? dre.map(r => ({ ...r, valor: Number(r.valor) })) : null,
   };
 }
 
@@ -850,6 +881,9 @@ async function carregar() {
     } else if (aba === 'projecao') {
       const d = est.demo ? gerarDemoProj(est.horizonte) : await lerProj();
       if (meu !== seq) return; est.dadosProj = d; desc = `projeção de ${est.horizonte} dias`;
+    } else if (aba === 'indicadores') {
+      const d = est.demo ? { dre: [], abertos: null, saldos: null, movs: null } : await lerIndicadores();
+      if (meu !== seq) return; est.dadosInd = d; desc = 'Indicadores';
     } else if (aba === 'dre') {
       const d = est.demo ? { linhas: [] } : await lerDre();
       if (meu !== seq) return; est.dadosDre = d; desc = 'DRE';
@@ -936,13 +970,15 @@ function render() {
   const el = $('#conteudo');
   const aba = est.aba;
   if (!aba) return;
-  const periodo = !['dia', 'projecao', 'dre', 'importacoes', 'usuarios'].includes(aba);
+  const periodo = !['dia', 'projecao', 'dre', 'indicadores', 'importacoes', 'usuarios'].includes(aba);
   $('#periodo').hidden = !periodo; $('#sepPeriodo').hidden = !periodo;
+  $('#notaPeriodo').hidden = aba !== 'geral';
   document.querySelector('.filtros').hidden = aba === 'usuarios';
   try {
     if (aba === 'importacoes') return renderImportacoes(el);
     if (aba === 'usuarios') return renderUsuarios(el);
     if (aba === 'dia') { el.innerHTML = est.dadosDia ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosDia) renderDia(el); return; }
+    if (aba === 'indicadores') { if (est.dadosInd) renderIndicadores(el); else el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
     if (aba === 'dre') { if (est.dadosDre) renderDre(el); else el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
     if (aba === 'projecao') { el.innerHTML = est.dadosProj ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosProj) renderProj(el); return; }
     if (!est.dados) { el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
@@ -960,32 +996,99 @@ function render() {
 const kpi = (rot, val, det = '', cls = '') =>
   `<div class="kpi"><div class="rot">${rot}</div><div class="val ${cls}" >${val}</div><div class="det">${det}</div></div>`;
 
+// fluxo projetado: saldo de hoje + recebimentos − pagamentos em aberto, dia a dia (até 12 meses)
+function fluxoProjetado(saldo0, ab, hoje) {
+  const net = new Map();
+  for (const t of ab.R) if (t.vencimento >= hoje) net.set(t.vencimento, (net.get(t.vencimento) || 0) + t.aberto);
+  for (const t of ab.P) if (t.vencimento >= hoje) net.set(t.vencimento, (net.get(t.vencimento) || 0) - t.aberto);
+  let sd = saldo0, des = null; const serie = [];
+  for (let i = 0; i <= 365; i++) {
+    const dia = somaDias(hoje, i); sd += net.get(dia) || 0;
+    if (i <= 30) serie.push([dia, sd]);
+    if (!des && sd < 0) des = { data: dia, saldo: sd };
+    if (i >= 30 && des) break;
+  }
+  return { serie, des };
+}
 function htmlGeral(c) {
-  const varC = c.saldoContas - c.iniContas;
-  const emDia = `em ${ddmmaa(c.serieSaldo.at(-1)?.[0] || est.fim)}`;
+  const d = est.dados, hoje = hojeISO();
+  const somaAb = l => l.reduce((t, x) => t + x.aberto, 0);
+  // HOJE — posição atual, não muda com os filtros
+  const sh = d.saldoHoje;
+  const shC = sh ? sh.contas.filter(x => !ehAplicacao(x[1])).reduce((t, x) => t + x[2], 0) : null;
+  const shA = sh ? sh.contas.filter(x => ehAplicacao(x[1])).reduce((t, x) => t + x[2], 0) : 0;
+  const temAplicH = !!sh && sh.contas.some(x => ehAplicacao(x[1]));
+  const ab = d.abertos ? { R: abertosDoTipo('R'), P: abertosDoTipo('P') } : null;
+  const totRec = ab ? somaAb(ab.R) : 0;
+  // PASSADO — filtro De/Até (até hoje)
+  const fimP = est.fim < hoje ? est.fim : hoje, varC = c.saldoContas - c.iniContas, resCx = c.entradas - c.saidas;
+  // PRÓXIMOS 30 DIAS — fixo
+  const ate = somaDias(hoje, 30);
+  const fut = l => somaAb(l.filter(t => t.vencimento >= hoje && t.vencimento <= ate));
+  const fR = ab ? fut(ab.R) : 0, fP = ab ? fut(ab.P) : 0;
+  const fx = est._fluxo = ab && shC !== null ? fluxoProjetado(shC, ab, hoje) : null;
+  const des = fx && fx.des, des30 = des && des.data <= ate;
+  // RESULTADO — DRE, mesmo período da aba DRE
+  let blocoDre = '';
+  est._dreGeral = null;
+  if (d.dre && d.dre.length) {
+    const D = est._dreGeral = calcDre(d.dre);
+    const { gV, tot, med, recT, nM } = D, t = id => tot(gV[id]);
+    const mc2p = recT ? t('mc2') / recT : 0, recMed = med(gV.rec), fixos = -med(gV.dop);
+    const pe = mc2p > 0 && fixos > 0 ? fixos / mc2p : 0, folga = pe ? recMed / pe - 1 : 0;
+    blocoDre = `
+  <h3 class="secao">📊 Resultado <span class="tag">DRE por competência · mesmo período da aba DRE${D.sepAt ? ' · sem o mês parcial' : ''}</span></h3>
+  <div class="controles">${htmlPeriodoDre(D)}</div>
+  ${!nM ? '<div class="vazio">Selecione pelo menos um mês no período.</div>' : `<div class="kpis">
+    ${kpi('Total faturado', R0(recT), `média ${R0(recMed)}/mês`)}
+    ${kpi('Margem de contribuição 2', R0(t('mc2')), pctTxt(mc2p) + ' da receita', t('mc2') < 0 ? 'neg' : '')}
+    ${kpi('EBITDA', R0(t('ebitda')), recT ? pctTxt(t('ebitda') / recT) + ' da receita' : '', t('ebitda') < 0 ? 'neg' : '')}
+    ${kpi('Lucro líquido', R0(t('lucro')), recT ? pctTxt(t('lucro') / recT) + ' da receita' : '', t('lucro') < 0 ? 'neg' : '')}
+    ${pe ? kpi('Ponto de equilíbrio', R0(pe) + '/mês', `faturamento p/ EBITDA zero · média atual ${folga >= 0 ? '▲' : '▼'} ${pctTxt(Math.abs(folga))} ${folga >= 0 ? 'acima' : 'abaixo'}`, folga < 0 ? 'alerta' : '') : ''}
+  </div>`}`;
+  }
   return `
+  <h3 class="secao">📍 Hoje <span class="tag fixo">posição atual · não muda com os filtros</span></h3>
   <div class="kpis">
-    ${kpi('Saldo em contas', R0(c.saldoContas), `${emDia} · ${varC >= 0 ? '▲' : '▼'} ${R0(Math.abs(varC))} no período`, c.saldoContas < 0 ? 'neg' : '')}
-    ${c.temAplic ? kpi('Saldo em aplicações', R0(c.saldoAplic), `${emDia} · investimentos`) : ''}
-    ${kpi('Entradas no período', R0(c.entradas), 'recebimentos conciliados')}
-    ${kpi('Saídas no período', R0(c.saidas), 'pagamentos conciliados')}
-    ${kpi('A receber em aberto', R0(c.recAb), `de ${R0(c.recTot)} com vencimento no período`)}
-    ${kpi('A pagar em aberto', R0(c.pagAb), `de ${R0(c.pagTot)} com vencimento no período`)}
-    ${kpi('⚠ Vencido a receber', R0(c.vencido), `${inteiro.format(c.vencidoQtd)} títulos vencidos hoje`, c.vencido > 0 ? 'alerta' : '')}
+    ${shC !== null ? kpi('Saldo em contas', R0(shC), `em ${ddmmaa(sh.data)}`, shC < 0 ? 'neg' : '') : ''}
+    ${temAplicH ? kpi('Saldo em aplicações', R0(shA), `em ${ddmmaa(sh.data)} · investimentos`) : ''}
+    ${ab ? kpi('Total a receber', R0(totRec), `${inteiro.format(ab.R.length)} títulos em aberto · todos os vencimentos`) : ''}
+    ${kpi('⚠ Vencido a receber', R0(c.vencido), `${inteiro.format(c.vencidoQtd)} títulos vencidos`, c.vencido > 0 ? 'alerta' : '')}
+  </div>
+  <h3 class="secao">⏮ Passado <span class="tag filtro">📅 usa o filtro De/Até lá em cima: ${ddmmaa(est.inicio)} a ${ddmmaa(fimP)}</span></h3>
+  <div class="kpis">
+    ${kpi('Entradas', R0(c.entradas), 'recebimentos conciliados')}
+    ${kpi('Saídas', R0(c.saidas), 'pagamentos conciliados')}
+    ${kpi('Resultado de caixa', R0(resCx), 'entradas − saídas', resCx < 0 ? 'neg' : '')}
+    ${kpi('Variação do saldo', `${varC >= 0 ? '▲' : '▼'} ${R0(Math.abs(varC))}`, `de ${R0(c.iniContas)} para ${R0(c.saldoContas)}`)}
+  </div>
+  <div class="grade"><div class="card cheio">
+    <h2>Saldo total em bancos</h2>
+    <div class="nota">Soma das contas das empresas selecionadas, dia a dia, no período do filtro</div>
+    <div class="grafico" id="gSaldo"></div>
+  </div></div>
+  <h3 class="secao">⏭ Próximos 30 dias <span class="tag fixo">títulos em aberto a vencer · não muda com os filtros</span></h3>
+  ${ab ? `<div class="kpis">
+    ${kpi('Total a receber', R0(fR), `de ${ddmmaa(hoje)} a ${ddmmaa(ate)}`)}
+    ${kpi('Total a pagar', R0(fP), `de ${ddmmaa(hoje)} a ${ddmmaa(ate)}`)}
+    ${fx ? kpi('Saldo em 30 dias', R0(fx.serie.at(-1)[1]), 'saldo de hoje + a receber − a pagar', fx.serie.at(-1)[1] < 0 ? 'neg' : '') : ''}
+    ${fx ? kpi('Próximo desencaixe', des ? ddmmaa(des.data) : 'nenhum previsto',
+      des ? `saldo projetado fica em ${R0(des.saldo)}${des30 ? '' : ' (após os 30 dias)'}` : 'saldo não fica negativo nos próximos 12 meses', des30 ? 'alerta' : '') : ''}
   </div>
   <div class="grade">
     <div class="card cheio">
-      <h2>Saldo total em bancos</h2>
-      <div class="nota">Soma das contas das empresas selecionadas, dia a dia</div>
-      <div class="grafico" id="gSaldo"></div>
-    </div>
-    <div class="card cheio">
-      <h2>A receber × a pagar por vencimento</h2>
-      <div class="nota" id="nRxP"></div>
+      <h2>Recebimentos × pagamentos por dia</h2>
+      <div class="nota">Só o valor em aberto · os vencidos não entram (ficam no bloco "Hoje")</div>
       <div class="legenda"><span><i style="background:var(--s1)"></i>A receber</span><span><i style="background:var(--s2)"></i>A pagar</span></div>
       <div class="grafico" id="gRxP"></div>
     </div>
-  </div>`;
+    ${fx ? `<div class="card cheio">
+      <h2>Saldo projetado dia a dia</h2>
+      <div class="nota">Saldo em contas de hoje + recebimentos − pagamentos${des30 ? ` · ⚠ fica negativo em ${ddmmaa(des.data)}` : ''}</div>
+      <div class="grafico" id="gFluxo"></div>
+    </div>` : ''}
+  </div>` : '<div class="vazio">Disponível depois da próxima atualização do sincronizador.</div>'}
+  ${blocoDre}`;
 }
 
 function htmlBancos(c) {
@@ -1077,9 +1180,48 @@ async function lerDre() {
   return { linhas: rows.map(r => ({ ...r, valor: Number(r.valor) })) };
 }
 
-function renderDre(el) {
-  const L = est.dadosDre.linhas;
-  if (!L.length) { el.innerHTML = '<div class="card"><div class="vazio">O DRE aparece aqui depois da próxima atualização do sincronizador.</div></div>'; return; }
+// filtro de período do DRE (árvore ano → meses + atalhos), usado no DRE e na Visão geral (mesma seleção)
+const MESES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function rotPeriodoDre(D) {
+  const { meses, nM } = D;
+  return nM ? `${rotMes(meses[0])} a ${rotMes(meses[nM - 1])} · ${nM} ${nM > 1 ? 'meses' : 'mês'}` : 'nenhum mês';
+}
+function htmlPeriodoDre(D) {
+  const { cfg, disp, anos, sel, nM } = D;
+  const arvore = `<div class="arvore">
+    <label><input type="checkbox" data-tudo ${nM === disp.length ? 'checked' : ''}> (Selecionar tudo)</label>
+    ${anos.map(a => {
+      const ms = disp.filter(m => m.startsWith(a)), n = ms.filter(m => sel.has(m)).length, ab = cfg.anosAbertos.includes(a);
+      return `<div class="ano"><span class="tg" data-tg="${a}">${ab ? '⊟' : '⊞'}</span>
+        <label><input type="checkbox" data-ano="${a}" ${n === ms.length ? 'checked' : ''} ${n && n < ms.length ? 'data-meio="1"' : ''}> ${a}</label>
+        ${ab ? `<div class="meses">${ms.map(m => `<label><input type="checkbox" data-mes="${m}" ${sel.has(m) ? 'checked' : ''}> ${MESES_NOME[Number(m.slice(5, 7)) - 1]}</label>`).join('')}</div>` : ''}</div>`;
+    }).join('')}
+  </div>`;
+  return `<details class="dre-per" ${cfg.perAberto ? 'open' : ''}><summary class="chip">📅 ${rotPeriodoDre(D)} ▾</summary>${arvore}</details>
+      <button class="chip" data-atalho="12">Últimos 12</button><button class="chip" data-atalho="6">6</button><button class="chip" data-atalho="3">3</button><button class="chip" data-atalho="ano">Este ano</button>`;
+}
+function ligarPeriodoDre(el, D, re) {
+  const { cfg, disp, ultimos, mesHoje } = D;
+  const setSel = lista => { cfg.sel = [...new Set(lista)].sort(); re(); };
+  el.querySelectorAll('[data-meio]').forEach(i => { i.indeterminate = true; });
+  const det = el.querySelector('.dre-per'); if (det) det.ontoggle = () => { cfg.perAberto = det.open; };
+  const tudo = el.querySelector('[data-tudo]'); if (tudo) tudo.onchange = e => setSel(e.target.checked ? disp : []);
+  el.querySelectorAll('[data-ano]').forEach(c => c.onchange = () => {
+    const ms = disp.filter(m => m.startsWith(c.dataset.ano));
+    setSel(c.checked ? [...cfg.sel, ...ms] : cfg.sel.filter(m => !ms.includes(m)));
+  });
+  el.querySelectorAll('[data-mes]').forEach(c => c.onchange = () =>
+    setSel(c.checked ? [...cfg.sel, c.dataset.mes] : cfg.sel.filter(m => m !== c.dataset.mes)));
+  el.querySelectorAll('[data-tg]').forEach(t => t.onclick = () => {
+    const a = t.dataset.tg, k = cfg.anosAbertos.indexOf(a); if (k < 0) cfg.anosAbertos.push(a); else cfg.anosAbertos.splice(k, 1); re();
+  });
+  el.querySelectorAll('[data-atalho]').forEach(b => b.onclick = () => {
+    cfg.perAberto = false;
+    setSel(b.dataset.atalho === 'ano' ? disp.filter(m => m.startsWith(mesHoje.slice(0, 4))) : [...ultimos(Number(b.dataset.atalho)), mesHoje]);
+  });
+}
+
+function calcDre(L) {
   const mesHoje = hojeISO().slice(0, 7);
   const disp = [...new Set(L.map(r => r.mes))].filter(m => m <= mesHoje).sort();
   const ultimos = n => { const fim = somaMes(mesHoje, -1); return Array.from({ length: n }, (_, k) => somaMes(fim, k - n + 1)); };
@@ -1121,15 +1263,26 @@ function renderDre(el) {
   const tot = a => idxs.reduce((s, k) => s + a[k], 0);
   const med = a => tot(a) / idxs.length;
   const recT = tot(gV.rec);
+  return { mesHoje, disp, ultimos, cfg, sel, meses, anos, nM, porConta, porFam, gV, gC, iAtual, notaIr, sepAt, idxs, tot, med, recT };
+}
+
+function renderDre(el) {
+  const L = est.dadosDre.linhas;
+  if (!L.length) { el.innerHTML = '<div class="card"><div class="vazio">O DRE aparece aqui depois da próxima atualização do sincronizador.</div></div>'; return; }
+  const D = calcDre(L);
+  const { mesHoje, disp, cfg, sel, meses, anos, nM, porConta, porFam, gV, gC, iAtual, notaIr, sepAt, idxs, tot, med, recT } = D;
   const f = v => Math.abs(v) < 0.5 ? '–' : R0(v);
-  const cel = (a, neg) => (cfg.meses ? idxs.map(k => `<td class="n ${neg && a[k] < 0 ? 'neg' : ''}">${f(a[k])}</td>`).join('') : '')
+  // % de cada linha sobre a receita do próprio mês (como na planilha)
+  const pc2 = x => isFinite(x) && Math.abs(x) > 0.00005 ? (x * 100).toFixed(2).replace('.', ',') + '%' : '';
+  const pcM = (v, k, extra = '') => `<td class="n pc${extra}">${gV.rec[k] ? pc2(v / gV.rec[k]) : ''}</td>`;
+  const cel = (a, neg) => (cfg.meses ? idxs.map(k => `<td class="n ${neg && a[k] < 0 ? 'neg' : ''}">${f(a[k])}</td>${pcM(a[k], k)}`).join('') : '')
     + `<td class="n ${neg && tot(a) < 0 ? 'neg' : ''}"><b>${f(tot(a))}</b></td><td class="n">${f(med(a))}</td>`
-    + (sepAt ? `<td class="n parcial ${neg && a[iAtual] < 0 ? 'neg' : ''}">${f(a[iAtual])}</td>` : '')
-    + `<td class="n sub">${recT ? pctTxt(tot(a) / recT) : ''}</td>`;
+    + (sepAt ? `<td class="n parcial ${neg && a[iAtual] < 0 ? 'neg' : ''}">${f(a[iAtual])}</td>${pcM(a[iAtual], iAtual, ' parcial')}` : '')
+    + `<td class="n pc">${recT ? pc2(tot(a) / recT) : ''}</td>`;
   const linhas = []; let sep = false;
   for (const g of DRE_GRUPOS) {
     if (g.fora && !gC[g.id].length) continue;
-    if (g.fora && !sep) { sep = true; linhas.push(`<tr class="sep"><td colspan="${(cfg.meses ? idxs.length : 0) + 4 + (sepAt ? 1 : 0)}">Abaixo do resultado — não entram no lucro</td></tr>`); }
+    if (g.fora && !sep) { sep = true; linhas.push(`<tr class="sep"><td colspan="${(cfg.meses ? idxs.length * 2 : 0) + 4 + (sepAt ? 2 : 0)}">Abaixo do resultado — não entram no lucro</td></tr>`); }
     if (g.soma) { linhas.push(`<tr class="t ${g.d ? 'd' : ''}"><td>${g.nome}</td>${cel(gV[g.id], true)}</tr>`); continue; }
     const aberto = cfg.abertos.includes(g.id);
     const h = aberto ? '' : ' hidden';
@@ -1143,17 +1296,7 @@ function renderDre(el) {
     }
   }
   const t = id => tot(gV[id]);
-  const MESES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-  const arvore = `<div class="arvore">
-    <label><input type="checkbox" data-tudo ${nM === disp.length ? 'checked' : ''}> (Selecionar tudo)</label>
-    ${anos.map(a => {
-      const ms = disp.filter(m => m.startsWith(a)), n = ms.filter(m => sel.has(m)).length, ab = cfg.anosAbertos.includes(a);
-      return `<div class="ano"><span class="tg" data-tg="${a}">${ab ? '⊟' : '⊞'}</span>
-        <label><input type="checkbox" data-ano="${a}" ${n === ms.length ? 'checked' : ''} ${n && n < ms.length ? 'data-meio="1"' : ''}> ${a}</label>
-        ${ab ? `<div class="meses">${ms.map(m => `<label><input type="checkbox" data-mes="${m}" ${sel.has(m) ? 'checked' : ''}> ${MESES_NOME[Number(m.slice(5, 7)) - 1]}</label>`).join('')}</div>` : ''}</div>`;
-    }).join('')}
-  </div>`;
-  const rotPer = nM ? `${rotMes(meses[0])} a ${rotMes(meses[nM - 1])} · ${nM} ${nM > 1 ? 'meses' : 'mês'}` : 'nenhum mês';
+  const rotPer = rotPeriodoDre(D);
   el.innerHTML = `
   <div class="kpis">
     ${kpi('Receita', R0(recT), `média ${R0(med(gV.rec))}/mês${sepAt ? ` · ${rotMes(mesHoje)} parcial: ${R0(gV.rec[iAtual])}` : ''}`)}
@@ -1163,8 +1306,7 @@ function renderDre(el) {
   </div>
   <div class="card cheio">
     <div class="controles">
-      <details class="dre-per" ${cfg.perAberto ? 'open' : ''}><summary class="chip">📅 ${rotPer} ▾</summary>${arvore}</details>
-      <button class="chip" data-atalho="12">Últimos 12</button><button class="chip" data-atalho="6">6</button><button class="chip" data-atalho="3">3</button><button class="chip" data-atalho="ano">Este ano</button>
+      ${htmlPeriodoDre(D)}
       <div class="sep"></div>
       <label class="rot"><input type="checkbox" id="dreMeses" ${cfg.meses ? 'checked' : ''}> mostrar meses</label>
 
@@ -1172,7 +1314,7 @@ function renderDre(el) {
     </div>
     <div class="nota">Competência (data de emissão) · ${rotPer}${notaIr} · clique num grupo para abrir as contas</div>
     ${!nM ? '<div class="vazio">Selecione pelo menos um mês no período.</div>' : `<div class="tabela-wrap rolagem"><table class="dre">
-      <thead><tr><th>Conta</th>${cfg.meses ? idxs.map(k => `<th class="n">${rotMes(meses[k])}</th>`).join('') : ''}<th class="n">Total</th><th class="n">Média/mês</th>${sepAt ? `<th class="n parcial">${rotMes(mesHoje)} parcial</th>` : ''}<th class="n">% receita</th></tr></thead>
+      <thead><tr><th>Conta</th>${cfg.meses ? idxs.map(k => `<th class="n">${rotMes(meses[k])}</th><th class="n pc">%</th>`).join('') : ''}<th class="n">Total</th><th class="n">Média/mês</th>${sepAt ? `<th class="n parcial">${rotMes(mesHoje)} parcial</th><th class="n pc parcial">%</th>` : ''}<th class="n pc">% total</th></tr></thead>
       <tbody>${linhas.join('')}</tbody>
     </table></div>`}
   </div>`;
@@ -1182,24 +1324,7 @@ function renderDre(el) {
     renderDre(el); window.scrollTo(0, y);
     const w2 = el.querySelector('.tabela-wrap'); if (w2) { w2.scrollLeft = x; w2.scrollTop = yt; }
   };
-  const setSel = lista => { cfg.sel = [...new Set(lista)].sort(); re(); };
-  el.querySelectorAll('[data-meio]').forEach(i => { i.indeterminate = true; });
-  const det = el.querySelector('.dre-per'); det.ontoggle = () => { cfg.perAberto = det.open; };
-  el.querySelector('[data-tudo]').onchange = e => setSel(e.target.checked ? disp : []);
-  el.querySelectorAll('[data-ano]').forEach(c => c.onchange = () => {
-    const ms = disp.filter(m => m.startsWith(c.dataset.ano));
-    setSel(c.checked ? [...cfg.sel, ...ms] : cfg.sel.filter(m => !ms.includes(m)));
-  });
-  el.querySelectorAll('[data-mes]').forEach(c => c.onchange = () =>
-    setSel(c.checked ? [...cfg.sel, c.dataset.mes] : cfg.sel.filter(m => m !== c.dataset.mes)));
-  el.querySelectorAll('[data-tg]').forEach(t => t.onclick = () => {
-    const a = t.dataset.tg, k = cfg.anosAbertos.indexOf(a); if (k < 0) cfg.anosAbertos.push(a); else cfg.anosAbertos.splice(k, 1); re();
-  });
-  el.querySelectorAll('[data-atalho]').forEach(b => b.onclick = () => {
-    cfg.perAberto = false;
-    setSel(b.dataset.atalho === 'ano' ? disp.filter(m => m.startsWith(mesHoje.slice(0, 4))) : [...ultimos(Number(b.dataset.atalho)), mesHoje]);
-  });
-
+  ligarPeriodoDre(el, D, re);
   $('#dreMeses').onchange = e => { cfg.meses = e.target.checked; re(); };
   const marcar = (id, ab) => {
     const k = cfg.abertos.indexOf(id); if (ab && k < 0) cfg.abertos.push(id); if (!ab && k >= 0) cfg.abertos.splice(k, 1);
@@ -1209,6 +1334,139 @@ function renderDre(el) {
   el.querySelectorAll('tr.g').forEach(tr => tr.onclick = () => marcar(tr.dataset.g, !cfg.abertos.includes(tr.dataset.g)));
   $('#dreAbrir').onclick = () => DRE_GRUPOS.filter(g => !g.soma).forEach(g => marcar(g.id, true));
   $('#dreFechar').onclick = () => DRE_GRUPOS.filter(g => !g.soma).forEach(g => marcar(g.id, false));
+}
+
+// ======================= INDICADORES =======================
+async function lerIndicadores() {
+  await lerGeracoes();
+  const emps = est.empresas, hoje = hojeISO(), d90 = somaDias(hoje, -90);
+  const [dre, abertos, saldos, movs] = await Promise.all([
+    ger('dre_mensal') >= 0 ? buscarTodos(() => sb.from('dre_mensal').select('empresa,mes,conta,familia,valor')
+      .eq('geracao', ger('dre_mensal')).in('empresa', emps).order('mes').order('conta').order('familia')) : [],
+    temArea('titulos') && ger('titulos_abertos') >= 0 ? buscarTodos(() => sb.from('titulos_abertos').select('tipo,empresa,vencimento,cod,nome,conta,aberto')
+      .eq('geracao', ger('titulos_abertos')).in('empresa', emps).order('vencimento').order('tipo').order('titulo').order('parcela')) : null,
+    temArea('caixa') ? buscarTodos(() => sb.from('saldo_diario').select('empresa,banco,data,saldo,saidas')
+      .eq('geracao', ger('saldo_diario')).in('empresa', emps).gte('data', d90).lte('data', hoje).order('data').order('empresa').order('banco')) : null,
+    temArea('caixa') && ger('movimentos') >= 0 ? buscarTodos(() => sb.from('movimentos').select('tipo,empresa,vencimento,dt_pagamento,dt_conciliacao,conta,valor')
+      .eq('geracao', ger('movimentos')).in('empresa', emps).eq('tipo', 'R').gte('dt_conciliacao', d90)
+      .order('dt_conciliacao').order('empresa').order('titulo').order('parcela')) : null,
+  ]);
+  return {
+    dre: dre.map(r => ({ ...r, valor: Number(r.valor) })),
+    abertos: abertos ? abertos.filter(t => !ehTransferencia(t.conta)).map(t => ({ ...t, aberto: Number(t.aberto) })) : null,
+    saldos: saldos ? saldos.filter(r => bancoSelecionado(r.empresa, r.banco)).map(r => ({ ...r, saldo: Number(r.saldo), saidas: Number(r.saidas) })) : null,
+    movs: movs ? movs.filter(m => !ehTransferencia(m.conta)).map(m => ({ ...m, valor: Number(m.valor) })) : null,
+  };
+}
+// totais do DRE por mês e grupo (sem provisões), para comparações e tendências
+function serieDre(L) {
+  const S = {};
+  for (const r of L) {
+    if (ehTransferencia(r.conta)) continue;
+    const o = S[r.mes] ||= {}, v = sinalDre(r.conta) * r.valor, g = grupoDre(r.conta);
+    o[g] = (o[g] || 0) + v;
+    if (r.conta.startsWith('20.08.')) o.juros = (o.juros || 0) + v;
+  }
+  for (const o of Object.values(S)) for (const g of DRE_GRUPOS) if (g.soma) o[g.id] = g.soma.reduce((t, id) => t + (o[id] || 0), 0);
+  return S;
+}
+function spark(vals) {
+  const v = vals.map(x => isFinite(x) ? x : 0); if (v.length < 2) return '';
+  const mn = Math.min(...v), mx = Math.max(...v), r = mx - mn || 1, w = 120, h = 30;
+  const pts = v.map((x, i) => `${(i / (v.length - 1) * w).toFixed(1)},${(h - 3 - (x - mn) / r * (h - 6)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--s1)" stroke-width="1.8" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function renderIndicadores(el) {
+  const X = est.dadosInd, L = X.dre, hoje = hojeISO();
+  if (!L.length) { el.innerHTML = '<div class="card"><div class="vazio">Os indicadores aparecem depois da próxima atualização do sincronizador.</div></div>'; return; }
+  const D = calcDre(L), S = serieDre(L);
+  const ms = D.idxs.map(k => D.meses[k]), msAnt = ms.map(m => somaMes(m, -12)), u12 = D.ultimos(12), u3 = D.ultimos(3);
+  const G = (meses, id) => meses.reduce((t, m) => t + ((S[m] || {})[id] || 0), 0);
+  const rec = G(ms, 'rec'), recAnt = G(msAnt, 'rec');
+  const card = (tit, val, det, sp) => `<div class="ind"><div class="ind-tit">${tit}</div><div class="ind-val">${val}</div><div class="ind-det">${det}</div>${sp || ''}</div>`;
+  const pp = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(1).replace('.', ',') + ' p.p.';
+  const comp = (atual, ant, bomAlto, fmt) => {
+    if (!isFinite(ant) || !ant && !atual) return '';
+    const dif = atual - ant, bom = bomAlto ? dif > 0 : dif < 0;
+    return ` · <span class="${Math.abs(dif) < 1e-9 ? '' : bom ? 'bom' : 'ruim'}">${fmt(dif)}</span> vs ano anterior`;
+  };
+  // ---- resultado (filtro do DRE)
+  const cresc = recAnt ? rec / recAnt - 1 : NaN;
+  const cards = [card('Faturamento', R0(rec), `média ${R0(ms.length ? rec / ms.length : 0)}/mês${isFinite(cresc) ? ` · <span class="${cresc >= 0 ? 'bom' : 'ruim'}">${cresc >= 0 ? '▲' : '▼'} ${pctTxt(Math.abs(cresc))}</span> vs ano anterior` : ''}`,
+    spark(u12.map(m => (S[m] || {}).rec || 0)))];
+  const IND = [
+    ['CMV', 'cmv', -1, false], ['Carga tributária sobre vendas', 'imp', -1, false], ['Folha (RH)', 'rh', -1, false],
+    ['Marketing', 'mkt', -1, false], ['Despesas operacionais', 'dop', -1, false], ['Margem de contribuição 2', 'mc2', 1, true],
+    ['EBITDA', 'ebitda', 1, true], ['Lucro líquido', 'lucro', 1, true], ['Juros pagos', 'juros', -1, false],
+  ];
+  for (const [nome, id, sinal, bomAlto] of IND) {
+    const pc = rec ? sinal * G(ms, id) / rec : 0, pcAnt = recAnt ? sinal * G(msAnt, id) / recAnt : NaN;
+    cards.push(card(nome + ' % da receita', pctTxt(pc), `${R0(sinal * G(ms, id))} no período${comp(pc, pcAnt, bomAlto, pp)}`,
+      spark(u12.map(m => { const o = S[m] || {}; return o.rec ? sinal * (o[id] || 0) / o.rec : 0; }))));
+  }
+  const mc2p = rec ? G(ms, 'mc2') / rec : 0, fixos = ms.length ? -G(ms, 'dop') / ms.length : 0;
+  const pe = mc2p > 0 && fixos > 0 ? fixos / mc2p : 0, ms_ = pe ? (rec / ms.length) / pe - 1 : NaN;
+  if (pe) cards.push(card('Margem de segurança', pctTxt(ms_), `faturamento médio vs ponto de equilíbrio (${R0(pe)}/mês)`,
+    spark(u12.map(m => { const o = S[m] || {}, p = o.rec && o.mc2 > 0 ? -(o.dop || 0) / (o.mc2 / o.rec) : 0; return p ? o.rec / p - 1 : 0; }))));
+  // ---- mix e margem por família
+  const setMs = new Set(ms), fam = new Map();
+  for (const r of L) {
+    if (!setMs.has(r.mes) || !r.familia) continue;
+    const tipo = r.conta === '10.01.01' ? 'rec' : r.conta === 'CMV' ? 'cmv' : r.conta.startsWith('20.12.') ? 'imp' : null;
+    if (!tipo) continue;
+    const f = famDe(r.familia), x = fam.get(f) || { rec: 0, imp: 0, cmv: 0 }; x[tipo] += r.valor; fam.set(f, x);
+  }
+  const fams = [...fam.entries()].filter(([, x]) => x.rec).sort((a, b) => b[1].rec - a[1].rec), recF = fams.reduce((t, [, x]) => t + x.rec, 0);
+  // ---- hoje (fixo)
+  const ab = X.abertos, cp = (est.contas.pagar || []).map(Number);
+  const R = ab ? ab.filter(t => t.tipo === 'R') : [], P = ab ? ab.filter(t => t.tipo === 'P' && (!cp.length || cp.includes(Number(String(t.conta).split('.')[0])))) : [];
+  const soma = l => l.reduce((t, x) => t + x.aberto, 0), totR = soma(R), venR = soma(R.filter(t => t.vencimento < hoje));
+  const fat3 = G(u3, 'rec'), compras3 = -G(u3, 'compras');
+  const fornec = soma(P.filter(t => String(t.conta).startsWith('20.02.')));
+  const hj = [];
+  if (X.saldos && X.saldos.length) {
+    const ult = X.saldos.at(-1).data, oper = X.saldos.filter(r => !ehAplicacao(r.banco));
+    const saldoHoje = oper.filter(r => r.data === ult).reduce((t, r) => t + r.saldo, 0);
+    const dias = new Set(oper.map(r => r.data)).size || 1, saidaDia = oper.reduce((t, r) => t + r.saidas, 0) / dias;
+    hj.push(card('Fôlego de caixa', saidaDia ? Math.round(saldoHoje / saidaDia) + ' dias' : '–', `saldo ${R0(saldoHoje)} ÷ saídas médias ${R0(saidaDia)}/dia (90 dias)`));
+  }
+  if (ab) {
+    if (fat3) hj.push(card('PMR — prazo médio de recebimento', Math.round(totR / (fat3 / 90)) + ' dias', `a receber ${R0(totR)} ÷ faturamento médio diário (3 meses)`));
+    if (compras3 > 0) hj.push(card('PMP — prazo médio de pagamento', Math.round(fornec / (compras3 / 90)) + ' dias', `fornecedores a pagar ${R0(fornec)} ÷ compras médias diárias (3 meses)`));
+    hj.push(card('Inadimplência', pctTxt(totR ? venR / totR : 0), `vencido ${R0(venR)} de ${R0(totR)} a receber`));
+    const cli = new Map(); for (const t of R) cli.set(t.cod || t.nome, (cli.get(t.cod || t.nome) || 0) + t.aberto);
+    const top10 = [...cli.values()].sort((a, b) => b - a).slice(0, 10).reduce((t, v) => t + v, 0);
+    hj.push(card('Concentração — 10 maiores clientes', pctTxt(totR ? top10 / totR : 0), `${R0(top10)} do total a receber (${inteiro.format(cli.size)} clientes)`));
+  }
+  if (X.movs && X.movs.length) {
+    let v = 0, emDia = 0, atrasoP = 0;
+    for (const m of X.movs) {
+      const pg = m.dt_pagamento || m.dt_conciliacao; if (!m.vencimento || !pg) continue;
+      const dd = Math.round((parseISO(pg) - parseISO(m.vencimento)) / 864e5);
+      v += m.valor; if (dd <= 0) emDia += m.valor; atrasoP += Math.max(0, dd) * m.valor;
+    }
+    if (v) {
+      hj.push(card('Pontualidade dos clientes', pctTxt(emDia / v), 'do valor recebido nos últimos 90 dias foi pago até o vencimento'));
+      hj.push(card('Atraso médio no recebimento', (atrasoP / v).toFixed(1).replace('.', ',') + ' dias', 'média ponderada pelo valor, últimos 90 dias'));
+    }
+  }
+  el.innerHTML = `
+  <h3 class="secao">📊 Resultado <span class="tag filtro">📅 usa o filtro de período abaixo (o mesmo da aba DRE)${D.sepAt ? ' · sem o mês parcial' : ''}</span></h3>
+  <div class="controles">${htmlPeriodoDre(D)}</div>
+  ${!ms.length ? '<div class="vazio">Selecione pelo menos um mês fechado.</div>' : `<div class="inds">${cards.join('')}</div>
+  <div class="card cheio">
+    <h2>Mix e margem por família</h2>
+    <div class="nota">Margem = receita − impostos da nota − CMV, no período selecionado</div>
+    <div class="tabela-wrap rolagem"><table>
+      <thead><tr><th>Família</th><th class="n">Receita</th><th class="n">Mix</th><th class="n opc">Impostos</th><th class="n opc">CMV</th><th class="n">Margem</th><th class="n">Margem %</th></tr></thead>
+      <tbody>${fams.map(([f, x]) => { const mg = x.rec - x.imp - x.cmv; return `<tr><td>${esc(f)}</td><td class="n">${R0(x.rec)}</td><td class="n">${pctTxt(x.rec / recF)}</td>
+        <td class="n opc">${R0(x.imp)}</td><td class="n opc">${R0(x.cmv)}</td><td class="n ${mg < 0 ? 'neg' : ''}">${R0(mg)}</td><td class="n">${pctTxt(mg / x.rec)}</td></tr>`; }).join('')}</tbody>
+    </table></div>
+  </div>`}
+  <h3 class="secao">📍 Hoje <span class="tag fixo">posição atual · não muda com os filtros</span></h3>
+  ${hj.length ? `<div class="inds">${hj.join('')}</div>` : '<div class="vazio">Sem dados de caixa/títulos para este usuário.</div>'}`;
+  const re = () => { const y = window.scrollY; renderIndicadores(el); window.scrollTo(0, y); };
+  ligarPeriodoDre(el, D, re);
 }
 
 // ---------- títulos em aberto por data (A pagar / A receber) ----------
@@ -1313,6 +1571,7 @@ function htmlReceber(c) {
     ${kpi('Já recebido', R0(c.recTot - c.recAb))}
     ${kpi('Em aberto', R0(c.recAb))}
     ${kpi('⚠ Inadimplência hoje', R0(c.vencido), `${inteiro.format(c.vencidoQtd)} títulos vencidos (todas as datas)`, c.vencido > 0 ? 'alerta' : '')}
+    ${d.abertos ? kpi('Total a receber hoje', R0(abertosDoTipo('R').reduce((t, x) => t + x.aberto, 0)), 'todos os títulos em aberto · não muda com o filtro') : ''}
   </div>
   <div class="grade">
     ${htmlQuem('R')}
@@ -1339,18 +1598,23 @@ function desenhar(c) {
   const rotCat = longo => longo ? (s => 'sem ' + ddmm(s)) : ddmm;
   if (est.aba === 'geral') {
     graficoLinha($('#gSaldo'), c.serieSaldo, { altura: 240 });
-    const rec = agrupar(d.receber, 0, [2]);
-    const pag = agrupar(d.pagar, 0, [4]);
-    const cats = [...new Set([...rec.cats, ...pag.cats])].sort();
-    const val = (g, k) => { const i = g.cats.indexOf(k); return i < 0 ? 0 : g.valores[0][i]; };
-    $('#nRxP').textContent = rec.longo ? 'Total por semana de vencimento (título inteiro, pago ou não)' : 'Total por dia de vencimento (título inteiro, pago ou não)';
-    graficoBarras($('#gRxP'), {
-      cats, rotulo: rotCat(rec.longo), agrupado: true,
-      series: [
-        { nome: 'A receber', cor: 'var(--s1)', valores: cats.map(k => val(rec, k)) },
-        { nome: 'A pagar', cor: 'var(--s2)', valores: cats.map(k => val(pag, k)) },
-      ],
-    });
+    if (d.abertos && $('#gRxP')) {
+      const hoje = hojeISO(), ate = somaDias(hoje, 30), longo = false;
+      const chave = x => { if (!longo) return x; const dt = parseISO(x); dt.setDate(dt.getDate() - (dt.getDay() + 6) % 7); return iso(dt); };
+      const m = new Map();
+      for (const [tipo, k] of [['R', 0], ['P', 1]]) for (const t of abertosDoTipo(tipo)) {
+        if (t.vencimento < hoje || t.vencimento > ate) continue;
+        const ch = chave(t.vencimento), a = m.get(ch) || [0, 0]; a[k] += t.aberto; m.set(ch, a);
+      }
+      const cats = [...m.keys()].sort();
+      graficoBarras($('#gRxP'), { cats, rotulo: rotCat(longo), agrupado: true, series: [
+        { nome: 'A receber', cor: 'var(--s1)', valores: cats.map(k => m.get(k)[0]) },
+        { nome: 'A pagar', cor: 'var(--s2)', valores: cats.map(k => m.get(k)[1]) },
+      ] });
+    }
+    if (est._fluxo && $('#gFluxo')) graficoLinha($('#gFluxo'), est._fluxo.serie, { altura: 200 });
+    const cont = $('#conteudo'), manter = () => { const y = window.scrollY; render(); window.scrollTo(0, y); };
+    if (est._dreGeral) ligarPeriodoDre(cont, est._dreGeral, manter);
   }
   if (est.aba === 'bancos') {
     document.querySelectorAll('.spark').forEach(el => sparkline(el, c.contas[Number(el.dataset.i)].serie));
