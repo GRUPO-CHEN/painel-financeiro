@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Importações · Grupo Feromax</title>
+<meta name="theme-color" content="#2F64E0">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Importações">
+<!--
+  MÓDULO IMPORTAÇÕES (COMPRAS) — projeto separado do Painel Financeiro.
+  Regras para não misturar com o financeiro:
+   • Este arquivo é independente: não altera nem depende do index.html.
+   • Usa o mesmo login e o mesmo Supabase (config.js), só para leitura do perfil.
+   • Tabelas novas deste módulo no Supabase usam o prefixo  imp_  (ex.: imp_processos).
+     A tabela antiga "importacoes" (do financeiro) NÃO é alterada por aqui.
+   • O vínculo com o financeiro será feito depois, pela aba Importações do painel
+     (contas a pagar das importações).
+   • Para criar uma sub-aba: acrescente um item em SUBABAS e uma função render.
+-->
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f3f2ef; --surface: #fcfcfb; --line: #e4e2dd; --grid: #ebe9e4;
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #7a7974;
+  --accent: #2F64E0; --s1-soft: #bcd0f7; --critical: #d03b3b; --good: #00AD57;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.03);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --line: #2c2c2a; --grid: #262624;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #92918a;
+    --accent: #5b85f2; --s1-soft: #1e3f86; --good: #1fc472; --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
+header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+header img { height: 30px; }
+header h1 { font-size: 20px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+header .sub { color: var(--text-3); font-size: 12.5px; }
+header .dir { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+a.voltar, button.leve { color: var(--text-2); text-decoration: none; font: inherit; font-size: 13px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+a.voltar:hover, button.leve:hover { color: var(--text); border-color: var(--text-3); }
+.subabas { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
+.subaba { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.subaba:hover { color: var(--text); }
+.subaba[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 16px 18px; }
+.card h2 { font-size: 15px; font-weight: 620; margin: 0 0 4px; }
+.nota { color: var(--text-3); font-size: 12.5px; }
+.vazio { color: var(--text-3); text-align: center; padding: 36px 12px; }
+.tela-login { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); padding: 20px; }
+.caixa-login { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px 24px; box-shadow: var(--shadow); }
+.caixa-login img { height: 34px; display: block; margin-bottom: 14px; }
+.caixa-login h2 { margin: 0 0 4px; font-size: 18px; }
+.caixa-login p { margin: 0 0 16px; color: var(--text-2); }
+.campo { display: block; margin-bottom: 12px; }
+.campo span { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 4px; }
+.campo input { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.btn-pri { width: 100%; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.erro { color: var(--critical); font-size: 13px; min-height: 1.2em; margin-top: 8px; }
+@media (max-width: 640px) { .wrap { padding: 14px 14px 40px; } header .dir { margin-left: 0; width: 100%; } }
+</style>
+</head>
+<body>
+<div class="wrap" id="app" hidden>
+  <header>
+    <img src="logo-feromax.png" alt="Grupo Feromax">
+    <div>
+      <h1>Importações</h1>
+      <div class="sub">Compras e processos de importação</div>
+    </div>
+    <div class="dir">
+      <span class="sub" id="usuario"></span>
+      <a class="voltar" href="./">← Painel Financeiro</a>
+      <button class="leve" id="btnSair">Sair</button>
+    </div>
+  </header>
+  <nav class="subabas" role="tablist" id="subabas"></nav>
+  <main id="conteudo"></main>
+</div>
+
+<div class="tela-login" id="telaLogin" hidden>
+  <form class="caixa-login" id="formLogin" autocomplete="on">
+    <img src="logo-feromax.png" alt="Grupo Feromax">
+    <h2>Importações</h2>
+    <p>Entre com o mesmo e-mail e senha do Painel Financeiro.</p>
+    <label class="campo"><span>E-mail</span><input id="lEmail" type="email" autocomplete="username" required></label>
+    <label class="campo"><span>Senha</span><input id="lSenha" type="password" autocomplete="current-password" required></label>
+    <button class="btn-pri" type="submit">Entrar</button>
+    <div class="erro" id="lErro"></div>
+  </form>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const CFG = window.PAINEL_CONFIG || {};
+let sb = null;
+const est = { perfil: null, sub: null };
+
+// ======================= SUB-ABAS =======================
+// Para criar uma sub-aba nova: acrescente { id, nome, render } aqui.
+const SUBABAS = [
+  { id: 'inicio', nome: 'Início', render: renderInicio },
+];
+
+function renderInicio(el) {
+  el.innerHTML = `<div class="card">
+    <h2>Módulo de Importações</h2>
+    <div class="nota">Espaço separado do Painel Financeiro. As sub-abas deste módulo serão criadas aqui, uma a uma.</div>
+    <div class="vazio">Nenhuma sub-aba criada ainda.</div>
+  </div>`;
+}
+
+// ======================= navegação =======================
+function montarSubabas() {
+  const nav = $('#subabas');
+  nav.innerHTML = SUBABAS.map(s => `<button class="subaba" role="tab" data-sub="${s.id}">${esc(s.nome)}</button>`).join('');
+  nav.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => abrir(b.dataset.sub));
+  const inicial = (location.hash || '').slice(1);
+  abrir(SUBABAS.some(s => s.id === inicial) ? inicial : SUBABAS[0].id);
+}
+
+function abrir(id) {
+  est.sub = id;
+  history.replaceState(null, '', '#' + id);
+  document.querySelectorAll('[data-sub]').forEach(b => b.setAttribute('aria-selected', b.dataset.sub === id));
+  const s = SUBABAS.find(x => x.id === id);
+  try { s.render($('#conteudo')); }
+  catch (e) { $('#conteudo').innerHTML = `<div class="card"><div class="vazio">Erro: ${esc(e.message)}</div></div>`; }
+}
+
+// ======================= login (mesmo do painel) =======================
+const temAcesso = p => !!p && p.ativo && (p.admin || (p.areas || []).includes('importacoes'));
+
+async function iniciar() {
+  if (!CFG.SUPABASE_URL || !window.supabase) {
+    // modo demonstração (sem Supabase): abre direto
+    est.perfil = { nome: 'Demonstração', ativo: true, admin: true };
+    return mostrarApp();
+  }
+  sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_CHAVE_PUBLICA);
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return mostrarLogin();
+  await entrar();
+}
+
+function mostrarLogin() { $('#app').hidden = true; $('#telaLogin').hidden = false; setTimeout(() => $('#lEmail').focus(), 50); }
+
+async function entrar() {
+  const { data: { user } } = await sb.auth.getUser();
+  const { data: perfil, error } = await sb.from('perfis').select('*').eq('id', user.id).maybeSingle();
+  $('#telaLogin').hidden = true;
+  if (error) return bloqueio('Não consegui ler seu perfil: ' + error.message);
+  est.perfil = perfil;
+  $('#usuario').textContent = (perfil && perfil.nome) || user.email;
+  if (!temAcesso(perfil)) return bloqueio(`Olá, ${user.email}. Você ainda não tem acesso ao módulo de Importações.<br>Peça ao administrador para liberar a área “Importações” no seu usuário.`);
+  mostrarApp();
+}
+
+function bloqueio(msg) {
+  $('#app').hidden = false; $('#subabas').hidden = true;
+  $('#conteudo').innerHTML = `<div class="card"><div class="vazio">${msg}</div></div>`;
+}
+
+function mostrarApp() {
+  $('#app').hidden = false; $('#subabas').hidden = false;
+  if (!sb) $('#btnSair').hidden = true;
+  montarSubabas();
+}
+
+$('#formLogin').onsubmit = async ev => {
+  ev.preventDefault(); $('#lErro').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email: $('#lEmail').value.trim(), password: $('#lSenha').value });
+  if (error) { $('#lErro').textContent = 'E-mail ou senha inválidos.'; return; }
+  await entrar();
+};
+$('#btnSair').onclick = async () => { if (sb) await sb.auth.signOut(); location.reload(); };
+
+iniciar();
+</script>
+</body>
+</html>
