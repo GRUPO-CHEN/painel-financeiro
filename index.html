@@ -235,6 +235,19 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
   .ind-val { font-size: 1.55em; font-weight: 700; line-height: 1.15; }
   .ind-det { font-size: .78em; color: var(--text-3); }
   .ind .bom { color: #1a9e55; font-weight: 600; } .ind .ruim { color: #d23c3c; font-weight: 600; }
+  table.perf td, table.perf th { white-space: nowrap; }
+  table.perf td:first-child { font-weight: 600; }
+  table.perf tr.t td { font-weight: 700; border-top: 2px solid var(--line); }
+  table.perf tr.x td { color: var(--text-2); }
+  table.perf tr.x td:first-child { font-weight: 500; }
+  .pbar { display: inline-block; width: 54px; height: 7px; border-radius: 4px; background: var(--line); vertical-align: middle; margin-left: 6px; overflow: hidden; }
+  .pbar i { display: block; height: 100%; background: var(--s1); }
+  .pbar.ok i { background: #1a9e55; }
+  .perf-ed { display: grid; gap: 14px; }
+  .perf-ed input.num { width: 110px; text-align: right; }
+  .perf-ed input.pct { width: 64px; text-align: right; }
+  .perf-ed table td, .perf-ed table th { padding: 5px 8px; }
+  .perf-ed .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
   .ind svg.spark { width: 100%; height: 30px; margin-top: 4px; }
   table.dre td, table.dre th { white-space: nowrap; }
   table.dre tr[hidden] { display: none; }
@@ -313,6 +326,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
     <div class="menu-tit">Menu</div>
     <button class="aba" role="tab" data-aba="dia" aria-selected="true">Resumo do dia</button>
     <button class="aba" role="tab" data-aba="geral" aria-selected="false">Visão geral</button>
+    <button class="aba" role="tab" data-aba="performance" aria-selected="false">Performance de vendas</button>
     <button class="aba" role="tab" data-aba="projecao" aria-selected="false">Fluxo projetado</button>
     <button class="aba" role="tab" data-aba="bancos" aria-selected="false">Bancos</button>
     <button class="aba" role="tab" data-aba="pagar" aria-selected="false">A pagar</button>
@@ -506,7 +520,7 @@ Object.assign(est, {
 
 const ABAS = {
   dia: ['caixa'], geral: ['caixa', 'titulos'], projecao: ['caixa', 'titulos'], bancos: ['caixa'],
-  pagar: ['titulos'], receber: ['titulos'], dre: ['dre'], indicadores: ['dre'], importacoes: ['importacoes'], usuarios: ['admin'],
+  pagar: ['titulos'], receber: ['titulos'], dre: ['dre'], indicadores: ['dre'], performance: ['vendas'], importacoes: ['importacoes'], usuarios: ['admin'],
 };
 const temArea = a => !!est.perfil && (est.perfil.admin || (a !== 'admin' && (est.perfil.areas || []).includes(a)));
 const podeEditar = () => !!est.perfil && (est.perfil.admin || est.perfil.editor);
@@ -881,6 +895,9 @@ async function carregar() {
     } else if (aba === 'projecao') {
       const d = est.demo ? gerarDemoProj(est.horizonte) : await lerProj();
       if (meu !== seq) return; est.dadosProj = d; desc = `projeção de ${est.horizonte} dias`;
+    } else if (aba === 'performance') {
+      const d = est.demo ? null : await lerPerformance();
+      if (meu !== seq) return; est.dadosPerf = d; desc = 'Performance de vendas';
     } else if (aba === 'indicadores') {
       const d = est.demo ? { dre: [], abertos: null, saldos: null, movs: null } : await lerIndicadores();
       if (meu !== seq) return; est.dadosInd = d; desc = 'Indicadores';
@@ -970,7 +987,7 @@ function render() {
   const el = $('#conteudo');
   const aba = est.aba;
   if (!aba) return;
-  const periodo = !['dia', 'projecao', 'dre', 'indicadores', 'importacoes', 'usuarios'].includes(aba);
+  const periodo = !['dia', 'projecao', 'dre', 'indicadores', 'performance', 'importacoes', 'usuarios'].includes(aba);
   $('#periodo').hidden = !periodo; $('#sepPeriodo').hidden = !periodo;
   $('#notaPeriodo').hidden = aba !== 'geral';
   document.querySelector('.filtros').hidden = aba === 'usuarios';
@@ -978,6 +995,7 @@ function render() {
     if (aba === 'importacoes') return renderImportacoes(el);
     if (aba === 'usuarios') return renderUsuarios(el);
     if (aba === 'dia') { el.innerHTML = est.dadosDia ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosDia) renderDia(el); return; }
+    if (aba === 'performance') { if (est.dadosPerf) renderPerformance(el); else el.innerHTML = '<div class="card"><div class="vazio">' + (est.demo ? 'Indisponível no modo demonstração.' : 'Carregando…') + '</div></div>'; return; }
     if (aba === 'indicadores') { if (est.dadosInd) renderIndicadores(el); else el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
     if (aba === 'dre') { if (est.dadosDre) renderDre(el); else el.innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>'; return; }
     if (aba === 'projecao') { el.innerHTML = est.dadosProj ? '' : '<div class="card"><div class="vazio">Carregando…</div></div>'; if (est.dadosProj) renderProj(el); return; }
@@ -1334,6 +1352,186 @@ function renderDre(el) {
   el.querySelectorAll('tr.g').forEach(tr => tr.onclick = () => marcar(tr.dataset.g, !cfg.abertos.includes(tr.dataset.g)));
   $('#dreAbrir').onclick = () => DRE_GRUPOS.filter(g => !g.soma).forEach(g => marcar(g.id, true));
   $('#dreFechar').onclick = () => DRE_GRUPOS.filter(g => !g.soma).forEach(g => marcar(g.id, false));
+}
+
+// ======================= PERFORMANCE DE VENDAS (NEWDASH) =======================
+const numBR = v => { const t = String(v ?? '').trim().replace(/\s/g, ''); if (!t) return 0; const n = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); return isFinite(n) ? n : 0; };
+const fmtBR = (v, dec = 2) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: dec });
+const podeEditarPerf = () => !!est.perfil && (est.perfil.admin || (est.perfil.editor && (est.perfil.areas || []).includes('vendas')));
+async function lerMetasComissoes(mes) {
+  const [m, c] = await Promise.all([
+    buscarTodos(() => sb.from('perf_metas').select('linha,meta').eq('mes', mes).order('linha')),
+    buscarTodos(() => sb.from('perf_comissoes').select('beneficiario,base,linha,pct').eq('mes', mes).order('beneficiario').order('base').order('linha')),
+  ]);
+  return { metas: Object.fromEntries(m.map(r => [r.linha, Number(r.meta)])), coms: c.map(r => ({ ...r, pct: Number(r.pct) })) };
+}
+async function lerPerformance() {
+  await lerGeracoes();
+  const mes = est.perfMes ||= hojeISO().slice(0, 7), emps = est.empresas;
+  const [cfg, vendas, nfs, mc] = await Promise.all([
+    buscarTodos(() => sb.from('perf_config').select('chave,valor').order('chave')),
+    ger('perf_vendas') >= 0 ? buscarTodos(() => sb.from('perf_vendas').select('empresa,vendedor,linha,revenda,cod_produto,qtd,valor,desconto,venda_original')
+      .eq('geracao', ger('perf_vendas')).eq('mes', mes).in('empresa', emps).order('empresa').order('vendedor').order('linha').order('cod_produto')) : [],
+    ger('perf_nf') >= 0 ? buscarTodos(() => sb.from('perf_nf').select('empresa,vendedor,notas,total,valordia')
+      .eq('geracao', ger('perf_nf')).eq('mes', mes).in('empresa', emps).order('empresa').order('vendedor')) : [],
+    lerMetasComissoes(mes),
+  ]);
+  const N = r => { for (const k of ['qtd', 'valor', 'desconto', 'venda_original', 'notas', 'total', 'valordia']) if (k in r) r[k] = Number(r[k]) || 0; return r; };
+  return { mes, cfg: Object.fromEntries(cfg.map(r => [r.chave, r.valor])), vendas: vendas.map(N), nfs: nfs.map(N), metas: mc.metas, coms: mc.coms,
+    temDados: ger('perf_vendas') >= 0 };
+}
+// mesma lógica da planilha COMISSÕES: família da linha, vendedor creditado pelos "donos" da família, revenda pela tabela Ariana
+function calcPerf(d) {
+  const C = d.cfg, L = C.linhas || [], V = C.vendedores || [], donos = C.donos || {}, revendas = C.revendas || [], tab = C.tabela_revenda || {};
+  const linhaDaFam = {}; L.forEach(l => l.familias.forEach(f => { linhaDaFam[f] = l.k; }));
+  const vendDoId = {}; V.forEach(v => v.ids.forEach(id => { vendDoId[id.toUpperCase()] = v.nome; }));
+  const creditado = (fam, id) => { const u = String(id || '').toUpperCase(), dn = donos[fam]; if (!dn) return u; return dn.validos.includes(u) ? u : (dn.padrao || u); };
+  const M = {}, desc = {}, orig = {}, foraLinha = {}, foraVend = {};
+  let descTot = 0, origTot = 0;
+  for (const r of d.vendas) {
+    const fam = famDe(r.linha), idc = creditado(fam, r.vendedor), vn = vendDoId[idc];
+    const valor = r.revenda && revendas.includes(r.revenda) && r.cod_produto && tab[r.cod_produto] != null ? r.qtd * tab[r.cod_produto] : r.valor;
+    descTot += r.desconto; origTot += r.venda_original;
+    if (vn) { desc[vn] = (desc[vn] || 0) + r.desconto; orig[vn] = (orig[vn] || 0) + r.venda_original; }
+    const lk = linhaDaFam[fam];
+    if (!lk) { foraLinha[fam] = (foraLinha[fam] || 0) + valor; continue; }
+    if (!vn) { const k = idc || '(sem vendedor)'; foraVend[k] = (foraVend[k] || 0) + valor; continue; }
+    const o = M[lk] ||= {}; o[vn] = (o[vn] || 0) + valor;
+  }
+  const cel = (lk, v) => (M[lk] || {})[v] || 0;
+  const totV = Object.fromEntries(V.map(v => [v.nome, L.reduce((t, l) => t + cel(l.k, v.nome), 0)]));
+  const totL = Object.fromEntries(L.map(l => [l.k, V.reduce((t, v) => t + cel(l.k, v.nome), 0)]));
+  const total = Object.values(totL).reduce((t, x) => t + x, 0);
+  const metaTot = L.reduce((t, l) => t + (d.metas[l.k] || 0), 0);
+  const nf = {}; let nfTotal = 0, nfVd = 0;
+  for (const r of d.nfs) {
+    nfTotal += r.total; nfVd += r.valordia;
+    const vn = vendDoId[String(r.vendedor || '').toUpperCase()]; if (!vn) continue;
+    const x = nf[vn] ||= { notas: 0, total: 0, vd: 0 }; x.notas += r.notas; x.total += r.total; x.vd += r.valordia;
+  }
+  const base = (v, lk) => lk === '*' ? totV[v] || 0 : cel(lk, v);
+  const com = {}; for (const r of d.coms) com[r.beneficiario] = (com[r.beneficiario] || 0) + base(r.base, r.linha) * r.pct / 100;
+  return { L, V, M, cel, totV, totL, total, metaTot, nf, nfTotal, nfVd, desc, orig, descTot, origTot, com, foraLinha, foraVend };
+}
+function renderPerformance(el) {
+  const d = est.dadosPerf;
+  if (!d.temDados) { el.innerHTML = '<div class="card"><div class="vazio">A performance de vendas aparece depois da próxima atualização do sincronizador.</div></div>'; return; }
+  const P = calcPerf(d), { L, V } = P, pct = (a, b) => b ? a / b : 0;
+  const barra = x => `<span class="pbar ${x >= 1 ? 'ok' : ''}"><i style="width:${Math.min(100, x * 100).toFixed(0)}%"></i></span>`;
+  const comTot = V.reduce((t, v) => t + (P.com[v.nome] || 0), 0), notasTot = V.reduce((t, v) => t + ((P.nf[v.nome] || {}).notas || 0), 0);
+  const f = v => Math.abs(v) < 0.5 ? '–' : R0(v);
+  const linhas = L.map(l => { const meta = d.metas[l.k] || 0, p = pct(P.totL[l.k], meta);
+    return `<tr><td>${esc(l.nome)}</td>${V.map(v => `<td class="n">${f(P.cel(l.k, v.nome))}</td>`).join('')}<td class="n"><b>${f(P.totL[l.k])}</b></td><td class="n">${f(meta)}</td><td class="n">${meta ? pctTxt(p) + barra(p) : '–'}</td></tr>`; }).join('');
+  const pTot = pct(P.total, P.metaTot);
+  const foraL = Object.entries(P.foraLinha).filter(([, v]) => Math.abs(v) >= 0.5), foraV = Object.entries(P.foraVend).filter(([, v]) => Math.abs(v) >= 0.5);
+  const mesTxt = new Date(d.mes + '-15').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  el.innerHTML = `
+  <div class="controles">
+    <button class="seta" data-pm="-1" title="Mês anterior">‹</button>
+    <input type="month" id="perfMes" value="${d.mes}">
+    <button class="seta" data-pm="1" title="Próximo mês">›</button>
+    <button class="chip" data-pm="0">Mês atual</button>
+    <span class="rot" style="text-transform:capitalize">${mesTxt}</span>
+    ${podeEditarPerf() ? `<div class="sep"></div><button class="chip" id="perfEditar">✏️ Metas e comissões do mês</button>` : ''}
+  </div>
+  <div class="kpis">
+    ${kpi('Total vendido', R0(P.total), 'linhas do painel, sem IPI')}
+    ${kpi('Meta do mês', R0(P.metaTot), P.metaTot ? '' : 'meta não cadastrada')}
+    ${kpi('% da meta', P.metaTot ? pctTxt(pTot) : '–', P.metaTot ? (pTot >= 1 ? 'meta batida' : `faltam ${R0(P.metaTot - P.total)}`) : '', P.metaTot && pTot < 1 ? 'alerta' : '')}
+    ${kpi('Comissões', R0(comTot), d.coms.length ? '% cadastrados no mês' : '⚠ % de comissão não cadastrados')}
+    ${kpi('Qtde de vendas', inteiro.format(notasTot), 'notas fiscais no mês')}
+  </div>
+  <div class="card cheio">
+    <h2>Performance de vendas — ${mesTxt}</h2>
+    <div class="nota">Vendas por família e vendedor (crédito pelos donos de cada família), meta e % atingido</div>
+    <div class="tabela-wrap rolagem"><table class="perf">
+      <thead><tr><th></th>${V.map(v => `<th class="n">${esc(v.nome)}</th>`).join('')}<th class="n">Total</th><th class="n">Meta</th><th class="n">%</th></tr></thead>
+      <tbody>${linhas}
+        <tr class="t"><td>Total</td>${V.map(v => `<td class="n">${f(P.totV[v.nome])}</td>`).join('')}<td class="n">${f(P.total)}</td><td class="n">${f(P.metaTot)}</td><td class="n">${P.metaTot ? pctTxt(pTot) + barra(pTot) : '–'}</td></tr>
+        <tr class="x"><td>Qtde de vendas</td>${V.map(v => `<td class="n">${(P.nf[v.nome] || {}).notas || '–'}</td>`).join('')}<td class="n">${notasTot || '–'}</td><td></td><td></td></tr>
+        <tr class="x"><td>PMR (dias)</td>${V.map(v => { const x = P.nf[v.nome]; return `<td class="n">${x && x.total ? fmtBR(x.vd / x.total, 1) : '–'}</td>`; }).join('')}<td class="n">${P.nfTotal ? fmtBR(P.nfVd / P.nfTotal, 1) : '–'}</td><td></td><td></td></tr>
+        <tr class="x"><td>Descontos</td>${V.map(v => `<td class="n">${P.orig[v.nome] ? pctTxt(P.desc[v.nome] / P.orig[v.nome]) : '–'}</td>`).join('')}<td class="n">${P.origTot ? pctTxt(P.descTot / P.origTot) : '–'}</td><td></td><td></td></tr>
+        <tr class="t"><td>Comissões</td>${V.map(v => `<td class="n">${f(P.com[v.nome] || 0)}</td>`).join('')}<td class="n">${f(comTot)}</td><td></td><td></td></tr>
+      </tbody>
+    </table></div>
+    ${foraL.length || foraV.length ? `<div class="nota" style="margin-top:8px">Fora da grade: ${[
+      ...foraL.map(([k, v]) => `${esc(k)} ${R0(v)}`), ...foraV.map(([k, v]) => `vendedor ${esc(k)} ${R0(v)}`)].join(' · ')}</div>` : ''}
+  </div>
+  ${est.perfEditando && podeEditarPerf() ? htmlEditorPerf(d, P) : ''}`;
+  const ir = m => { est.perfMes = m; est.perfEditando = false; carregar(); };
+  el.querySelectorAll('[data-pm]').forEach(b => b.onclick = () => { const n = Number(b.dataset.pm); ir(n ? somaMes(d.mes, n) : hojeISO().slice(0, 7)); });
+  $('#perfMes').onchange = e => { if (e.target.value) ir(e.target.value); };
+  const be = $('#perfEditar'); if (be) be.onclick = () => { est.perfEditando = !est.perfEditando; est.perfForm = formPerf(d, d.metas, d.coms); renderPerformance(el); };
+  if (est.perfEditando) ligarEditorPerf(el, d);
+}
+// ---- cadastro de metas e % de comissão do mês
+function formPerf(d, metas, coms) {
+  const V = d.cfg.vendedores || [], prop = Object.fromEntries(V.map(v => [v.nome, {}])), cruz = [];
+  for (const c of coms) { if (c.beneficiario === c.base && prop[c.beneficiario]) prop[c.beneficiario][c.linha] = c.pct; else cruz.push({ ...c }); }
+  return { metas: { ...metas }, prop, cruz };
+}
+function htmlEditorPerf(d, P) {
+  const F = est.perfForm, L = d.cfg.linhas || [], V = d.cfg.vendedores || [];
+  const opV = sel => V.map(v => `<option ${v.nome === sel ? 'selected' : ''}>${esc(v.nome)}</option>`).join('');
+  const opL = sel => [['*', 'Total vendido'], ...L.map(l => [l.k, l.nome])].map(([k, n]) => `<option value="${esc(k)}" ${k === sel ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  return `<div class="card cheio perf-ed" id="perfEd">
+    <h2>✏️ Metas e % de comissão — ${d.mes}</h2>
+    <div class="nota">Preencha à mão. Valores em R$ e % (aceita vírgula). Nada é gravado até clicar em <b>Salvar</b>.</div>
+    <div class="tabela-wrap rolagem"><table>
+      <thead><tr><th>Família / linha</th><th class="n">Meta (R$)</th>${V.map(v => `<th class="n">% ${esc(v.nome)}</th>`).join('')}</tr></thead>
+      <tbody>${L.map(l => `<tr><td>${esc(l.nome)}</td><td class="n"><input class="num" data-meta="${esc(l.k)}" inputmode="decimal" value="${F.metas[l.k] ? fmtBR(F.metas[l.k]) : ''}"></td>
+        ${V.map(v => `<td class="n"><input class="pct" data-prop="${esc(v.nome)}|${esc(l.k)}" inputmode="decimal" value="${F.prop[v.nome][l.k] != null ? fmtBR(F.prop[v.nome][l.k], 4) : ''}"></td>`).join('')}</tr>`).join('')}
+        <tr class="t"><td>Sobre o total vendido</td><td></td>${V.map(v => `<td class="n"><input class="pct" data-prop="${esc(v.nome)}|*" inputmode="decimal" value="${F.prop[v.nome]['*'] != null ? fmtBR(F.prop[v.nome]['*'], 4) : ''}"></td>`).join('')}</tr>
+      </tbody></table></div>
+    <div class="nota">% de cada vendedor sobre as <b>próprias</b> vendas. Use "Sobre o total vendido" quando a comissão vale para todas as famílias.</div>
+    <h3 style="margin:4px 0 0">Comissão sobre vendas de outro vendedor</h3>
+    <div class="tabela-wrap"><table>
+      <thead><tr><th>Quem recebe</th><th>Sobre as vendas de</th><th>Família / linha</th><th class="n">%</th><th></th></tr></thead>
+      <tbody>${F.cruz.map((c, i) => `<tr><td><select data-cz="${i}|beneficiario">${opV(c.beneficiario)}</select></td><td><select data-cz="${i}|base">${opV(c.base)}</select></td>
+        <td><select data-cz="${i}|linha">${opL(c.linha)}</select></td><td class="n"><input class="pct" data-cz="${i}|pct" inputmode="decimal" value="${fmtBR(c.pct, 4)}"></td>
+        <td><button class="chip" data-czdel="${i}" title="Remover">✕</button></td></tr>`).join('') || '<tr><td colspan="5" class="sub">Nenhuma regra.</td></tr>'}</tbody>
+    </table></div>
+    <div class="acoes">
+      <button class="chip" id="perfAddCz">+ Adicionar regra</button>
+      <button class="chip" id="perfCopiar">Copiar do mês anterior</button>
+      <div class="sep"></div>
+      <button id="perfSalvar">Salvar</button><button class="chip" id="perfCancelar">Cancelar</button>
+      <span class="rot" id="perfMsg"></span>
+    </div>
+  </div>`;
+}
+function lerFormPerf(el) {
+  const F = est.perfForm;
+  el.querySelectorAll('[data-meta]').forEach(i => { F.metas[i.dataset.meta] = numBR(i.value); });
+  el.querySelectorAll('[data-prop]').forEach(i => { const [v, lk] = i.dataset.prop.split('|'); if (i.value.trim() === '') delete F.prop[v][lk]; else F.prop[v][lk] = numBR(i.value); });
+  el.querySelectorAll('[data-cz]').forEach(i => { const [k, campo] = i.dataset.cz.split('|'); F.cruz[k][campo] = campo === 'pct' ? numBR(i.value) : i.value; });
+}
+function ligarEditorPerf(el, d) {
+  const re = () => { const y = window.scrollY; renderPerformance(el); window.scrollTo(0, y); };
+  const V = d.cfg.vendedores || [];
+  $('#perfAddCz').onclick = () => { lerFormPerf(el); est.perfForm.cruz.push({ beneficiario: V[0]?.nome, base: V[1]?.nome || V[0]?.nome, linha: '*', pct: 0 }); re(); };
+  el.querySelectorAll('[data-czdel]').forEach(b => b.onclick = () => { lerFormPerf(el); est.perfForm.cruz.splice(Number(b.dataset.czdel), 1); re(); });
+  $('#perfCancelar').onclick = () => { est.perfEditando = false; re(); };
+  $('#perfCopiar').onclick = async () => {
+    const ant = somaMes(d.mes, -1); $('#perfMsg').textContent = 'Buscando ' + ant + '…';
+    try { const mc = await lerMetasComissoes(ant); est.perfForm = formPerf(d, mc.metas, mc.coms); re(); $('#perfMsg').textContent = `Copiado de ${ant}. Confira e clique em Salvar.`; }
+    catch (e) { $('#perfMsg').textContent = 'Erro: ' + e.message; }
+  };
+  $('#perfSalvar').onclick = async () => {
+    lerFormPerf(el);
+    const F = est.perfForm, mes = d.mes, msg = $('#perfMsg');
+    const metas = (d.cfg.linhas || []).map(l => ({ mes, linha: l.k, meta: F.metas[l.k] || 0 }));
+    const m = new Map();
+    for (const [v, o] of Object.entries(F.prop)) for (const [lk, p] of Object.entries(o)) if (p) m.set(`${v}|${v}|${lk}`, { mes, beneficiario: v, base: v, linha: lk, pct: p });
+    for (const c of F.cruz) if (c.beneficiario && c.base && c.pct) m.set(`${c.beneficiario}|${c.base}|${c.linha || '*'}`, { mes, beneficiario: c.beneficiario, base: c.base, linha: c.linha || '*', pct: c.pct });
+    msg.textContent = 'Salvando…';
+    try {
+      let r = await sb.from('perf_metas').upsert(metas, { onConflict: 'mes,linha' }); if (r.error) throw r.error;
+      r = await sb.from('perf_comissoes').delete().eq('mes', mes); if (r.error) throw r.error;
+      if (m.size) { r = await sb.from('perf_comissoes').insert([...m.values()]); if (r.error) throw r.error; }
+      est.perfEditando = false; carregar();
+    } catch (e) { msg.textContent = 'Não foi possível salvar: ' + e.message; }
+  };
 }
 
 // ======================= INDICADORES =======================
@@ -2087,7 +2285,7 @@ function formImportacao(i) {
 }
 
 // ======================= usuários (administrador) =======================
-const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['dre', 'DRE e resultados'], ['importacoes', 'Importações']];
+const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['dre', 'DRE e resultados'], ['vendas', 'Performance de vendas'], ['importacoes', 'Importações']];
 function renderUsuarios(el) {
   const emps = Object.entries(est.empresasTodas);
   el.innerHTML = `
