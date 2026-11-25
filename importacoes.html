@@ -172,6 +172,9 @@ details.aliq summary { cursor: pointer; font-weight: 620; font-size: 14.5px; }
   .linha-tempo { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 640px) { .wrap { padding: 14px 12px 40px; } header .dir { margin-left: 0; width: 100%; } input.busca { min-width: 0; flex: 1; } }
+.embarque-linha { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.lista-juntar { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; }
+.card.embarque { border-left: 3px solid var(--acento, #8a5cd1); }
 </style>
 </head>
 <body>
@@ -511,7 +514,7 @@ function renderProcessos(el) {
   const b = f.busca.trim().toLowerCase();
   const lista = est.processos.filter(p => emps.includes(p.empresa) && (!f.empresa || p.empresa === f.empresa)
     && (!f.status || p.status === f.status) && (!f.pais || paisDe(p) === f.pais)
-    && (!b || [p.fornecedor, p.pedido, p.mercadoria, p.processo, p.di].some(x => String(x || '').toLowerCase().includes(b))))
+    && (!b || [p.fornecedor, p.pedido, p.mercadoria, p.processo, p.di, p.embarque].some(x => String(x || '').toLowerCase().includes(b))))
     .sort((a, b) => (b.data_pedido || '') < (a.data_pedido || '') ? -1 : (b.data_pedido || '') > (a.data_pedido || '') ? 1 : b.id - a.id);
   const colsP = [
     { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
@@ -548,7 +551,7 @@ function renderProcessos(el) {
     <div class="tabela-wrap"><table>
       <thead>${cabecalho('proc', colsP, { col: 'dped', dir: 'desc' })}</thead>
       <tbody>${linhas.length ? linhas.map(({ p, r, e }) => `<tr class="clic" data-p="${p.id}">
-        <td>${esc(p.pedido || '—')}</td>
+        <td>${esc(p.pedido || '—')}${p.embarque ? ` <span class="tag" title="Embarque conjunto ${esc(p.embarque)}: mesma DI, custos rateados">conjunto</span>` : ''}</td>
         <td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td>
         <td>${EMPRESAS[p.empresa] || p.empresa}</td>
         <td>${esc(p.mercadoria || '—')}</td><td>${esc(p.modal || '—')}</td>
@@ -625,6 +628,11 @@ function renderFicha(el, p) {
       ${campo('Previsão de chegada', dm(p.previsao_chegada))}
     </div>
     ${p.observacao ? `<div class="nota" style="margin-top:10px">${esc(p.observacao)}</div>` : ''}
+    ${(() => { const g = doEmbarque(p).filter(x => x.id !== p.id); return p.embarque || ed ? `<div class="embarque-linha">
+      <span class="nota">Embarque conjunto (mesma DI):</span>
+      ${g.length ? `<b>${esc(p.embarque)}</b> · com ${g.map(x => `<a href="#" data-irp="${x.id}">${esc(nomeProc(x))}</a>`).join(', ')}` : '<span class="nota">não — DI só deste processo</span>'}
+      ${ed && p.status === 'aberto' ? `<button class="btn btn-mini" id="btnJuntar">${g.length ? 'Incluir outro' : 'Juntar com outro processo'}</button>${p.embarque ? '<button class="btn btn-mini" id="btnSeparar">Separar deste embarque</button>' : ''}` : ''}
+    </div>` : ''; })()}
   </div>
 
   <div class="card">
@@ -689,7 +697,16 @@ function renderFicha(el, p) {
   </div>`;
 
   $('#btnVoltar').onclick = () => { est.abertoId = null; abrir('processos'); };
+  el.querySelectorAll('[data-irp]').forEach(a => a.onclick = ev => { ev.preventDefault(); abrirProcesso(Number(a.dataset.irp)); });
   if (!ed) return;
+  if ($('#btnJuntar')) $('#btnJuntar').onclick = () => formJuntar(p);
+  if ($('#btnSeparar')) $('#btnSeparar').onclick = async () => {
+    const resto = doEmbarque(p).filter(x => x.id !== p.id);
+    if (!await confirmar('Separar do embarque', `${esc(nomeProc(p))} sai do embarque ${esc(p.embarque)}. A estimativa e a nacionalização já gravadas ficam como estão (refaça na calculadora se precisar).${resto.length === 1 ? ' O outro processo também fica sozinho.' : ''} Continuar?`, 'Separar')) return;
+    await gravar('imp_processos', { embarque: null }, p.id, p, true);
+    if (resto.length === 1) await gravar('imp_processos', { embarque: null }, resto[0].id, resto[0], true);
+    await depoisDeGravar();
+  };
   $('#btnEditar').onclick = () => formDados(p);
   $('#btnCp').onclick = () => formCheckpoints(p);
   $('#btnParc').onclick = () => formParcela(p, null, 'Câmbio');
@@ -749,7 +766,8 @@ function calcularAduaneiro(itens, pr, aliq) {
   const parteFrete = x => porPeso ? x.pesoT / sumP : (sumF ? x.fobT / sumF : 0);
   const di = n(pr.dolar_di), dc = n(pr.dolar_cambio) || di, fu = n(pr.frete_usd), acr = n(pr.outros_acresc);
   const vmld = sumF + fu;
-  const adicoes = n(pr.adicoes) || new Set(linhas.filter(x => x.fobT).map(x => x.familia || '?')).size;
+  // adição = fornecedor (processo) + NCM/família, como na planilha de validação da DI
+  const adicoes = n(pr.adicoes) || new Set(linhas.filter(x => x.fobT).map(x => (x.proc || '') + '|' + (x.familia || '?'))).size;
   const sisc = taxaSiscomex(adicoes);
   const freteBRL = fu * di + n(pr.frete_desp);
   const base0 = () => ({ fob_usd: sumF, cambio_brl: sumF * dc, frete_brl: 0, ii: 0, ipi: 0, pis: 0, cofins: 0, icms: 0, siscomex: 0, afrmm: 0, sdas: 0,
@@ -774,6 +792,12 @@ function calcularAduaneiro(itens, pr, aliq) {
     const y = it[i];
     for (const k of ['ii', 'ipi', 'pis', 'cofins', 'icms']) fe[k] += y[k];
     fe.siscomex += y.sc; fe.afrmm += y.af;
+    const pd = sumBase ? y.baseIcms / sumBase : (sumF ? x.fobT / sumF : 0);       // despesas rateadas pela base do ICMS
+    const pf = parteFrete(x);
+    x.pF = { fob_usd: x.fobT, cambio_brl: x.fobT * dc, ii: y.ii, pis: y.pis, cofins: y.cofins, ipi: y.ipi, icms: y.icms, siscomex: y.sc, afrmm: y.af,
+      sdas: n(pr.sdas) * pd, armazenagem: n(pr.armazenagem) * pd, despachante_valor: n(pr.despachante) * pd, outras_despesas: n(pr.outras) * pd,
+      frete_brl: freteBRL * pf, frete_nacional: n(pr.frete_nacional) * pf, frete_usd: fu * pf };
+    x.pF.sdas_afrmm_siscomex = x.pF.sdas + x.pF.siscomex + x.pF.afrmm;
     const custo = x.fobT * dc + y.ii + y.pis + y.cofins + y.ipi + y.icms + y.sc + y.af
       + (sumBase ? despIcms * y.baseIcms / sumBase : 0) + (freteBRL + n(pr.frete_nacional)) * parteFrete(x);
     x.fatorF = x.fobT ? custo / x.fobT : null; x.custoUnF = x.fatorF != null ? n(x.fob) * x.fatorF : null;
@@ -795,47 +819,74 @@ function calcularAduaneiro(itens, pr, aliq) {
   const somaD = itD.reduce((s, x) => s + x.imp, 0);
   linhas.forEach((x, i) => {
     const d = itD[i]; dh.ii += d.ii; dh.icms += d.icms;
-    const custoD = d.imp + x.fobT * dc + (somaD ? d.imp * n(pr.dhl_despesas) / somaD : 0) + (sumF ? x.fobT * dh.frete_brl / sumF : 0);
+    const despD = somaD ? d.imp * n(pr.dhl_despesas) / somaD : (sumF ? n(pr.dhl_despesas) * x.fobT / sumF : 0), freteD = sumF ? x.fobT * dh.frete_brl / sumF : 0;
+    x.pD = { ...base0(), fob_usd: x.fobT, cambio_brl: x.fobT * dc, ii: d.ii, icms: d.icms, outras_despesas: despD, frete_brl: freteD, frete_usd: fu * parteFrete(x) };
+    const custoD = d.imp + x.fobT * dc + despD + freteD;
     x.fatorD = x.fobT ? custoD / x.fobT : null; x.custoUnD = x.fatorD != null ? n(x.fob) * x.fatorD : null;
   });
-  const fecha = r => {
+  const fecha = (r, fob = sumF) => {
     r.impostos = r.ii + r.ipi + r.pis + r.cofins + r.icms;
     r.despesas = r.sdas_afrmm_siscomex + r.armazenagem + r.despachante_valor + r.outras_despesas + r.frete_nacional;
     r.numerario = r.impostos + r.despesas + r.frete_brl;
     r.total = r.cambio_brl + r.numerario;
-    r.fator = sumF ? r.total / sumF : null;
+    r.fator = fob ? r.total / fob : null;
     r.creditos = r.icms + r.ipi;
     r.custo_real = r.total - r.creditos;
-    r.fator2 = sumF ? r.custo_real / sumF : null;
-    r.dif_cambial = sumF * (dc - di);
+    r.fator2 = fob ? r.custo_real / fob : null;
+    r.dif_cambial = fob * (dc - di);
     return r;
   };
-  return { itens: linhas, feromax: fecha(fe), dhl: fecha(dh), semAliq: linhas.filter(x => !x.a).map(x => x.familia) };
+  // rateio por processo (embarque conjunto: vários fornecedores numa DI) — soma das partes de cada item, como a planilha de validação da DI
+  const porProc = {};
+  for (const x of linhas) {
+    const k = x.proc || 0;
+    const g = porProc[k] || (porProc[k] = { feromax: { ...base0(), fob_usd: 0, cambio_brl: 0, frete_usd: 0 }, dhl: { ...base0(), fob_usd: 0, cambio_brl: 0, frete_usd: 0 }, peso: 0 });
+    g.peso += x.pesoT;
+    for (const [cen, parte] of [['feromax', x.pF], ['dhl', x.pD]]) for (const c in parte) g[cen][c] = (g[cen][c] || 0) + parte[c];
+  }
+  for (const g of Object.values(porProc)) { fecha(g.feromax, g.feromax.fob_usd); fecha(g.dhl, g.dhl.fob_usd); }
+  return { itens: linhas, feromax: fecha(fe), dhl: fecha(dh), porProc, semAliq: linhas.filter(x => !x.a).map(x => x.familia) };
 }
 
 const PREM = [['frete_usd', 'Frete internacional (US$)'], ['outros_acresc', 'Outros acréscimos (US$)'], ['dolar_di', 'Dólar DI estimado'], ['dolar_cambio', 'Dólar câmbio estimado'],
   ['frete_desp', 'Despesas do frete internacional (R$)'], ['afrmm', 'AFRMM (R$) · aprox. 8% do frete marítimo'], ['sdas', 'SDAS (R$)'], ['armazenagem', 'Armazenagem (R$)'],
-  ['despachante', 'Despachante (R$)'], ['frete_nacional', 'Frete nacional (R$)'], ['outras', 'Outras despesas (R$)'], ['adicoes', 'Nº de adições (vazio = nº de famílias)'], ['dhl_despesas', 'Despesas DHL (R$)']];
+  ['despachante', 'Despachante (R$)'], ['frete_nacional', 'Frete nacional (R$)'], ['outras', 'Outras despesas (R$)'], ['adicoes', 'Nº de adições (vazio = fornecedor × família)'], ['dhl_despesas', 'Despesas DHL (R$)']];
 const ALQ = [['ii', 'II'], ['ipi', 'IPI'], ['icms', 'ICMS'], ['pis', 'PIS'], ['cofins', 'COFINS'], ['ii_dhl', 'II DHL'], ['icms_dhl', 'ICMS DHL']];
 const CENARIOS = { feromax: 'Próprio (Feromax / Supply)', dhl: 'DHL (courier)' };
 
+// processos do mesmo embarque (uma DI para vários fornecedores/pedidos)
+const doEmbarque = p => p && p.embarque ? est.processos.filter(x => x.embarque === p.embarque).sort((a, b) => a.id - b.id) : (p ? [p] : []);
+const nomeProc = p => p ? `${p.pedido || 's/ pedido'} · ${p.fornecedor}` : '—';
 function novaCalc(p) {
-  const e = p && p.estimativa;
+  const emb = p && p.estimativa && p.estimativa.embarque;
+  const grupo = doEmbarque(p);
+  // estimativa conjunta: abre todos os itens do embarque (de todos os processos)
+  const e = (p && p.estimativa) || (grupo.find(x => x.estimativa) || {}).estimativa;   // premissas e cenário
   const ref = est.cambioRef ? String(est.cambioRef).replace('.', ',') : '';
+  const ids = grupo.map(x => x.id);
+  const txt = v => v != null && v !== '' ? String(v).replace('.', ',') : '';
+  const deItens = (lista, proc) => lista.map(x => ({ codigo: x.codigo || '', qtd: String(x.qtd ?? ''), fob: txt(x.fob), familia: x.familia || '', peso: x.peso ? txt(x.peso) : '',
+    proc: ids.includes(x.proc) ? x.proc : proc }));
+  const linhaFob = x => ({ codigo: '', qtd: '1', fob: x && x.fob_usd ? txt(x.fob_usd) : '', familia: '', peso: '', proc: x ? x.id : null });
+  // itens: estimativa conjunta salva → todos os itens; senão, os itens da estimativa de cada processo (ou uma linha com o FOB)
+  const itensIniciais = () => emb && emb.itens && emb.itens.length && grupo.length > 1 ? deItens(emb.itens, ids[0])
+    : grupo.length ? grupo.flatMap(x => x.estimativa && x.estimativa.itens && x.estimativa.itens.length ? deItens(x.estimativa.itens, x.id) : [linhaFob(x)]) : [linhaFob(null)];
   return {
-    processo_id: p ? p.id : null,
+    processo_id: p ? (ids[0] || p.id) : null,
+    processos: ids,
     cenario: (e && e.cenario) || 'feromax',
     premissas: e && e.premissas ? Object.fromEntries(PREM.map(([k]) => { const v = e.premissas[k] ?? (k === 'frete_desp' ? e.premissas.logistica : null); return [k, v != null && v !== 0 ? String(v).replace('.', ',') : '']; })) :
       { frete_usd: '', outros_acresc: '', dolar_di: ref, dolar_cambio: ref, frete_desp: '', afrmm: '', sdas: '', armazenagem: '', despachante: '', frete_nacional: '', outras: '', adicoes: '', dhl_despesas: '250' },
-    itens: e && e.itens && e.itens.length ? e.itens.map(x => ({ codigo: x.codigo || '', qtd: String(x.qtd ?? ''), fob: String(x.fob ?? '').replace('.', ','), familia: x.familia || '', peso: x.peso ? String(x.peso).replace('.', ',') : '' }))
-      : [{ codigo: '', qtd: '1', fob: p && p.fob_usd ? String(p.fob_usd).replace('.', ',') : '', familia: '', peso: '' }],
+    itens: itensIniciais(),
   };
 }
 function abrirCalculadora(p) { est.calc = novaCalc(p); est.abertoId = null; abrir('calculadora'); window.scrollTo(0, 0); }
 const numCalc = v => Number(paraNum(v)) || 0;
 function resultadoCalc() {
   const c = est.calc;
-  const itens = c.itens.filter(x => numCalc(x.qtd) && numCalc(x.fob)).map(x => ({ codigo: x.codigo, qtd: numCalc(x.qtd), fob: numCalc(x.fob), familia: x.familia, peso: numCalc(x.peso) || null }));
+  const procs = c.processos || [];
+  const itens = c.itens.filter(x => numCalc(x.qtd) && numCalc(x.fob)).map(x => ({ codigo: x.codigo, qtd: numCalc(x.qtd), fob: numCalc(x.fob), familia: x.familia, peso: numCalc(x.peso) || null,
+    proc: procs.includes(Number(x.proc)) ? Number(x.proc) : (procs[0] || null) }));
   const pr = Object.fromEntries(PREM.map(([k]) => [k, numCalc(c.premissas[k])]));
   return { itens, pr, r: calcularAduaneiro(itens, pr, est.aliquotas) };
 }
@@ -845,27 +896,39 @@ function renderCalculadora(el) {
   const c = est.calc, ed = podeEditar();
   const familias = Object.keys(est.aliquotas).sort();
   const proc = est.processos.find(x => x.id === c.processo_id);
+  if (!c.processos) c.processos = proc ? [proc.id] : [];
+  const grupo = c.processos.map(id => est.processos.find(x => x.id === id)).filter(Boolean);
+  const multi = grupo.length > 1;
   const opcoes = est.processos.filter(x => x.status === 'aberto' || x.id === c.processo_id)
     .sort((a, b) => String(b.pedido || '').localeCompare(String(a.pedido || ''), 'pt-BR', { numeric: true }));
+  // para juntar: processos em aberto da mesma empresa (uma DI = um importador); mesmo país primeiro
+  const paisP = proc ? paisDe(proc) : '';
+  const juntaveis = proc ? est.processos.filter(x => x.status === 'aberto' && x.empresa === proc.empresa && !c.processos.includes(x.id))
+    .sort((a, b) => (paisDe(b) === paisP) - (paisDe(a) === paisP) || String(b.pedido || '').localeCompare(String(a.pedido || ''), 'pt-BR', { numeric: true })) : [];
   el.innerHTML = `
   <div class="filtros">
     <span class="nota">Processo:</span>
     <select class="sel" id="cProc"><option value="">— simulação avulsa —</option>${opcoes.map(x => `<option value="${x.id}" ${x.id === c.processo_id ? 'selected' : ''}>${esc(x.pedido || 's/ pedido')} · ${esc(x.fornecedor)} · ${EMPRESAS[x.empresa] || ''}</option>`).join('')}</select>
     ${proc ? `<button class="btn" id="cVerProc">Abrir processo</button>` : ''}
+    ${proc && juntaveis.length ? `<select class="sel" id="cJuntar"><option value="">+ Juntar outro processo (mesma DI)…</option>${juntaveis.map(x => `<option value="${x.id}">${esc(nomeProc(x))}${paisDe(x) ? ' · ' + esc(paisDe(x)) : ''}</option>`).join('')}</select>` : ''}
     <button class="btn" id="cLimpar" style="margin-left:auto">Limpar</button>
   </div>
+  ${multi ? `<div class="card embarque"><div class="topo"><h2>Embarque conjunto · ${grupo.length} processos numa DI</h2>
+      <span class="nota">os custos da DI são rateados por processo/fornecedor como na planilha de validação da DI: impostos item a item, frete internacional e nacional por peso líquido (ou FOB), Siscomex e AFRMM pelo VMLD, armazenagem/SDAS/despachante/outras pela base do ICMS</span></div>
+    <div class="filtros" style="margin:0">${grupo.map(x => `<span class="chip" aria-pressed="true">${esc(nomeProc(x))}${paisDe(x) ? ` <span class="nota">${esc(paisDe(x))}</span>` : ''}${x.id !== c.processo_id ? ` <button class="btn btn-mini" data-tirar="${x.id}" title="Tirar do embarque">×</button>` : ''}</span>`).join('')}</div></div>` : ''}
   ${!familias.length ? '<div class="card"><div class="vazio">Nenhuma alíquota cadastrada. Rode o SQL do módulo (imp_aliquotas) ou cadastre abaixo.</div></div>' : ''}
   <div class="card">
     <div class="topo"><h2>Premissas</h2><span class="nota">cálculo pelo método da planilha MATRIZ NEW – VALIDAÇÃO DI${est.cambioRef ? ` · câmbio do painel: ${TX(est.cambioRef)}` : ''}</span></div>
     <div class="calc-grade">${PREM.map(([k, n]) => `<label><span>${n}</span><input data-pr="${k}" inputmode="decimal" value="${esc(c.premissas[k])}"></label>`).join('')}</div>
   </div>
   <div class="card">
-    <div class="topo"><h2>Itens da invoice</h2><span class="nota">cada família = uma adição (NCM) · peso líquido UNITÁRIO: com o peso de todos os itens, o frete é rateado por peso, como na DI · o código busca família e peso no cadastro de produtos</span>
+    <div class="topo"><h2>Itens da invoice</h2><span class="nota">cada fornecedor + família = uma adição (NCM) · peso líquido UNITÁRIO: com o peso de todos os itens, o frete é rateado por peso, como na DI · o código busca família e peso no cadastro de produtos</span>
       <div class="acoes">${ed ? '<button class="btn btn-mini" id="cGravarPesos">Gravar pesos no cadastro</button>' : ''}<button class="btn btn-mini" id="cColar">Colar da planilha</button><button class="btn btn-mini" id="cItem">+ Item</button></div></div>
     <div class="tabela-wrap"><table>
-      <thead><tr><th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th><th class="n" style="width:100px">Peso líq. unit. kg</th><th class="n">Peso total kg</th>
+      <thead><tr>${multi ? '<th style="min-width:150px">Processo</th>' : ''}<th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th><th class="n" style="width:100px">Peso líq. unit. kg</th><th class="n">Peso total kg</th>
         <th class="n">FOB total</th><th class="n">Fator próprio</th><th class="n">Custo unit. próprio</th><th class="n">Fator DHL</th><th class="n">Custo unit. DHL</th><th></th></tr></thead>
       <tbody>${c.itens.map((x, i) => `<tr>
+        ${multi ? `<td><select class="ci" data-it="${i}" data-campo="proc">${grupo.map(g => `<option value="${g.id}" ${Number(x.proc) === g.id ? 'selected' : ''}>${esc(nomeProc(g))}</option>`).join('')}</select></td>` : ''}
         <td><input class="ci" data-it="${i}" data-campo="codigo" value="${esc(x.codigo)}">${tagProduto(x)}</td>
         <td><select class="ci" data-it="${i}" data-campo="familia"><option value="">— escolha —</option>${familias.map(f => `<option ${f === x.familia ? 'selected' : ''}>${esc(f)}</option>`).join('')}${x.familia && !familias.includes(x.familia) ? `<option selected>${esc(x.familia)}</option>` : ''}</select></td>
         <td><input class="ci n" data-it="${i}" data-campo="qtd" inputmode="decimal" value="${esc(x.qtd)}"></td>
@@ -881,8 +944,9 @@ function renderCalculadora(el) {
     <div class="filtros" style="margin:0">
       ${Object.entries(CENARIOS).map(([k, n]) => `<button class="chip" data-cen="${k}" aria-pressed="${c.cenario === k}">${n}</button>`).join('')}
       <div class="sep"></div>
-      ${ed ? `<button class="btn-pri" id="cSalvar" ${proc ? '' : 'disabled title="Escolha o processo no topo"'}>Salvar como estimativa ${proc ? 'do pedido ' + esc(proc.pedido || '') : 'do processo'}</button>` : ''}
-      <span class="nota">${proc ? (proc.estimativa ? `substitui a estimativa de ${dm(proc.estimativa.data)}` : 'o processo ainda não tem estimativa') : 'escolha o processo no topo para salvar'}</span>
+      ${ed ? `<button class="btn-pri" id="cSalvar" ${proc ? '' : 'disabled title="Escolha o processo no topo"'}>Salvar como estimativa ${multi ? `dos ${grupo.length} processos (rateada)` : proc ? 'do pedido ' + esc(proc.pedido || '') : 'do processo'}</button>` : ''}
+      ${ed && proc ? `<button class="btn" id="cRealizado" title="Use com os valores reais da DI (dólar DI, frete, despesas): grava o rateio na nacionalização realizada de cada processo">Lançar como DI realizada${multi ? ' (rateio)' : ''}</button>` : ''}
+      <span class="nota">${proc ? (multi ? 'cada processo recebe a sua parte (estimativa, fator e numerário previsto)' : proc.estimativa ? `substitui a estimativa de ${dm(proc.estimativa.data)}` : 'o processo ainda não tem estimativa') : 'escolha o processo no topo para salvar'}</span>
     </div>
   </div>
   <div class="card">
@@ -898,8 +962,26 @@ function renderCalculadora(el) {
   </div>`;
 
   // eventos
-  $('#cProc').onchange = e => { const p = est.processos.find(x => x.id === Number(e.target.value)); est.calc = p ? novaCalc(p) : { ...c, processo_id: null }; redesenhar(); };
+  $('#cProc').onchange = e => { const p = est.processos.find(x => x.id === Number(e.target.value)); est.calc = p ? novaCalc(p) : { ...c, processo_id: null, processos: [], itens: c.itens.map(i => ({ ...i, proc: null })) }; redesenhar(); };
   if ($('#cVerProc')) $('#cVerProc').onclick = () => abrirProcesso(c.processo_id);
+  if ($('#cJuntar')) $('#cJuntar').onchange = e => {
+    const x = est.processos.find(y => y.id === Number(e.target.value)); if (!x) return;
+    // traz o processo (e o embarque dele, se já tiver) para o cálculo; itens: os da estimativa dele ou uma linha com o FOB
+    for (const g of doEmbarque(x)) if (!c.processos.includes(g.id)) {
+      c.processos.push(g.id);
+      const nc = novaCalc(g);
+      c.itens = c.itens.filter(i => numCalc(i.fob) || numCalc(i.qtd) > 1 || i.codigo).concat(nc.itens.filter(i => Number(i.proc) === g.id).map(i => ({ ...i, proc: g.id })));
+    }
+    c.itens.forEach(i => { if (!c.processos.includes(Number(i.proc))) i.proc = c.processo_id; });
+    redesenhar();
+  };
+  el.querySelectorAll('[data-tirar]').forEach(b => b.onclick = () => {
+    const id = Number(b.dataset.tirar);
+    c.processos = c.processos.filter(x => x !== id);
+    c.itens = c.itens.filter(i => Number(i.proc) !== id);
+    if (!c.itens.length) c.itens = [{ codigo: '', qtd: '1', fob: '', familia: '', peso: '', proc: c.processo_id }];
+    redesenhar();
+  });
   $('#cLimpar').onclick = () => { est.calc = novaCalc(null); redesenhar(); };
   el.querySelectorAll('[data-pr]').forEach(i => i.oninput = () => { c.premissas[i.dataset.pr] = i.value; atualizarCalc(); });
   el.querySelectorAll('[data-it]').forEach(i => { const ev = i.tagName === 'SELECT' ? 'onchange' : 'oninput'; i[ev] = () => { c.itens[Number(i.dataset.it)][i.dataset.campo] = i.value; atualizarCalc(); }; });
@@ -911,11 +993,12 @@ function renderCalculadora(el) {
     redesenhar();
   };
   el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { c.itens.splice(Number(b.dataset.rm), 1); redesenhar(); });
-  $('#cItem').onclick = () => { c.itens.push({ codigo: '', qtd: '1', fob: '', familia: '', peso: '' }); redesenhar(); };
+  $('#cItem').onclick = () => { const ult = c.itens[c.itens.length - 1]; c.itens.push({ codigo: '', qtd: '1', fob: '', familia: '', peso: '', proc: ult ? ult.proc : c.processo_id }); redesenhar(); };
   $('#cColar').onclick = colarItens;
   el.querySelectorAll('[data-cen]').forEach(b => b.onclick = () => { c.cenario = b.dataset.cen; redesenhar(); });
   $('#cAliq').ontoggle = e => { est.calcAliqAberto = e.target.open; };
   if ($('#cSalvar')) $('#cSalvar').onclick = salvarEstimativa;
+  if ($('#cRealizado')) $('#cRealizado').onclick = lancarRealizado;
   if ($('#aqSalvar')) $('#aqSalvar').onclick = async () => {
     const pc = v => { const t = paraNum(v); return t === '' ? null : Number(t) / 100; };
     const lista = familias.map(f => { const o = { familia: f }; for (const [k] of ALQ) o[k] = pc(el.querySelector(`[data-aq="${CSS.escape(f)}"][data-ak="${k}"]`).value); return o; });
@@ -968,6 +1051,30 @@ function atualizarCalc() {
         ${lin('Crédito ICMS + IPI', F.creditos, D.creditos)}
         ${lin('Custo real (sem créditos)', F.custo_real, D.custo_real)}
         ${lin('Fator 2 (sem créditos)', F.fator2, D.fator2, { f: true })}
+      </tbody></table></div>${tabelaRateio(r, c)}`;
+}
+
+// rateio da DI conjunta por processo (cenário marcado)
+function tabelaRateio(r, c) {
+  const ids = (c.processos || []).filter(id => r.porProc[id]);
+  if ((c.processos || []).length < 2) return '';
+  const g = ids.map(id => ({ p: est.processos.find(x => x.id === id), x: r.porProc[id][c.cenario], peso: r.porProc[id].peso }));
+  const tot = r[c.cenario];
+  const desp = x => x.sdas_afrmm_siscomex + x.armazenagem + x.despachante_valor + x.outras_despesas;
+  const L = [['FOB (US$)', x => U(x.fob_usd)], ['Frete internacional rateado (US$)', x => U(x.frete_usd || 0)], ['Câmbio (R$)', x => F2.format(x.cambio_brl)],
+    ['II', x => F2.format(x.ii)], ['IPI', x => F2.format(x.ipi)], ['PIS', x => F2.format(x.pis)], ['COFINS', x => F2.format(x.cofins)], ['ICMS', x => F2.format(x.icms)],
+    ['SDAS / AFRMM / Siscomex', x => F2.format(x.sdas_afrmm_siscomex)], ['Armazenagem', x => F2.format(x.armazenagem)], ['Despachante', x => F2.format(x.despachante_valor)],
+    ['Outras despesas', x => F2.format(x.outras_despesas)], ['Frete internacional (R$)', x => F2.format(x.frete_brl)], ['Frete nacional', x => F2.format(x.frete_nacional)],
+    ['<b>Numerário</b>', x => '<b>' + F2.format(x.numerario) + '</b>'], ['<b>Total importação</b>', x => '<b>' + F2.format(x.total) + '</b>'], ['<b>Fator</b>', x => '<b>' + FT(x.fator) + '</b>'],
+    ['Fator 2 (sem créditos)', x => FT(x.fator2)]];
+  const semItens = (c.processos || []).filter(id => !r.porProc[id]).map(id => nomeProc(est.processos.find(x => x.id === id)));
+  return `<div class="topo" style="margin-top:16px"><h2>Rateio por processo · ${CENARIOS[c.cenario]}</h2><span class="nota">${g.some(y => !y.peso) ? 'frete rateado por FOB (falta peso em algum item)' : 'frete rateado por peso líquido'}</span></div>
+    ${semItens.length ? `<div class="nota verm" style="margin-bottom:8px">Sem itens na calculadora: ${semItens.map(esc).join(', ')}</div>` : ''}
+    <div class="tabela-wrap"><table>
+      <thead><tr><th></th>${g.map(y => `<th class="n">${esc(nomeProc(y.p))}</th>`).join('')}<th class="n">Total da DI</th></tr></thead>
+      <tbody>${g.some(y => y.peso) ? `<tr><td>Peso líquido (kg)</td>${g.map(y => `<td class="n">${nf(3).format(y.peso)}</td>`).join('')}<td class="n">${nf(3).format(g.reduce((s, y) => s + y.peso, 0))}</td></tr>` : ''}
+        ${L.map(([n, f]) => `<tr><td>${n}</td>${g.map(y => `<td class="n">${f(y.x)}</td>`).join('')}<td class="n">${f({ ...tot, frete_usd: g.reduce((s, y) => s + (y.x.frete_usd || 0), 0) })}</td></tr>`).join('')}
+        <tr><td>Despesas rateadas (sem impostos e fretes)</td>${g.map(y => `<td class="n">${F2.format(desp(y.x))}</td>`).join('')}<td class="n">${F2.format(desp(tot))}</td></tr>
       </tbody></table></div>`;
 }
 
@@ -975,22 +1082,24 @@ function colarItens() {
   const m = abrirModal(`<h2>Colar itens da planilha</h2>
     <div class="nota" style="margin-bottom:8px">Copie do Excel as colunas <b>Código · Quantidade · FOB unitário · Família · Peso líquido unitário (kg)</b> (família e peso são opcionais: se o código estiver no cadastro de produtos, vêm de lá) e cole abaixo.</div>
     <textarea id="cTxt" rows="10" style="width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)"></textarea>
-    <label class="chk-fluxo" style="margin-top:8px"><input type="checkbox" id="cSubst" checked> Substituir os itens atuais</label>
+    ${(est.calc.processos || []).length > 1 ? `<label class="chk-fluxo" style="margin-top:8px">Processo destes itens: <select class="sel" id="cColProc">${est.calc.processos.map(id => `<option value="${id}">${esc(nomeProc(est.processos.find(x => x.id === id)))}</option>`).join('')}</select></label>` : ''}
+    <label class="chk-fluxo" style="margin-top:8px"><input type="checkbox" id="cSubst" checked> Substituir os itens atuais${(est.calc.processos || []).length > 1 ? ' deste processo' : ''}</label>
     <div class="erro" id="cErr"></div>
     <div class="rodape"><button class="btn" data-fechar>Cancelar</button><button class="btn-pri" id="cOk">Incluir</button></div>`);
   m.querySelector('#cOk').onclick = () => {
     const fams = Object.keys(est.aliquotas);
     const achaFam = t => { t = String(t || '').trim(); return fams.find(f => f.toLowerCase() === t.toLowerCase()) || t.toUpperCase(); };
     const linhas = m.querySelector('#cTxt').value.split(/\r?\n/).map(l => l.split(/\t|;/).map(x => x.trim())).filter(l => l.some(Boolean));
-    const novos = [];
+    const novos = [], selP = m.querySelector('#cColProc'), procCol = selP ? Number(selP.value) : est.calc.processo_id;
     for (const l of linhas) {
       if (l.length < 3) continue;
       if (isNaN(Number(paraNum(l[1]))) || isNaN(Number(paraNum(l[2])))) continue; // cabeçalho
-      novos.push({ codigo: l[0], qtd: l[1], fob: l[2], familia: l[3] ? achaFam(l[3]) : '', peso: l[4] || '' });
+      novos.push({ codigo: l[0], qtd: l[1], fob: l[2], familia: l[3] ? achaFam(l[3]) : '', peso: l[4] || '', proc: procCol });
     }
     if (!novos.length) return void (m.querySelector('#cErr').textContent = 'Nenhuma linha reconhecida (código, quantidade, FOB).');
     novos.forEach(completarDoCadastro);
-    est.calc.itens = m.querySelector('#cSubst').checked ? novos : est.calc.itens.filter(x => numCalc(x.fob)).concat(novos);
+    const outros = est.calc.itens.filter(x => selP && Number(x.proc) !== procCol);           // itens dos outros processos ficam
+    est.calc.itens = m.querySelector('#cSubst').checked ? outros.concat(novos) : est.calc.itens.filter(x => numCalc(x.fob)).concat(novos);
     fecharModal(m); redesenhar();
   };
 }
@@ -1002,20 +1111,59 @@ async function salvarEstimativa() {
   if (!itens.length) return alertaErro('Informe pelo menos um item com quantidade e FOB.');
   if (!pr.dolar_di) return alertaErro('Informe o dólar DI estimado.');
   const res = r[c.cenario];
+  const grupo = (c.processos && c.processos.length ? c.processos : [p.id]).map(id => est.processos.find(x => x.id === id)).filter(Boolean);
+  const multi = grupo.length > 1;
+  if (multi) { const sem = grupo.filter(g => !r.porProc[g.id]); if (sem.length) return alertaErro(`Sem itens na calculadora para: ${sem.map(nomeProc).join(', ')}. Inclua os itens ou tire o processo do embarque.`); }
   const arred = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v]));
-  const estimativa = { data: hojeISO(), cenario: c.cenario, premissas: pr,
-    itens: itens.map(x => ({ ...x, aliq: est.aliquotas[x.familia] ? Object.fromEntries(ALQ.map(([k]) => [k, est.aliquotas[x.familia][k]])) : null })),
-    resultado: arred(res) };
-  const dataNum = p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada;
-  const msg = `Fator estimado <b>${FT(res.fator)}</b> · total ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>
+  const comAliq = lista => lista.map(x => ({ ...x, aliq: est.aliquotas[x.familia] ? Object.fromEntries(ALQ.map(([k]) => [k, est.aliquotas[x.familia][k]])) : null }));
+  const codigo = multi ? (grupo.find(g => g.embarque) || {}).embarque || 'EMB-' + grupo.map(g => g.pedido || g.id).join('-') : null;
+  const partes = grupo.map(g => ({ g, res: multi ? r.porProc[g.id][c.cenario] : res, dataNum: g.cp_numerario_prev || g.cp_chegada_prev || g.previsao_chegada }));
+  const msg = multi
+    ? `Embarque conjunto <b>${esc(codigo)}</b> · total da DI ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>Cada processo recebe a sua parte:<br>
+      ${partes.map(x => `• ${esc(nomeProc(x.g))}: fator <b>${FT(x.res.fator)}</b> · numerário ${R0(x.res.numerario)}${x.dataNum ? ` · fluxo em ${dm(x.dataNum)}` : ' · <b>sem data</b> para o fluxo'}`).join('<br>')}<br><br>
+      Os pesos digitados vão para o cadastro de produtos como validados. Salvar?`
+    : `Fator estimado <b>${FT(res.fator)}</b> · total ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>
     Os pesos digitados vão para o cadastro de produtos como validados.<br>
-    O numerário previsto ${dataNum ? `entra no Fluxo de caixa projetado em <b>${dm(dataNum)}</b> (data prevista do numerário/chegada)` : 'é criado, mas <b>sem data</b>: informe a previsão de chegada ou do numerário para ele entrar no fluxo'}.<br><br>Salvar no pedido ${esc(p.pedido || '')} · ${esc(p.fornecedor)}?`;
+    O numerário previsto ${partes[0].dataNum ? `entra no Fluxo de caixa projetado em <b>${dm(partes[0].dataNum)}</b> (data prevista do numerário/chegada)` : 'é criado, mas <b>sem data</b>: informe a previsão de chegada ou do numerário para ele entrar no fluxo'}.<br><br>Salvar no pedido ${esc(p.pedido || '')} · ${esc(p.fornecedor)}?`;
   if (!await confirmar('Salvar estimativa', msg, 'Salvar')) return;
-  const reg = { estimativa, fator_estimado: Math.round(res.fator * 1e6) / 1e6 };
-  if (!p.fob_usd) reg.fob_usd = Math.round(res.fob_usd * 100) / 100;
-  await gravar('imp_processos', reg, p.id, p, true);
-  await numerarioDaEstimativa(p, res.numerario);
-  await gravarPesosDosItens(c.itens, `estimativa do pedido ${p.pedido || p.id}`, true);
+  const todos = comAliq(itens);
+  for (const { g, res: rg } of partes) {
+    const estimativa = { data: hojeISO(), cenario: c.cenario, premissas: pr, itens: multi ? todos.filter(x => x.proc === g.id) : todos, resultado: arred(rg) };
+    if (multi) estimativa.embarque = { codigo, processos: grupo.map(x => x.id), itens: todos, resultado_total: arred(res) };
+    const reg = { estimativa, fator_estimado: Math.round(rg.fator * 1e6) / 1e6 };
+    if (!g.fob_usd) reg.fob_usd = Math.round(rg.fob_usd * 100) / 100;
+    if (multi && g.embarque !== codigo) reg.embarque = codigo;
+    await gravar('imp_processos', reg, g.id, g, true);
+    await numerarioDaEstimativa(g, rg.numerario);
+  }
+  await gravarPesosDosItens(c.itens, `estimativa do pedido ${grupo.map(g => g.pedido || g.id).join(' + ')}`, true);
+  est.abertoId = p.id; abrir('processos'); await depoisDeGravar();
+}
+
+// lança o cálculo (com os valores reais da DI) como nacionalização realizada — no embarque conjunto, a parte de cada processo
+async function lancarRealizado() {
+  const c = est.calc, p = est.processos.find(x => x.id === c.processo_id);
+  if (!p) return;
+  const { itens, pr, r } = resultadoCalc();
+  if (!itens.length) return alertaErro('Informe pelo menos um item com quantidade e FOB.');
+  if (!pr.dolar_di) return alertaErro('Informe o dólar da DI.');
+  const grupo = (c.processos && c.processos.length ? c.processos : [p.id]).map(id => est.processos.find(x => x.id === id)).filter(Boolean);
+  const multi = grupo.length > 1;
+  if (multi) { const sem = grupo.filter(g => !r.porProc[g.id]); if (sem.length) return alertaErro(`Sem itens na calculadora para: ${sem.map(nomeProc).join(', ')}.`); }
+  const partes = grupo.map(g => ({ g, x: multi ? r.porProc[g.id][c.cenario] : r[c.cenario] }));
+  const jaTem = partes.filter(y => temNac(y.g));
+  const msg = `Grava na <b>nacionalização realizada</b> (II, IPI, PIS, COFINS, ICMS, despesas e fretes${multi ? ', rateados por processo' : ''}), com câmbio DI ${TX(pr.dolar_di)} — ${CENARIOS[c.cenario]}:<br><br>
+    ${partes.map(y => `• ${esc(nomeProc(y.g))}: nacionalização ${R0(y.x.numerario)}`).join('<br>')}<br><br>
+    ${jaTem.length ? `<span class="verm">Substitui os valores já lançados em: ${jaTem.map(y => esc(nomeProc(y.g))).join(', ')}.</span><br><br>` : ''}
+    Use só com os valores reais da DI. Depois confira em "Lançar / validar DI" e marque como conciliado. Continuar?`;
+  if (!await confirmar('Lançar como DI realizada', msg, 'Lançar')) return;
+  const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+  for (const { g, x } of partes) {
+    const reg = { cambio_di: pr.dolar_di, frete_usd: r2(x.frete_usd), nac_conciliada: false };
+    for (const [k] of NAC) reg[k] = r2(x[k]);
+    if (multi) reg.embarque = g.embarque || (grupo.find(y => y.embarque) || {}).embarque || 'EMB-' + grupo.map(y => y.pedido || y.id).join('-');
+    await gravar('imp_processos', reg, g.id, g, true);
+  }
   est.abertoId = p.id; abrir('processos'); await depoisDeGravar();
 }
 
@@ -1252,6 +1400,30 @@ function formDados(p) {
     const f = est.fornecedores[e.target.value]; const fm = e.target.form;
     if (f) { fm.elements._pais.value = f.pais || ''; fm.elements._cond.value = f.condicao_pagamento || ''; }
   });
+}
+
+// junta processos numa mesma DI (embarque conjunto) — mesma empresa; sugere os do mesmo país
+function formJuntar(p) {
+  const pais = paisDe(p), ja = doEmbarque(p).map(x => x.id);
+  const cand = est.processos.filter(x => x.status === 'aberto' && x.empresa === p.empresa && !ja.includes(x.id))
+    .sort((a, b) => (paisDe(b) === pais) - (paisDe(a) === pais) || String(b.pedido || '').localeCompare(String(a.pedido || ''), 'pt-BR', { numeric: true }));
+  const m = abrirModal(`<h2>Juntar processos na mesma DI</h2>
+    <div class="nota" style="margin-bottom:10px">Os processos marcados vêm no mesmo embarque que ${esc(nomeProc(p))} e rateiam os custos da importação (impostos item a item, fretes por peso, despesas pela base do ICMS — como na planilha de validação da DI). Só processos em aberto da ${EMPRESAS[p.empresa] || 'mesma empresa'}${pais ? `; os de ${esc(pais)} aparecem primeiro` : ''}.</div>
+    ${cand.length ? `<div class="lista-juntar">${cand.map(x => `<label class="chk-fluxo"><input type="checkbox" value="${x.id}"> ${esc(nomeProc(x))} <span class="nota">${esc(paisDe(x) || '')}${x.fob_usd ? ' · FOB ' + U(x.fob_usd) : ''}${x.embarque ? ' · já em ' + esc(x.embarque) : ''}</span></label>`).join('')}</div>` : '<div class="vazio">Nenhum outro processo em aberto da mesma empresa.</div>'}
+    <div class="erro" id="jErr"></div>
+    <div class="rodape"><button class="btn" data-fechar>Cancelar</button>${cand.length ? '<button class="btn-pri" id="jOk">Juntar e abrir na calculadora</button>' : ''}</div>`);
+  if (!cand.length) return;
+  m.querySelector('#jOk').onclick = async () => {
+    const sel = [...m.querySelectorAll('input[type=checkbox]:checked')].map(i => est.processos.find(x => x.id === Number(i.value)));
+    if (!sel.length) return void (m.querySelector('#jErr').textContent = 'Marque pelo menos um processo.');
+    const todos = [...doEmbarque(p), ...sel.flatMap(doEmbarque)].filter((x, i, a) => a.findIndex(y => y.id === x.id) === i).sort((a, b) => a.id - b.id);
+    const codigo = p.embarque || 'EMB-' + todos.map(x => x.pedido || x.id).join('-');
+    try { for (const x of todos) if (x.embarque !== codigo) await gravar('imp_processos', { embarque: codigo }, x.id, x, true); }
+    catch (e) { return void (m.querySelector('#jErr').textContent = e.message); }
+    fecharModal(m);
+    if (!est.demo) await recarregar();
+    abrirCalculadora(est.processos.find(x => x.id === p.id));
+  };
 }
 
 function formCheckpoints(p) {
