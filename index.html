@@ -2142,7 +2142,29 @@ const TIPOS_IMP = ['Câmbio', 'Numerário', 'Frete', 'Impostos', 'Outros'];
 const STATUS_IMP = ['Produção', 'Embarque', 'Chegada Brasil', 'Nacionalização', 'Estoque'];
 const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' });
 
+// seletor da aba: módulo de Importações (importacoes.html, embutido) ou os lançamentos no fluxo (tela antiga)
+function seletorImportacoes() {
+  const v = est.impVisao || 'modulo';
+  return `<div class="controles" style="margin-bottom:12px">
+    <button class="chip" data-impv="modulo" aria-pressed="${v === 'modulo'}">Processos de importação</button>
+    <button class="chip" data-impv="fluxo" aria-pressed="${v === 'fluxo'}">Lançamentos no fluxo</button>
+  </div>`;
+}
+function ligarSeletorImportacoes(el) {
+  el.querySelectorAll('[data-impv]').forEach(b => b.onclick = () => { est.impVisao = b.dataset.impv; render(); });
+}
 function renderImportacoes(el) {
+  if ((est.impVisao || 'modulo') === 'modulo') {
+    // não recria o módulo nas atualizações automáticas (não perde o que está sendo digitado)
+    const ja = el.querySelector('#impModulo');
+    if (ja) { ja.style.height = Math.max(560, innerHeight - ja.getBoundingClientRect().top - 16) + 'px'; return; }
+    el.innerHTML = seletorImportacoes() + '<iframe id="impModulo" src="importacoes.html" title="Módulo de Importações" style="width:100%;border:0;display:block;min-height:560px;background:transparent"></iframe>';
+    ligarSeletorImportacoes(el);
+    const fr = el.querySelector('#impModulo');
+    const ajustar = () => { if (!fr.isConnected) return removeEventListener('resize', ajustar); fr.style.height = Math.max(560, innerHeight - fr.getBoundingClientRect().top - 16) + 'px'; };
+    ajustar(); addEventListener('resize', ajustar);
+    return;
+  }
   const pode = podeEditar();
   const f = est.impFiltro;
   const lista = est.importacoes
@@ -2158,7 +2180,7 @@ function renderImportacoes(el) {
   const cam = cambioAtual();
   const ptaxTxt = est.ptax && est.ptax.valor ? `PTAX ${Number(est.ptax.valor).toLocaleString('pt-BR', { minimumFractionDigits: 4 })} (${ddmmaa(est.ptax.data)})` : 'PTAX indisponível';
 
-  el.innerHTML = `
+  el.innerHTML = seletorImportacoes() + `
   <div class="kpis">
     ${kpi('Previsto nos próximos 30 dias', R0(tot30), 'importações não finalizadas')}
     ${kpi('Total previsto', R0(tot), `${lista.filter(aberta).length} lançamentos em aberto`)}
@@ -2203,6 +2225,7 @@ function renderImportacoes(el) {
     <div class="nota" style="margin-top:8px"><span class="estimado">Valores em itálico</span> são estimados (FOB × câmbio). Status "Estoque" = finalizada (sai do fluxo).</div>
   </div>`;
 
+  ligarSeletorImportacoes(el);
   $('#impStatus').onchange = ev => { f.status = ev.target.value; render(); };
   $('#impSoFluxo').onchange = ev => { f.soFluxo = ev.target.checked; render(); };
   if (!pode) return;
