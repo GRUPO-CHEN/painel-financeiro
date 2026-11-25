@@ -19,6 +19,16 @@
    • Fator de importação = (câmbios R$ + nacionalização R$) / FOB US$
    • Para criar uma sub-aba: acrescente um item em SUBABAS e uma função render.
 -->
+<script>
+// tema igual ao do painel (localStorage 'painel-tema') e modo embutido (dentro da aba Importações)
+(function () {
+  var h = document.documentElement;
+  function tema() { var t = 'auto'; try { t = localStorage.getItem('painel-tema') || 'auto'; } catch (e) {}
+    h.classList.remove('tema-claro', 'tema-escuro'); if (t === 'claro') h.classList.add('tema-claro'); else if (t === 'escuro') h.classList.add('tema-escuro'); }
+  tema(); addEventListener('storage', function (e) { if (e.key === 'painel-tema') tema(); });
+  try { if (window.self !== window.top) h.classList.add('embutido'); } catch (e) { h.classList.add('embutido'); }
+})();
+</script>
 <style>
 :root {
   color-scheme: light;
@@ -28,8 +38,15 @@
   --good: #00895a; --good-soft: #dcf3e8; --warn: #b26a00; --warn-soft: #fdeccf;
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.03);
 }
+html.tema-escuro {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --line: #2c2c2a; --grid: #262624;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #92918a;
+    --accent: #5b85f2; --s1-soft: #1e2f57; --critical: #ef6b6b; --crit-soft: #4a1f1f;
+    --good: #1fc472; --good-soft: #143a27; --warn: #f0a63a; --warn-soft: #43300f; --shadow: none;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  html:not(.tema-claro) {
     color-scheme: dark;
     --bg: #121211; --surface: #1a1a19; --line: #2c2c2a; --grid: #262624;
     --text: #f0efec; --text-2: #c3c2b7; --text-3: #92918a;
@@ -37,6 +54,10 @@
     --good: #1fc472; --good-soft: #143a27; --warn: #f0a63a; --warn-soft: #43300f; --shadow: none;
   }
 }
+/* embutido na aba Importações do Painel Financeiro */
+html.embutido header { display: none; }
+html.embutido .wrap { max-width: none; padding: 4px 2px 24px; }
+html.embutido body { background: transparent; }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
