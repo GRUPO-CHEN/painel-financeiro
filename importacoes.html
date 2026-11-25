@@ -236,7 +236,7 @@ const est = {
   processos: [], cambios: [], creditos: [], fornecedores: {},
   filtro: { empresa: 0, status: 'aberto', busca: '', pais: '' },
   abertoId: null, ord: {}, aliquotas: {}, cambioRef: null,
-  calc: null,
+  calc: null, produtos: {}, filtroProd: { busca: '', status: '' },
 };
 
 // ======================= regras do processo =======================
@@ -339,6 +339,7 @@ const SUBABAS = [
   { id: 'geral', nome: 'Visão geral', render: renderGeral },
   { id: 'processos', nome: 'Processos', render: renderProcessos },
   { id: 'calculadora', nome: 'Calculadora aduaneira', render: renderCalculadora },
+  { id: 'produtos', nome: 'Produtos (pesos e medidas)', render: renderProdutos },
 ];
 
 function montarSubabas() {
@@ -741,7 +742,7 @@ function taxaSiscomex(n) {
 }
 function calcularAduaneiro(itens, pr, aliq) {
   const n = v => Number(v) || 0;
-  const linhas = itens.map(it => ({ ...it, fobT: n(it.qtd) * n(it.fob), pesoT: n(it.peso), a: aliq[it.familia] || null }));
+  const linhas = itens.map(it => ({ ...it, fobT: n(it.qtd) * n(it.fob), pesoT: n(it.qtd) * n(it.peso), a: aliq[it.familia] || null }));   // peso = peso líquido UNITÁRIO (kg)
   const sumF = linhas.reduce((s, x) => s + x.fobT, 0);
   const sumP = linhas.reduce((s, x) => s + x.pesoT, 0);
   const porPeso = sumP > 0 && linhas.every(x => x.pesoT > 0);          // frete rateado por peso líquido (como na DI)
@@ -854,17 +855,17 @@ function renderCalculadora(el) {
     <div class="calc-grade">${PREM.map(([k, n]) => `<label><span>${n}</span><input data-pr="${k}" inputmode="decimal" value="${esc(c.premissas[k])}"></label>`).join('')}</div>
   </div>
   <div class="card">
-    <div class="topo"><h2>Itens da invoice</h2><span class="nota">cada família = uma adição (NCM) · com o peso líquido de todos os itens, o frete é rateado por peso, como na DI</span>
-      <div class="acoes"><button class="btn btn-mini" id="cColar">Colar da planilha</button><button class="btn btn-mini" id="cItem">+ Item</button></div></div>
+    <div class="topo"><h2>Itens da invoice</h2><span class="nota">cada família = uma adição (NCM) · peso líquido UNITÁRIO: com o peso de todos os itens, o frete é rateado por peso, como na DI · o código busca família e peso no cadastro de produtos</span>
+      <div class="acoes">${ed ? '<button class="btn btn-mini" id="cGravarPesos">Gravar pesos no cadastro</button>' : ''}<button class="btn btn-mini" id="cColar">Colar da planilha</button><button class="btn btn-mini" id="cItem">+ Item</button></div></div>
     <div class="tabela-wrap"><table>
-      <thead><tr><th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th><th class="n" style="width:100px">Peso líq. kg</th>
+      <thead><tr><th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th><th class="n" style="width:100px">Peso líq. unit. kg</th><th class="n">Peso total kg</th>
         <th class="n">FOB total</th><th class="n">Fator próprio</th><th class="n">Custo unit. próprio</th><th class="n">Fator DHL</th><th class="n">Custo unit. DHL</th><th></th></tr></thead>
       <tbody>${c.itens.map((x, i) => `<tr>
-        <td><input class="ci" data-it="${i}" data-campo="codigo" value="${esc(x.codigo)}"></td>
+        <td><input class="ci" data-it="${i}" data-campo="codigo" value="${esc(x.codigo)}">${tagProduto(x)}</td>
         <td><select class="ci" data-it="${i}" data-campo="familia"><option value="">— escolha —</option>${familias.map(f => `<option ${f === x.familia ? 'selected' : ''}>${esc(f)}</option>`).join('')}${x.familia && !familias.includes(x.familia) ? `<option selected>${esc(x.familia)}</option>` : ''}</select></td>
         <td><input class="ci n" data-it="${i}" data-campo="qtd" inputmode="decimal" value="${esc(x.qtd)}"></td>
         <td><input class="ci n" data-it="${i}" data-campo="fob" inputmode="decimal" value="${esc(x.fob)}"></td>
-        <td><input class="ci n" data-it="${i}" data-campo="peso" inputmode="decimal" value="${esc(x.peso || '')}" placeholder="opcional"></td>
+        <td><input class="ci n" data-it="${i}" data-campo="peso" inputmode="decimal" value="${esc(x.peso || '')}" placeholder="opcional"></td><td class="n" id="cPesoT${i}"></td>
         <td class="n" id="cFob${i}"></td><td class="n" id="cFtF${i}"></td><td class="n" id="cCuF${i}"></td><td class="n" id="cFtD${i}"></td><td class="n" id="cCuD${i}"></td>
         <td class="n">${c.itens.length > 1 ? `<button class="btn btn-mini btn-perigo" data-rm="${i}" title="Remover">×</button>` : ''}</td></tr>`).join('')}</tbody>
     </table></div>
@@ -897,8 +898,15 @@ function renderCalculadora(el) {
   $('#cLimpar').onclick = () => { est.calc = novaCalc(null); redesenhar(); };
   el.querySelectorAll('[data-pr]').forEach(i => i.oninput = () => { c.premissas[i.dataset.pr] = i.value; atualizarCalc(); });
   el.querySelectorAll('[data-it]').forEach(i => { const ev = i.tagName === 'SELECT' ? 'onchange' : 'oninput'; i[ev] = () => { c.itens[Number(i.dataset.it)][i.dataset.campo] = i.value; atualizarCalc(); }; });
+  // ao sair do campo código: traz família e peso do cadastro de produtos
+  el.querySelectorAll('[data-campo=codigo]').forEach(i => i.onchange = () => { const x = c.itens[Number(i.dataset.it)]; x.codigo = i.value; if (completarDoCadastro(x)) redesenhar(); else atualizarCalc(); });
+  if ($('#cGravarPesos')) $('#cGravarPesos').onclick = async () => {
+    const n = await gravarPesosDosItens(c.itens, 'calculadora');
+    alertaInfo(n ? `${n} produto(s) gravado(s) no cadastro como validados.` : 'Nenhum item com código e peso para gravar.');
+    redesenhar();
+  };
   el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { c.itens.splice(Number(b.dataset.rm), 1); redesenhar(); });
-  $('#cItem').onclick = () => { const ult = c.itens[c.itens.length - 1]; c.itens.push({ codigo: '', qtd: '1', fob: '', familia: ult ? ult.familia : '', peso: '' }); redesenhar(); };
+  $('#cItem').onclick = () => { c.itens.push({ codigo: '', qtd: '1', fob: '', familia: '', peso: '' }); redesenhar(); };
   $('#cColar').onclick = colarItens;
   el.querySelectorAll('[data-cen]').forEach(b => b.onclick = () => { c.cenario = b.dataset.cen; redesenhar(); });
   $('#cAliq').ontoggle = e => { est.calcAliqAberto = e.target.open; };
@@ -923,6 +931,7 @@ function atualizarCalc() {
     const it = ok ? r.itens[k++] : null;
     const set = (id, v) => { const td = document.getElementById(id); if (td) td.innerHTML = v; };
     set('cFob' + i, it ? F2.format(it.fobT) : '—');
+    set('cPesoT' + i, numCalc(x.peso) && numCalc(x.qtd) ? nf(3).format(numCalc(x.peso) * numCalc(x.qtd)) : '—');
     set('cFtF' + i, it && it.a ? FT(it.fatorF) : '—'); set('cCuF' + i, it && it.a ? F2.format(it.custoUnF) : '—');
     set('cFtD' + i, it && it.a ? FT(it.fatorD) : '—'); set('cCuD' + i, it && it.a ? F2.format(it.custoUnD) : '—');
   });
@@ -959,7 +968,7 @@ function atualizarCalc() {
 
 function colarItens() {
   const m = abrirModal(`<h2>Colar itens da planilha</h2>
-    <div class="nota" style="margin-bottom:8px">Copie do Excel as colunas <b>Código · Quantidade · FOB unitário · Família · Peso líquido (kg)</b> (família e peso são opcionais) e cole abaixo.</div>
+    <div class="nota" style="margin-bottom:8px">Copie do Excel as colunas <b>Código · Quantidade · FOB unitário · Família · Peso líquido unitário (kg)</b> (família e peso são opcionais: se o código estiver no cadastro de produtos, vêm de lá) e cole abaixo.</div>
     <textarea id="cTxt" rows="10" style="width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)"></textarea>
     <label class="chk-fluxo" style="margin-top:8px"><input type="checkbox" id="cSubst" checked> Substituir os itens atuais</label>
     <div class="erro" id="cErr"></div>
@@ -972,9 +981,10 @@ function colarItens() {
     for (const l of linhas) {
       if (l.length < 3) continue;
       if (isNaN(Number(paraNum(l[1]))) || isNaN(Number(paraNum(l[2])))) continue; // cabeçalho
-      novos.push({ codigo: l[0], qtd: l[1], fob: l[2], familia: l[3] ? achaFam(l[3]) : (est.calc.itens[0] || {}).familia || '', peso: l[4] || '' });
+      novos.push({ codigo: l[0], qtd: l[1], fob: l[2], familia: l[3] ? achaFam(l[3]) : '', peso: l[4] || '' });
     }
     if (!novos.length) return void (m.querySelector('#cErr').textContent = 'Nenhuma linha reconhecida (código, quantidade, FOB).');
+    novos.forEach(completarDoCadastro);
     est.calc.itens = m.querySelector('#cSubst').checked ? novos : est.calc.itens.filter(x => numCalc(x.fob)).concat(novos);
     fecharModal(m); redesenhar();
   };
@@ -993,12 +1003,14 @@ async function salvarEstimativa() {
     resultado: arred(res) };
   const dataNum = p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada;
   const msg = `Fator estimado <b>${FT(res.fator)}</b> · total ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>
+    Os pesos digitados vão para o cadastro de produtos como validados.<br>
     O numerário previsto ${dataNum ? `entra no Fluxo de caixa projetado em <b>${dm(dataNum)}</b> (data prevista do numerário/chegada)` : 'é criado, mas <b>sem data</b>: informe a previsão de chegada ou do numerário para ele entrar no fluxo'}.<br><br>Salvar no pedido ${esc(p.pedido || '')} · ${esc(p.fornecedor)}?`;
   if (!await confirmar('Salvar estimativa', msg, 'Salvar')) return;
   const reg = { estimativa, fator_estimado: Math.round(res.fator * 1e6) / 1e6 };
   if (!p.fob_usd) reg.fob_usd = Math.round(res.fob_usd * 100) / 100;
   await gravar('imp_processos', reg, p.id, p, true);
   await numerarioDaEstimativa(p, res.numerario);
+  await gravarPesosDosItens(c.itens, `estimativa do pedido ${p.pedido || p.id}`, true);
   est.abertoId = p.id; abrir('processos'); await depoisDeGravar();
 }
 
@@ -1014,6 +1026,144 @@ async function numerarioDaEstimativa(p, valor) {
   else if (!pagamentosDe(p).some(c => !ehCambio(c) && c.pago))
     await inserirSemRecarregar('imp_cambios', { processo_id: p.id, empresa: p.empresa, tipo: 'Numerário', valor_previsto_brl: valor, data_prevista: data,
       no_fluxo: !!data, ordem: pagamentosDe(p).length + 1, observacao: obs + (data ? '' : ' Sem data prevista: informe a data para entrar no fluxo.') });
+}
+
+
+// ======================= Produtos (pesos e medidas) =======================
+const chaveProd = c => String(c || '').trim().toUpperCase().replace(/\s+/g, ' ');
+const prodDe = codigo => est.produtos[chaveProd(codigo)];
+// tag abaixo do código na calculadora
+function tagProduto(x) {
+  if (!String(x.codigo || '').trim()) return '';
+  const pr = prodDe(x.codigo);
+  if (!pr) return '<div class="nota">novo · não está no cadastro</div>';
+  const pesoIgual = pr.peso_liq_kg != null && Math.abs(numCalc(x.peso) - Number(pr.peso_liq_kg)) < 1e-9;
+  return `<div class="nota">${pr.validado ? '<span class="verde">✓ validado</span>' : '<span class="verm">a confirmar</span>'}${pr.peso_liq_kg != null && !pesoIgual ? ` · cadastro: ${nf(3).format(pr.peso_liq_kg)} kg` : ''}</div>`;
+}
+// completa família e peso do item a partir do cadastro (só o que estiver vazio); devolve true se mudou algo
+function completarDoCadastro(x) {
+  const pr = prodDe(x.codigo); if (!pr) return false;
+  let mudou = false;
+  if (!x.familia && pr.familia) { x.familia = pr.familia; mudou = true; }
+  if (!numCalc(x.peso) && pr.peso_liq_kg != null) { x.peso = String(pr.peso_liq_kg).replace('.', ','); mudou = true; }
+  return mudou;
+}
+// grava no cadastro o peso unitário dos itens com código (vira "validado": foi o usuário que informou ou confirmou)
+async function gravarPesosDosItens(itens, origem, silencioso) {
+  if (!podeEditar()) return 0;
+  const lista = [];
+  for (const x of itens) {
+    const cod = chaveProd(x.codigo), peso = numCalc(x.peso);
+    if (!cod || !peso) continue;
+    const pr = prodDe(cod);
+    if (pr && pr.validado && Math.abs(Number(pr.peso_liq_kg) - peso) < 1e-9 && (pr.familia || !x.familia)) continue;   // nada novo
+    lista.push({ codigo: cod, familia: x.familia || (pr && pr.familia) || null, peso_liq_kg: peso, validado: true,
+      fonte: pr && pr.fonte && Math.abs(Number(pr.peso_liq_kg) - peso) < 1e-9 ? pr.fonte : 'Informado na ' + origem });
+  }
+  if (!lista.length) return 0;
+  try { await gravarProdutos(lista); } catch (e) { if (!silencioso) throw e; return 0; }
+  return lista.length;
+}
+
+const CAMPOS_PROD = [['codigo', 'Código', 'text'], ['descricao', 'Descrição', 'text'], ['familia', 'Família (alíquota)', 'lista'], ['fornecedor', 'Fornecedor', 'lista'],
+  ['peso_liq_kg', 'Peso líquido unitário (kg)', 'num'], ['peso_bruto_kg', 'Peso bruto unitário (kg)', 'num'],
+  ['comprimento_cm', 'Comprimento (cm)', 'num'], ['largura_cm', 'Largura (cm)', 'num'], ['altura_cm', 'Altura (cm)', 'num'],
+  ['unidades_caixa', 'Unidades por caixa', 'num'], ['fonte', 'Fonte (packing list, DI, site…)', 'text'], ['link', 'Link da fonte', 'text'],
+  ['validado', 'Peso e medidas validados', 'chk'], ['observacao', 'Observação', 'area']];
+
+function renderProdutos(el) {
+  const ed = podeEditar(), f = est.filtroProd;
+  const todos = Object.values(est.produtos);
+  const b = f.busca.trim().toLowerCase();
+  const cols = [
+    { id: 'cod', nome: 'Código', v: x => x.codigo }, { id: 'desc', nome: 'Descrição', v: x => x.descricao },
+    { id: 'fam', nome: 'Família', v: x => x.familia }, { id: 'forn', nome: 'Fornecedor', v: x => x.fornecedor },
+    { id: 'pl', nome: 'Peso líq. unit. kg', cls: 'n', v: x => x.peso_liq_kg != null ? Number(x.peso_liq_kg) : null },
+    { id: 'pb', nome: 'Peso bruto unit. kg', cls: 'n', v: x => x.peso_bruto_kg != null ? Number(x.peso_bruto_kg) : null },
+    { id: 'med', nome: 'Medidas C×L×A cm', v: x => x.comprimento_cm ? Number(x.comprimento_cm) * Number(x.largura_cm || 0) * Number(x.altura_cm || 0) : null },
+    { id: 'fonte', nome: 'Fonte', v: x => x.fonte }, { id: 'st', nome: 'Situação', v: x => x.validado ? 1 : 0 },
+    { id: 'at', nome: 'Atualizado', v: x => x.atualizado_em }, { id: 'ac', nome: '' },
+  ];
+  const lista = ordenar('prod', todos.filter(x => (!f.status || (f.status === 'ok' ? x.validado : !x.validado))
+    && (!b || [x.codigo, x.descricao, x.familia, x.fornecedor].some(v => String(v || '').toLowerCase().includes(b)))), cols, { col: 'cod', dir: 'asc' });
+  const aConf = todos.filter(x => !x.validado).length;
+  const med = x => x.comprimento_cm ? [x.comprimento_cm, x.largura_cm, x.altura_cm].map(v => v != null ? nf(1).format(v) : '?').join(' × ') : '—';
+  el.innerHTML = `<div class="filtros">
+    ${[['', 'Todos'], ['ok', 'Validados'], ['conf', 'A confirmar']].map(([v, n]) => `<button class="chip" data-stp="${v}" aria-pressed="${f.status === v}">${n}${v === 'conf' && aConf ? ` (${aConf})` : ''}</button>`).join('')}
+    <div class="sep"></div>
+    <input class="busca" id="pBusca" type="search" placeholder="Buscar código, descrição, família, fornecedor…" value="${esc(f.busca)}">
+    ${ed ? '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn" id="pColar">Colar lista</button><button class="btn-pri" id="pNovo">+ Produto</button></span>' : ''}
+  </div>
+  <div class="card">
+    <div class="topo"><h2>${todos.length} produto(s) no cadastro</h2><span class="nota">peso líquido UNITÁRIO · usado pela calculadora para ratear o frete por peso, como na DI · "a confirmar" = sugestão ainda não conferida</span></div>
+    <div class="tabela-wrap"><table>
+      <thead>${cabecalho('prod', cols, { col: 'cod', dir: 'asc' })}</thead>
+      <tbody>${lista.length ? lista.map(x => `<tr>
+        <td><b>${esc(x.codigo)}</b></td><td>${esc(x.descricao || '—')}</td><td>${esc(x.familia || '—')}</td><td>${esc(x.fornecedor || '—')}</td>
+        <td class="n">${x.peso_liq_kg != null ? nf(3).format(x.peso_liq_kg) : '—'}</td><td class="n">${x.peso_bruto_kg != null ? nf(3).format(x.peso_bruto_kg) : '—'}</td>
+        <td class="d">${med(x)}</td>
+        <td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.fonte || 'link')}</a>` : esc(x.fonte || '—')}</td>
+        <td>${x.validado ? '<span class="tag ok">validado</span>' : '<span class="tag aviso">a confirmar</span>'}</td>
+        <td class="d">${x.atualizado_em ? dm(String(x.atualizado_em).slice(0, 10)) : '—'}</td>
+        <td class="n">${ed ? `${!x.validado ? `<button class="btn btn-mini" data-pval="${esc(x.codigo)}">Confirmar</button> ` : ''}<button class="btn btn-mini" data-ped="${esc(x.codigo)}">Editar</button>` : ''}</td></tr>`).join('')
+        : `<tr><td colspan="11" class="vazio">${todos.length ? 'Nenhum produto com esse filtro.' : 'Cadastro vazio. Os pesos entram aqui ao salvar estimativas, pelo "Colar lista" (ex.: packing list) ou em "+ Produto".'}</td></tr>`}</tbody>
+    </table></div>
+  </div>`;
+  ligarOrdenacao(el);
+  el.querySelectorAll('[data-stp]').forEach(bt => bt.onclick = () => { f.status = bt.dataset.stp; redesenhar(); });
+  const bu = $('#pBusca');
+  bu.oninput = () => { f.busca = bu.value; clearTimeout(bu._t); bu._t = setTimeout(() => { redesenhar(); const i = $('#pBusca'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
+  if (!ed) return;
+  $('#pNovo').onclick = () => formProduto(null);
+  $('#pColar').onclick = colarProdutos;
+  el.querySelectorAll('[data-ped]').forEach(bt => bt.onclick = () => formProduto(prodDe(bt.dataset.ped)));
+  el.querySelectorAll('[data-pval]').forEach(bt => bt.onclick = async () => {
+    const x = prodDe(bt.dataset.pval);
+    if (!await confirmar('Confirmar produto', `Confirmar <b>${esc(x.codigo)}</b> com peso líquido unitário de <b>${x.peso_liq_kg != null ? nf(3).format(x.peso_liq_kg) + ' kg' : '—'}</b>?`, 'Confirmar')) return;
+    await gravarProdutos([{ codigo: x.codigo, validado: true }]); redesenhar();
+  });
+}
+
+function formProduto(x) {
+  const novo = !x;
+  const fams = Object.keys(est.aliquotas).sort(), forns = Object.keys(est.fornecedores).sort();
+  form(novo ? 'Novo produto' : 'Produto ' + esc(x.codigo), [['', CAMPOS_PROD.map(c => c[2] === 'lista' ? [...c, c[0] === 'familia' ? fams : forns] : c)]],
+    x || { validado: true }, async v => {
+      if (!v.codigo) throw new Error('Informe o código.');
+      v.codigo = chaveProd(v.codigo);
+      if (novo && prodDe(v.codigo)) throw new Error('Esse código já está no cadastro.');
+      if (!novo && v.codigo !== x.codigo) throw new Error('O código não pode ser alterado; cadastre um novo produto.');
+      await gravarProdutos([v]); redesenhar();
+    }, novo ? '' : '<div style="margin-top:12px"><button type="button" class="btn btn-mini btn-perigo" id="btnExclProd">Excluir produto</button></div>').m.querySelectorAll('#btnExclProd').forEach(bt => bt.onclick = async () => {
+      if (!await confirmar('Excluir produto', `Excluir <b>${esc(x.codigo)}</b> do cadastro?`, 'Excluir')) return;
+      if (est.demo) delete est.produtos[chaveProd(x.codigo)];
+      else { const { error } = await sb.from('imp_produtos').delete().eq('codigo', x.codigo); if (error) return alertaErro(error.message); delete est.produtos[chaveProd(x.codigo)]; }
+      document.querySelectorAll('.modal-fundo').forEach(m => m.remove()); redesenhar();
+    });
+}
+
+function colarProdutos() {
+  const m = abrirModal(`<h2>Colar lista de produtos</h2>
+    <div class="nota" style="margin-bottom:8px">Copie do Excel (ex.: packing list) as colunas <b>Código · Descrição · Família · Peso líquido unitário (kg) · Peso bruto unitário (kg) · Comprimento · Largura · Altura (cm)</b>. Só código e peso líquido são obrigatórios.</div>
+    <textarea id="pTxt" rows="10" style="width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)"></textarea>
+    <div class="form" style="margin-top:8px"><label><span>Fonte</span><input id="pFonte" value="Packing list"></label>
+      <label class="chk"><input type="checkbox" id="pVal" checked><span>Marcar como validados</span></label></div>
+    <div class="erro" id="pErr"></div>
+    <div class="rodape"><button class="btn" data-fechar>Cancelar</button><button class="btn-pri" id="pOk">Gravar</button></div>`);
+  m.querySelector('#pOk').onclick = async () => {
+    const fams = Object.keys(est.aliquotas);
+    const achaFam = t => { t = String(t || '').trim(); return !t ? null : fams.find(f2 => f2.toLowerCase() === t.toLowerCase()) || t.toUpperCase(); };
+    const num = t => { const v = paraNum(t); return v === '' || isNaN(Number(v)) ? null : Number(v); };
+    const lista = [];
+    for (const l of m.querySelector('#pTxt').value.split(/\r?\n/).map(x => x.split(/\t|;/).map(y => y.trim()))) {
+      if (!l[0] || num(l[3]) == null) continue;   // pula cabeçalho e linhas sem peso
+      lista.push({ codigo: chaveProd(l[0]), descricao: l[1] || null, familia: achaFam(l[2]), peso_liq_kg: num(l[3]), peso_bruto_kg: num(l[4]),
+        comprimento_cm: num(l[5]), largura_cm: num(l[6]), altura_cm: num(l[7]), fonte: m.querySelector('#pFonte').value.trim() || null, validado: m.querySelector('#pVal').checked });
+    }
+    if (!lista.length) return void (m.querySelector('#pErr').textContent = 'Nenhuma linha reconhecida (precisa de código e peso líquido na 4ª coluna).');
+    try { await gravarProdutos(lista); fecharModal(m); alertaInfo(`${lista.length} produto(s) gravado(s).`); redesenhar(); }
+    catch (e) { m.querySelector('#pErr').textContent = e.message; }
+  };
 }
 
 // ======================= formulários =======================
@@ -1204,6 +1354,17 @@ async function gravarFornecedor(f) {
   if (error) throw new Error(error.message);
 }
 const mapa = { imp_processos: 'processos', imp_cambios: 'cambios', imp_creditos: 'creditos' };
+async function gravarProdutos(lista) {
+  if (!lista.length) return;
+  const agora = new Date().toISOString();
+  lista = lista.map(x => ({ ...x, atualizado_em: agora }));
+  if (est.demo) { for (const x of lista) est.produtos[chaveProd(x.codigo)] = { ...(est.produtos[chaveProd(x.codigo)] || {}), ...x }; return; }
+  const { error } = await sb.from('imp_produtos').upsert(lista, { onConflict: 'codigo' });
+  if (error) { alertaErro(error.message); throw new Error(error.message); }
+  const pr = await buscarTodos(() => sb.from('imp_produtos').select('*').order('codigo'));
+  est.produtos = Object.fromEntries(pr.map(x => [chaveProd(x.codigo), numerico(x)]));
+}
+function alertaInfo(msg) { abrirModal(`<div>${msg}</div><div class="rodape"><button class="btn-pri" data-fechar>OK</button></div>`); }
 async function gravarAliquotas(lista) {
   if (est.demo) { for (const a of lista) est.aliquotas[a.familia] = a; return; }
   const { error } = await sb.from('imp_aliquotas').upsert(lista);
@@ -1234,6 +1395,8 @@ async function recarregar() {
   ]);
   est.processos = procs.map(numerico); est.cambios = cambios.map(numerico); est.creditos = creditos.map(numerico);
   est.fornecedores = Object.fromEntries(forns.map(f => [f.nome, f]));
+  // cadastro de produtos (peso unitário e medidas)
+  try { const pr = await buscarTodos(() => sb.from('imp_produtos').select('*').order('codigo')); est.produtos = Object.fromEntries(pr.map(x => [chaveProd(x.codigo), numerico(x)])); } catch (_) { est.produtos = {}; }
   // alíquotas por família de produto (calculadora aduaneira)
   try { const al = await buscarTodos(() => sb.from('imp_aliquotas').select('*').order('familia')); est.aliquotas = Object.fromEntries(al.map(a => [a.familia, numerico(a)])); } catch (_) { est.aliquotas = {}; }
   // câmbio de referência do painel (PTAX ou manual) para a calculadora
