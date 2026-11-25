@@ -786,7 +786,8 @@ function calcularAduaneiro(itens, pr, aliq) {
   fe.adicoes = adicoes; fe.rateio_frete = porPeso ? 'peso' : 'fob';
   // ---- DHL / courier (planilha de cálculo aduaneiro)
   dh.frete_brl = fu * di * 1.06; dh.outras_despesas = n(pr.dhl_despesas);
-  const itD = linhas.map(x => { const a = x.a || {}; const iiD = n(a.ii_dhl) * x.fobT * di, icD = n(a.icms_dhl) * x.fobT * di; return { ii: iiD, icms: icD, imp: iiD + icD }; });
+  // base do II e do ICMS no DHL = (FOB + frete internacional rateado) × dólar DI
+  const itD = linhas.map(x => { const a = x.a || {}; const baseD = (x.fobT + fu * parteFrete(x)) * di; const iiD = n(a.ii_dhl) * baseD, icD = n(a.icms_dhl) * baseD; return { ii: iiD, icms: icD, imp: iiD + icD }; });
   const somaD = itD.reduce((s, x) => s + x.imp, 0);
   linhas.forEach((x, i) => {
     const d = itD[i]; dh.ii += d.ii; dh.icms += d.icms;
