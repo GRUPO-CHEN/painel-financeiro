@@ -2125,6 +2125,17 @@ function renderProj(el) {
           <td class="n ${g.ent - g.sai < 0 ? 'neg' : ''}">${R(g.ent - g.sai)}</td><td class="n ${g.menor < 0 ? 'neg' : ''}">${R(g.menor)}</td><td class="n ${g.saldo < 0 ? 'neg' : ''}"><b>${R(g.saldo)}</b></td></tr>`).join('')}</tbody>
       </table></div>
     </div>
+    <div class="card cheio">
+      <h2>Dia a dia · próximos 30 dias</h2>
+      <div class="nota">Pela data de vencimento${est.inclVencidos ? ' · o 1º dia inclui os títulos já vencidos' : ''}</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Dia</th><th class="n">Entradas</th><th class="n">Saídas</th>${temArea('importacoes') ? '<th class="n">Importações</th>' : ''}<th class="n">Resultado</th><th class="n">Saldo no fim do dia</th></tr></thead>
+        <tbody>${p.dias.slice(0, 30).map(x => { const dw = parseISO(x.dt).getDay(), fds = dw === 0 || dw === 6, res = x.ent - x.sai;
+          return `<tr${fds ? ' style="color:var(--text-3)"' : ''}><td>${ddmmaa(x.dt)} <span class="sub">${['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'][dw]}</span></td>
+          <td class="n">${x.ent ? R(x.ent) : '—'}</td><td class="n">${x.sai - x.imp ? R(x.sai - x.imp) : '—'}</td>${temArea('importacoes') ? `<td class="n">${x.imp ? R(x.imp) : '—'}</td>` : ''}
+          <td class="n ${res < 0 ? 'neg' : ''}">${res ? R(res) : '—'}</td><td class="n ${x.saldo < 0 ? 'neg' : ''}"><b>${R(x.saldo)}</b></td></tr>`; }).join('')}</tbody>
+      </table></div>
+    </div>
   </div>`;
 
   graficoLinha($('#gProj'), p.dias.map(x => [x.dt, x.saldo]), { altura: 260, nome: 'Saldo projetado' });
