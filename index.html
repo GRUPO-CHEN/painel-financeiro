@@ -767,6 +767,27 @@ async function lerImportacoes() {
   const cam = (par || []).find(p => p.chave === 'cambio'); if (cam) est.cambio = cam.valor;
   const { data: cfg } = await sb.from('config_painel').select('valor').eq('chave', 'ptax').maybeSingle();
   if (cfg) est.ptax = cfg.valor;
+  await lerImpFluxo();
+}
+
+// pagamentos do módulo Importações (imp_cambios) marcados "No fluxo" e ainda não pagos
+async function lerImpFluxo() {
+  if (est.demo) return;
+  try {
+    const parc = await buscarTodos(() => sb.from('imp_cambios').select('id,processo_id,empresa,tipo,valor_usd,valor_previsto_brl,taxa_di,data_prevista,observacao')
+      .eq('no_fluxo', true).eq('pago', false).order('data_prevista'));
+    const ids = [...new Set(parc.map(c => c.processo_id))];
+    const procs = ids.length ? await buscarTodos(() => sb.from('imp_processos').select('id,empresa,fornecedor,pedido,cambio_di,estimativa,status').in('id', ids)) : [];
+    const pm = new Map(procs.map(x => [x.id, x]));
+    est.impFluxo = parc.filter(c => c.data_prevista && pm.has(c.processo_id) && pm.get(c.processo_id).status !== 'fechado').map(c => ({ ...c, processo: pm.get(c.processo_id) }));
+  } catch (_) { est.impFluxo = []; }
+}
+// valor em R$ de um pagamento do módulo: câmbio = US$ × (câmbio DI, taxa da parcela, dólar da estimativa ou câmbio do painel)
+function valorImpModulo(c) {
+  if ((c.tipo || 'Câmbio') !== 'Câmbio') return { valor: Number(c.valor_previsto_brl || 0), taxa: null };
+  const p = c.processo || {};
+  const taxa = Number(p.cambio_di) || Number(c.taxa_di) || Number(p.estimativa && p.estimativa.premissas && p.estimativa.premissas.dolar_cambio) || cambioAtual();
+  return { valor: Number(c.valor_usd || 0) * taxa, taxa };
 }
 
 async function lerUsuarios() {
@@ -777,8 +798,13 @@ async function lerUsuarios() {
 // importações entram como saídas no fluxo projetado
 function importacoesNoFluxo(hoje, ate) {
   if (!temArea('importacoes')) return [];
-  return est.importacoes.filter(i => i.no_fluxo && est.empresas.includes(i.empresa) && i.previsao <= ate && i.status !== 'Estoque')
-    .sort((a, b) => a.previsao.localeCompare(b.previsao));
+  const antigas = est.importacoes.filter(i => i.no_fluxo && est.empresas.includes(i.empresa) && i.previsao <= ate && i.status !== 'Estoque');
+  const modulo = (est.impFluxo || []).filter(c => est.empresas.includes(c.empresa) && c.data_prevista <= ate).map(c => {
+    const v = valorImpModulo(c);
+    return { modulo: true, id: c.id, processo_id: c.processo_id, previsao: c.data_prevista, empresa: c.empresa, tipo: c.tipo || 'Câmbio',
+      fornecedor: c.processo.fornecedor, pedido: c.processo.pedido, valor_brl: v.valor, valor_usd: c.valor_usd, taxa: v.taxa, observacao: c.observacao };
+  });
+  return antigas.concat(modulo).sort((a, b) => a.previsao.localeCompare(b.previsao));
 }
 
 function avisoSincronizacao() {
@@ -1997,7 +2023,8 @@ function calcularProj() {
   const imps = importacoesNoFluxo(d.hoje, d.ate);
   const impLinhas = imps.map(i => [i.previsao < d.hoje ? null : i.previsao, 1, valorImp(i)]);
   const pagarTudo = d.pagar.concat(impLinhas);
-  const mr = mapa(d.receber), mp = mapa(pagarTudo);
+  const mr = mapa(d.receber), mp = mapa(pagarTudo), mi = mapa(impLinhas);
+  const vencImp = impLinhas.filter(r => !r[0]).reduce((s, r) => s + r[2], 0);
   const vencRec = d.receber.filter(r => !r[0]).reduce((s, r) => s + r[2], 0);
   const vencRecQtd = d.receber.filter(r => !r[0]).reduce((s, r) => s + r[1], 0);
   const vencPag = pagarTudo.filter(r => !r[0]).reduce((s, r) => s + r[2], 0);
@@ -2006,15 +2033,15 @@ function calcularProj() {
   const dias = [];
   let saldo = d.saldoHoje;
   for (let dt = d.hoje; dt <= d.ate; dt = somaDias(dt, 1)) {
-    let ent = mr.get(dt) || 0, sai = mp.get(dt) || 0;
-    if (est.inclVencidos && dt === d.hoje) { ent += vencRec; sai += vencPag; }
+    let ent = mr.get(dt) || 0, sai = mp.get(dt) || 0, imp = mi.get(dt) || 0;
+    if (est.inclVencidos && dt === d.hoje) { ent += vencRec; sai += vencPag; imp += vencImp; }
     saldo += ent - sai;
-    dias.push({ dt, ent, sai, saldo });
+    dias.push({ dt, ent, sai, imp, saldo });   // sai = títulos + importações; imp = só importações
   }
   const menor = dias.reduce((m, x) => x.saldo < m.saldo ? x : m, dias[0] || { saldo: d.saldoHoje, dt: d.hoje });
   const primeiroNeg = dias.find(x => x.saldo < 0);
   return { dias, menor, primeiroNeg, vencRec, vencRecQtd, vencPag, vencPagQtd, imps, totImp,
-    ent: dias.reduce((s, x) => s + x.ent, 0), sai: dias.reduce((s, x) => s + x.sai, 0) };
+    ent: dias.reduce((s, x) => s + x.ent, 0), sai: dias.reduce((s, x) => s + x.sai, 0), imp: dias.reduce((s, x) => s + x.imp, 0) };
 }
 
 function renderProj(el) {
@@ -2026,16 +2053,16 @@ function renderProj(el) {
   const grupos = new Map();
   for (const x of p.dias) {
     const k = semanal ? semana(x.dt) : x.dt;
-    const g = grupos.get(k) || { k, ent: 0, sai: 0, saldo: 0, menor: Infinity };
-    g.ent += x.ent; g.sai += x.sai; g.saldo = x.saldo; g.menor = Math.min(g.menor, x.saldo);
+    const g = grupos.get(k) || { k, ent: 0, sai: 0, imp: 0, saldo: 0, menor: Infinity };
+    g.ent += x.ent; g.sai += x.sai; g.imp += x.imp; g.saldo = x.saldo; g.menor = Math.min(g.menor, x.saldo);
     grupos.set(k, g);
   }
   const gs = [...grupos.values()];
   const tabSem = new Map();
   for (const x of p.dias) {
     const k = semana(x.dt);
-    const g = tabSem.get(k) || { k, ent: 0, sai: 0, saldo: 0, menor: Infinity };
-    g.ent += x.ent; g.sai += x.sai; g.saldo = x.saldo; g.menor = Math.min(g.menor, x.saldo);
+    const g = tabSem.get(k) || { k, ent: 0, sai: 0, imp: 0, saldo: 0, menor: Infinity };
+    g.ent += x.ent; g.sai += x.sai; g.imp += x.imp; g.saldo = x.saldo; g.menor = Math.min(g.menor, x.saldo);
     tabSem.set(k, g);
   }
 
@@ -2050,7 +2077,8 @@ function renderProj(el) {
   <div class="kpis">
     ${kpi('Saldo em bancos hoje', R0(d.saldoHoje), est.bancosSel ? 'bancos selecionados' : 'todos os bancos', d.saldoHoje < 0 ? 'neg' : '')}
     ${kpi('Entradas previstas', R0(p.ent), 'contas a receber em aberto')}
-    ${kpi('Saídas previstas', R0(p.sai), p.totImp ? `inclui ${R0(p.totImp)} de importações` : 'contas a pagar em aberto')}
+    ${kpi('Saídas previstas', R0(p.sai - p.imp), 'contas a pagar em aberto')}
+    ${temArea('importacoes') ? kpi('Importações previstas', R0(p.imp), p.imps.length ? `${p.imps.length} pagamento(s) do módulo Importações` : 'nenhuma marcada "No fluxo"') : ''}
     ${kpi(`Saldo projetado em ${ddmmaa(fim.dt)}`, R0(fim.saldo), '', fim.saldo < 0 ? 'neg' : '')}
     ${kpi(p.menor.saldo < 0 ? '⚠ Menor saldo previsto' : 'Menor saldo previsto', R0(p.menor.saldo),
         p.primeiroNeg ? `fica negativo a partir de ${ddmmaa(p.primeiroNeg.dt)}` : `em ${ddmmaa(p.menor.dt)}`, p.menor.saldo < 0 ? 'alerta' : '')}
@@ -2064,23 +2092,36 @@ function renderProj(el) {
     <div class="card cheio">
       <h2>Entradas × saídas previstas</h2>
       <div class="nota">${semanal ? 'Por semana' : 'Por dia'} de vencimento</div>
-      <div class="legenda"><span><i style="background:var(--s1)"></i>Entradas</span><span><i style="background:var(--s2)"></i>Saídas</span></div>
+      <div class="legenda"><span><i style="background:var(--s1)"></i>Entradas</span><span><i style="background:var(--s2)"></i>Saídas</span>${p.imp ? '<span><i style="background:#8a5cd1"></i>Importações</span>' : ''}</div>
       <div class="grafico" id="gProjBar"></div>
     </div>
-    ${p.imps.length ? `<div class="card cheio">
-      <h2>Importações no fluxo</h2>
-      <div class="nota">Cadastradas na aba Importações · câmbio usado: ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })}</div>
+    ${temArea('importacoes') ? `<div class="card cheio">
+      <div class="controles" style="margin-bottom:4px"><h2 style="margin-right:auto">Importações no fluxo</h2>
+        <span class="rot">Câmbio para parcelas sem taxa:</span>
+        <label class="rot"><input type="radio" name="camModo" value="manual" ${est.cambio.modo !== 'ptax' ? 'checked' : ''} ${podeEditar() ? '' : 'disabled'}> Manual</label>
+        <input type="text" inputmode="decimal" id="camManual" value="${Number(est.cambio.manual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}" style="width:90px;font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)" ${podeEditar() ? '' : 'disabled'}>
+        <label class="rot"><input type="radio" name="camModo" value="ptax" ${est.cambio.modo === 'ptax' ? 'checked' : ''} ${podeEditar() ? '' : 'disabled'}> PTAX${est.ptax && est.ptax.valor ? ' ' + Number(est.ptax.valor).toLocaleString('pt-BR', { minimumFractionDigits: 4 }) : ''}</label>
+        ${podeEditar() ? '<button id="camSalvar">Salvar câmbio</button>' : ''}<span class="msg-ok" id="camMsg" style="margin:0"></span>
+      </div>
+      <div class="nota">Pagamentos marcados "No fluxo" nos processos do módulo Importações, ainda não pagos. Depois de pago, o valor vem do ERP. Alterar a data aqui altera o processo.</div>
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Previsão</th><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Status</th><th class="n">Valor</th></tr></thead>
-        <tbody>${p.imps.map(i => `<tr><td>${ddmmaa(i.previsao)}${i.previsao < d.hoje ? ' <span class="selo">atrasada</span>' : ''}</td><td>${esc(nomeEmpresa(i.empresa))}</td><td>${esc(i.tipo)}</td><td>${esc(i.fornecedor || '')}</td><td>${esc(i.status || '')}</td><td class="n">${R(valorImp(i))}</td></tr>`).join('')}
-        <tr class="total"><td colspan="5">Total</td><td class="n">${R(p.totImp)}</td></tr></tbody>
+        <thead><tr><th>Previsão</th><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Pedido</th><th class="n">US$</th><th class="n">Taxa</th><th class="n">Valor</th><th></th></tr></thead>
+        <tbody>${p.imps.length ? p.imps.map(i => `<tr>
+          <td>${i.modulo && podeEditar() ? `<input type="date" class="imp-data" data-impc="${i.id}" value="${i.previsao}" style="font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--text)">` : ddmmaa(i.previsao)}${i.previsao < d.hoje ? ' <span class="selo">atrasada</span>' : ''}</td>
+          <td>${esc(nomeEmpresa(i.empresa))}</td><td>${esc(i.tipo)}</td><td>${esc(i.fornecedor || '')}${i.observacao ? `<div class="sub">${esc(i.observacao)}</div>` : ''}</td><td>${esc(i.pedido || '')}</td>
+          <td class="n">${i.valor_usd ? usd.format(i.valor_usd) : ''}</td><td class="n">${i.taxa ? i.taxa.toLocaleString('pt-BR', { minimumFractionDigits: 4 }) : ''}</td>
+          <td class="n">${R(valorImp(i))}</td>
+          <td>${i.modulo ? `<button data-impp="${i.processo_id}">Abrir processo</button>` : ''}</td></tr>`).join('')
+          : '<tr><td colspan="9" class="vazio">Nenhum pagamento de importação no fluxo. Marque "No fluxo" nos pagamentos do processo (aba Importações).</td></tr>'}
+        ${p.imps.length ? `<tr class="total"><td colspan="7">Total</td><td class="n">${R(p.totImp)}</td><td></td></tr>` : ''}</tbody>
       </table></div>
+      <div class="msg-erro" id="impDataErro"></div>
     </div>` : ''}
     <div class="card cheio">
       <h2>Semana a semana</h2>
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Semana de</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Resultado</th><th class="n">Menor saldo</th><th class="n">Saldo no fim</th></tr></thead>
-        <tbody>${[...tabSem.values()].map(g => `<tr><td>${ddmmaa(g.k < d.hoje ? d.hoje : g.k)}</td><td class="n">${R(g.ent)}</td><td class="n">${R(g.sai)}</td>
+        <thead><tr><th>Semana de</th><th class="n">Entradas</th><th class="n">Saídas</th>${temArea('importacoes') ? '<th class="n">Importações</th>' : ''}<th class="n">Resultado</th><th class="n">Menor saldo</th><th class="n">Saldo no fim</th></tr></thead>
+        <tbody>${[...tabSem.values()].map(g => `<tr><td>${ddmmaa(g.k < d.hoje ? d.hoje : g.k)}</td><td class="n">${R(g.ent)}</td><td class="n">${R(g.sai - g.imp)}</td>${temArea('importacoes') ? `<td class="n">${g.imp ? R(g.imp) : '—'}</td>` : ''}
           <td class="n ${g.ent - g.sai < 0 ? 'neg' : ''}">${R(g.ent - g.sai)}</td><td class="n ${g.menor < 0 ? 'neg' : ''}">${R(g.menor)}</td><td class="n ${g.saldo < 0 ? 'neg' : ''}"><b>${R(g.saldo)}</b></td></tr>`).join('')}</tbody>
       </table></div>
     </div>
@@ -2091,11 +2132,22 @@ function renderProj(el) {
     cats: gs.map(g => g.k), rotulo: semanal ? (s => 'sem ' + ddmm(s)) : ddmm, agrupado: true,
     series: [
       { nome: 'Entradas', cor: 'var(--s1)', valores: gs.map(g => g.ent) },
-      { nome: 'Saídas', cor: 'var(--s2)', valores: gs.map(g => g.sai) },
+      { nome: 'Saídas', cor: 'var(--s2)', valores: gs.map(g => g.sai - g.imp) },
+      ...(p.imp ? [{ nome: 'Importações', cor: '#8a5cd1', valores: gs.map(g => g.imp) }] : []),
     ],
   });
   el.querySelectorAll('[data-h]').forEach(b => b.onclick = () => { est.horizonte = Number(b.dataset.h); carregar(); });
   $('#inclVenc').onchange = ev => { est.inclVencidos = ev.target.checked; render(); };
+  // importações: alterar a data aqui grava no processo (imp_cambios.data_prevista)
+  el.querySelectorAll('[data-impc]').forEach(inp => inp.onchange = async () => {
+    const id = Number(inp.dataset.impc), nova = inp.value;
+    if (!nova) return;
+    const { error } = await sb.from('imp_cambios').update({ data_prevista: nova }).eq('id', id);
+    if (error) { $('#impDataErro').textContent = 'Não foi possível alterar a data: ' + error.message; return; }
+    await lerImpFluxo(); render();
+  });
+  el.querySelectorAll('[data-impp]').forEach(b => b.onclick = () => { est.impAbrirId = Number(b.dataset.impp); irParaAba('importacoes'); });
+  ligarCambio(el);
 }
 
 // ======================= janelas (modal) =======================
@@ -2154,12 +2206,13 @@ function ligarSeletorImportacoes(el) {
   el.querySelectorAll('[data-impv]').forEach(b => b.onclick = () => { est.impVisao = b.dataset.impv; render(); });
 }
 function renderImportacoes(el) {
-  if ((est.impVisao || 'modulo') === 'modulo') {
+  const abrirId = est.impAbrirId; est.impAbrirId = null;
+  if (abrirId) { const fr0 = el.querySelector('#impModulo'); if (fr0) fr0.remove(); }
+  if (true) {
     // não recria o módulo nas atualizações automáticas (não perde o que está sendo digitado)
     const ja = el.querySelector('#impModulo');
     if (ja) { ja.style.height = Math.max(560, innerHeight - ja.getBoundingClientRect().top - 16) + 'px'; return; }
-    el.innerHTML = seletorImportacoes() + '<iframe id="impModulo" src="importacoes.html" title="Módulo de Importações" style="width:100%;border:0;display:block;min-height:560px;background:transparent"></iframe>';
-    ligarSeletorImportacoes(el);
+    el.innerHTML = `<iframe id="impModulo" src="importacoes.html${abrirId ? '#processos/' + abrirId : ''}" title="Módulo de Importações" style="width:100%;border:0;display:block;min-height:560px;background:transparent"></iframe>`;
     const fr = el.querySelector('#impModulo');
     const ajustar = () => { if (!fr.isConnected) return removeEventListener('resize', ajustar); fr.style.height = Math.max(560, innerHeight - fr.getBoundingClientRect().top - 16) + 'px'; };
     ajustar(); addEventListener('resize', ajustar);
@@ -2251,6 +2304,25 @@ function renderImportacoes(el) {
     render(); $('#camMsg').textContent = 'Câmbio salvo.';
   };
 }
+
+// câmbio usado para converter parcelas de importação sem taxa (manual ou PTAX)
+function ligarCambio(el) {
+  const bt = el.querySelector('#camSalvar'); if (!bt) return;
+  bt.onclick = async () => {
+    const modo = el.querySelector('input[name=camModo]:checked').value;
+    const t = String(el.querySelector('#camManual').value || '').trim();
+    const manual = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
+    if (modo === 'manual' && !(manual > 0)) return void (el.querySelector('#camMsg').textContent = 'Informe um câmbio válido.');
+    if (modo === 'ptax' && !(est.ptax && est.ptax.valor)) return void (el.querySelector('#camMsg').textContent = 'PTAX ainda não disponível; use manual.');
+    est.cambio = { modo, manual };
+    if (!est.demo) {
+      const { error } = await sb.from('parametros').update({ valor: est.cambio }).eq('chave', 'cambio');
+      if (error) return mostrarErro(error.message);
+    }
+    render(); const m = document.querySelector('#camMsg'); if (m) m.textContent = 'Câmbio salvo.';
+  };
+}
+function irParaAba(aba) { const b = document.querySelector(`.aba[data-aba="${aba}"]`); if (b) b.click(); }
 
 function formImportacao(i) {
   const novo = !i;
