@@ -12,13 +12,11 @@
 <meta name="apple-mobile-web-app-title" content="Importações">
 <!--
   MÓDULO IMPORTAÇÕES (COMPRAS) — projeto separado do Painel Financeiro.
-  Regras para não misturar com o financeiro:
-   • Este arquivo é independente: não altera nem depende do index.html.
-   • Usa o mesmo login e o mesmo Supabase (config.js), só para leitura do perfil.
-   • Tabelas novas deste módulo no Supabase usam o prefixo  imp_  (ex.: imp_processos).
-     A tabela antiga "importacoes" (do financeiro) NÃO é alterada por aqui.
-   • O vínculo com o financeiro será feito depois, pela aba Importações do painel
-     (contas a pagar das importações).
+   • Arquivo independente: não altera nem depende do index.html.
+   • Mesmo login e mesmo Supabase (config.js).
+   • Tabelas do módulo: imp_fornecedores, imp_processos, imp_cambios, imp_creditos
+     (criadas por MIGRACAO-IMPORTACOES-2026-11-25.sql). A tabela "importacoes" do financeiro não é tocada.
+   • Fator de importação = (câmbios R$ + nacionalização R$) / FOB US$
    • Para criar uma sub-aba: acrescente um item em SUBABAS e uma função render.
 -->
 <style>
@@ -26,7 +24,8 @@
   color-scheme: light;
   --bg: #f3f2ef; --surface: #fcfcfb; --line: #e4e2dd; --grid: #ebe9e4;
   --text: #0b0b0b; --text-2: #52514e; --text-3: #7a7974;
-  --accent: #2F64E0; --s1-soft: #bcd0f7; --critical: #d03b3b; --good: #00AD57;
+  --accent: #2F64E0; --s1-soft: #dbe5fb; --critical: #d03b3b; --crit-soft: #fbe3e3;
+  --good: #00895a; --good-soft: #dcf3e8; --warn: #b26a00; --warn-soft: #fdeccf;
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.03);
 }
 @media (prefers-color-scheme: dark) {
@@ -34,30 +33,99 @@
     color-scheme: dark;
     --bg: #121211; --surface: #1a1a19; --line: #2c2c2a; --grid: #262624;
     --text: #f0efec; --text-2: #c3c2b7; --text-3: #92918a;
-    --accent: #5b85f2; --s1-soft: #1e3f86; --good: #1fc472; --shadow: none;
+    --accent: #5b85f2; --s1-soft: #1e2f57; --critical: #ef6b6b; --crit-soft: #4a1f1f;
+    --good: #1fc472; --good-soft: #143a27; --warn: #f0a63a; --warn-soft: #43300f; --shadow: none;
   }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
 [hidden] { display: none !important; }
-.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
-header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 20px 24px 48px; }
+header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
 header img { height: 30px; }
 header h1 { font-size: 20px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
-header .sub { color: var(--text-3); font-size: 12.5px; }
+.sub { color: var(--text-3); font-size: 12.5px; }
 header .dir { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-a.voltar, button.leve { color: var(--text-2); text-decoration: none; font: inherit; font-size: 13px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
-a.voltar:hover, button.leve:hover { color: var(--text); border-color: var(--text-3); }
+button { font: inherit; }
+.btn, a.btn { color: var(--text-2); text-decoration: none; font-size: 13px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+.btn:hover { color: var(--text); border-color: var(--text-3); }
+.btn-pri { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-pri:disabled { opacity: .5; cursor: default; }
+.btn-mini { font-size: 12px; padding: 3px 8px; }
+.btn-perigo { color: var(--critical); }
 .subabas { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
-.subaba { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.subaba { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
 .subaba:hover { color: var(--text); }
 .subaba[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 16px 18px; }
-.card h2 { font-size: 15px; font-weight: 620; margin: 0 0 4px; }
-.nota { color: var(--text-3); font-size: 12.5px; }
-.vazio { color: var(--text-3); text-align: center; padding: 36px 12px; }
+.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.chip { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; color: var(--text-2); font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.sep { width: 1px; height: 22px; background: var(--line); }
+input.busca, select.sel { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; }
+input.busca { min-width: 220px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.kpi, .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.kpi { padding: 14px 16px; }
+.kpi .rot { color: var(--text-2); font-size: 12.5px; }
+.kpi .val { font-size: 22px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kpi .det { color: var(--text-3); font-size: 12px; margin-top: 2px; }
+.card { padding: 14px 16px 12px; min-width: 0; margin-bottom: 14px; }
+.card h2 { font-size: 14.5px; font-weight: 620; margin: 0; }
+.card .topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.card .topo .acoes { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.nota { color: var(--text-3); font-size: 12px; }
+.grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grade2 > .card { margin-bottom: 0; }
+.tabela-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--text-2); font-size: 12px; padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.d { white-space: nowrap; font-variant-numeric: tabular-nums; }
+tr.clic { cursor: pointer; }
+tr.clic:hover td { background: var(--s1-soft); }
+tfoot td { font-weight: 650; border-bottom: 0; }
+.vazio { color: var(--text-3); text-align: center; padding: 28px 12px; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; background: var(--grid); color: var(--text-2); }
+.tag.ok { background: var(--good-soft); color: var(--good); }
+.tag.alerta { background: var(--crit-soft); color: var(--critical); }
+.tag.aviso { background: var(--warn-soft); color: var(--warn); }
+.tag.azul { background: var(--s1-soft); color: var(--accent); }
+.verm { color: var(--critical); }
+.verde { color: var(--good); }
+.voltar { margin-bottom: 12px; }
+.ficha-tit { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.ficha-tit h2 { font-size: 19px; margin: 0; }
+.campos { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 16px; }
+.campos .c .r { color: var(--text-3); font-size: 12px; }
+.campos .c .v { font-variant-numeric: tabular-nums; }
+.linha-tempo { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.etapa { border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.etapa .t { font-weight: 600; font-size: 12.5px; margin-bottom: 4px; }
+.etapa .l { font-size: 12px; color: var(--text-3); }
+.etapa .l b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.etapa.feito { border-color: var(--good); background: var(--good-soft); }
+.etapa.atraso { border-color: var(--critical); background: var(--crit-soft); }
+.fator-box { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.fator-box .kpi { box-shadow: none; }
+/* modal */
+.modal-fundo { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 16px; z-index: 50; }
+.modal { background: var(--surface); border-radius: 14px; width: 100%; max-width: 760px; max-height: 92vh; overflow: auto; padding: 20px 22px; border: 1px solid var(--line); }
+.modal h2 { margin: 0 0 14px; font-size: 17px; }
+.modal .grupo-tit { font-weight: 650; font-size: 12.5px; color: var(--text-2); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+.form { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; }
+.form label { display: block; }
+.form label span { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 3px; }
+.form input, .form select, .form textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13.5px; }
+.form label.chk { display: flex; align-items: center; gap: 8px; padding-top: 18px; }
+.form label.chk input { width: auto; }
+.form label.chk span { margin: 0; }
+.form .largo { grid-column: 1 / -1; }
+.modal .rodape { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+.modal .erro { color: var(--critical); font-size: 13px; margin-top: 8px; min-height: 1em; }
+/* login */
 .tela-login { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); padding: 20px; }
 .caixa-login { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px 24px; box-shadow: var(--shadow); }
 .caixa-login img { height: 34px; display: block; margin-bottom: 14px; }
@@ -66,9 +134,13 @@ a.voltar:hover, button.leve:hover { color: var(--text); border-color: var(--text
 .campo { display: block; margin-bottom: 12px; }
 .campo span { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 4px; }
 .campo input { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
-.btn-pri { width: 100%; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.caixa-login .btn-pri { width: 100%; padding: 10px; }
 .erro { color: var(--critical); font-size: 13px; min-height: 1.2em; margin-top: 8px; }
-@media (max-width: 640px) { .wrap { padding: 14px 14px 40px; } header .dir { margin-left: 0; width: 100%; } }
+@media (max-width: 860px) {
+  .grade2 { grid-template-columns: 1fr; }
+  .linha-tempo { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) { .wrap { padding: 14px 12px 40px; } header .dir { margin-left: 0; width: 100%; } input.busca { min-width: 0; flex: 1; } }
 </style>
 </head>
 <body>
@@ -77,12 +149,12 @@ a.voltar:hover, button.leve:hover { color: var(--text); border-color: var(--text
     <img src="logo-feromax.png" alt="Grupo Feromax">
     <div>
       <h1>Importações</h1>
-      <div class="sub">Compras e processos de importação</div>
+      <div class="sub" id="subtit">Compras e processos de importação</div>
     </div>
     <div class="dir">
       <span class="sub" id="usuario"></span>
-      <a class="voltar" href="./">← Painel Financeiro</a>
-      <button class="leve" id="btnSair">Sair</button>
+      <a class="btn" href="./">← Painel Financeiro</a>
+      <button class="btn" id="btnSair">Sair</button>
     </div>
   </header>
   <nav class="subabas" role="tablist" id="subabas"></nav>
@@ -100,47 +172,581 @@ a.voltar:hover, button.leve:hover { color: var(--text); border-color: var(--text
     <div class="erro" id="lErro"></div>
   </form>
 </div>
+<div id="modais"></div>
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 'use strict';
+// ======================= utilitários =======================
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const nf = (d) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const F0 = nf(0), F2 = nf(2), F4 = nf(4);
+const R = v => v == null || isNaN(v) ? '—' : 'R$ ' + F2.format(v);
+const R0 = v => v == null || isNaN(v) ? '—' : 'R$ ' + F0.format(v);
+const U = v => v == null || isNaN(v) ? '—' : 'US$ ' + F2.format(v);
+const U0 = v => v == null || isNaN(v) ? '—' : 'US$ ' + F0.format(v);
+const TX = v => v == null || isNaN(v) ? '—' : F4.format(v);
+const FT = v => v == null || isNaN(v) || !isFinite(v) ? '—' : nf(2).format(v);
+const dm = s => s ? s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(2, 4) : '—';
+const hojeISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const dias = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5);
+const nz = v => Number(v) || 0;
+// "1.234,56" → "1234.56" ; "5,2079" → "5.2079" ; "5.2079" → "5.2079"
+const paraNum = t => { t = String(t || '').trim().replace(/\s|R\$|US\$/g, ''); return t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t; };
+
 const CFG = window.PAINEL_CONFIG || {};
 let sb = null;
-const est = { perfil: null, sub: null };
+const EMPRESAS = { 1: 'Feromax', 2: 'Supply' };
+const est = {
+  perfil: null, sub: null, demo: false,
+  processos: [], cambios: [], creditos: [], fornecedores: {},
+  filtro: { empresa: 0, status: 'aberto', busca: '', pais: '' },
+  abertoId: null,
+};
 
-// ======================= SUB-ABAS =======================
-// Para criar uma sub-aba nova: acrescente { id, nome, render } aqui.
-const SUBABAS = [
-  { id: 'inicio', nome: 'Início', render: renderInicio },
-];
+// ======================= regras do processo =======================
+const NAC = [['frete_brl', 'Frete internacional (R$)'], ['ii', 'II'], ['ipi', 'IPI'], ['pis', 'PIS'], ['cofins', 'COFINS'], ['icms', 'ICMS'],
+  ['sdas_afrmm_siscomex', 'SDAS / AFRMM / Siscomex'], ['armazenagem', 'Armazenagem'], ['despachante_valor', 'Despachante'],
+  ['outras_despesas', 'Outras despesas'], ['frete_nacional', 'Frete nacional']];
+const CPS = [['producao', 'Início da produção'], ['saida', 'Saída do fornecedor'], ['embarque', 'Embarque (ETD)'],
+  ['chegada', 'Chegada Brasil (ETA)'], ['numerario', 'Pagamento numerário'], ['estoque', 'Chegada no estoque']];
 
-function renderInicio(el) {
-  el.innerHTML = `<div class="card">
-    <h2>Módulo de Importações</h2>
-    <div class="nota">Espaço separado do Painel Financeiro. As sub-abas deste módulo serão criadas aqui, uma a uma.</div>
-    <div class="vazio">Nenhuma sub-aba criada ainda.</div>
-  </div>`;
+const cambiosDe = p => est.cambios.filter(c => c.processo_id === p.id).sort((a, b) => (a.ordem ?? 99) - (b.ordem ?? 99) || a.id - b.id);
+const totalNac = p => NAC.reduce((s, [k]) => s + nz(p[k]), 0);
+const temNac = p => !!p.data_di || NAC.some(([k]) => p[k] != null && p[k] !== 0);
+// taxa usada para parcelas ainda não pagas: câmbio da DI; sem DI, a taxa prevista da parcela
+const taxaAberta = (p, c) => nz(p.cambio_di) || nz(c.taxa_di) || null;
+
+function resumo(p) {
+  const cs = cambiosDe(p);
+  const fob = nz(p.fob_usd) || cs.reduce((s, c) => s + nz(c.valor_usd), 0);
+  let pagoBRL = 0, pagoUSD = 0, abertoUSD = 0, abertoBRL = 0, semTaxa = false, variacao = 0;
+  for (const c of cs) {
+    if (c.pago) {
+      pagoBRL += nz(c.valor_brl); pagoUSD += nz(c.valor_usd);
+      if (nz(p.cambio_di)) variacao += nz(c.valor_brl) - nz(c.valor_usd) * nz(p.cambio_di);
+    } else {
+      abertoUSD += nz(c.valor_usd);
+      const t = taxaAberta(p, c); if (t) abertoBRL += nz(c.valor_usd) * t; else semTaxa = true;
+    }
+  }
+  const nac = totalNac(p);
+  const total = pagoBRL + abertoBRL + nac;
+  let fator = null, tipoFator = '';
+  if (p.status === 'fechado') { fator = fob ? total / fob : null; tipoFator = 'final'; }
+  else if (temNac(p) && !semTaxa) { fator = fob ? total / fob : null; tipoFator = 'pré-fechamento'; }
+  else if (p.fator_estimado) { fator = Number(p.fator_estimado); tipoFator = 'estimado'; }
+  const conciliado = p.status === 'fechado' || (p.nac_conciliada && cs.length > 0 && cs.every(c => c.pago && c.conciliado));
+  return { cs, fob, pagoBRL, pagoUSD, abertoUSD, abertoBRL, semTaxa, nac, total, fator, tipoFator, variacao, conciliado };
 }
 
-// ======================= navegação =======================
+function etapa(p) {
+  if (p.status === 'fechado') return { nome: 'Fechado', cls: 'ok' };
+  const r = resumo(p);
+  if (temNac(p)) return r.abertoUSD > 0 ? { nome: 'Nacionalizado · câmbio em aberto', cls: 'aviso' } : { nome: 'A fechar', cls: 'azul' };
+  if (p.cp_chegada_ef) return { nome: 'Chegou', cls: 'azul' };
+  if (p.cp_embarque_ef) return { nome: 'Em trânsito', cls: 'azul' };
+  if (p.cp_saida_ef) return { nome: 'Aguardando embarque', cls: 'azul' };
+  if (p.cp_producao_ef) return { nome: 'Em produção', cls: '' };
+  return { nome: 'Pedido', cls: '' };
+}
+
+// próxima data relevante e se está atrasada
+function proximoCheckpoint(p) {
+  const hoje = hojeISO();
+  for (const [k, nome] of CPS) {
+    if (p[`cp_${k}_ef`]) continue;
+    const prev = p[`cp_${k}_prev`];
+    return { nome, prev, atraso: !!prev && prev < hoje };
+  }
+  return null;
+}
+
+const paisDe = p => (est.fornecedores[p.fornecedor] || {}).pais || '';
+const podeEditar = () => !!est.perfil && (est.perfil.admin || (est.perfil.editor && (est.perfil.areas || []).includes('importacoes')));
+const empresasVisiveis = () => est.perfil && !est.perfil.admin && Array.isArray(est.perfil.empresas)
+  ? est.perfil.empresas.filter(e => EMPRESAS[e]) : [1, 2];
+
+// ======================= SUB-ABAS =======================
+const SUBABAS = [
+  { id: 'geral', nome: 'Visão geral', render: renderGeral },
+  { id: 'processos', nome: 'Processos', render: renderProcessos },
+];
+
 function montarSubabas() {
   const nav = $('#subabas');
   nav.innerHTML = SUBABAS.map(s => `<button class="subaba" role="tab" data-sub="${s.id}">${esc(s.nome)}</button>`).join('');
-  nav.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => abrir(b.dataset.sub));
-  const inicial = (location.hash || '').slice(1);
-  abrir(SUBABAS.some(s => s.id === inicial) ? inicial : SUBABAS[0].id);
+  nav.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { est.abertoId = null; abrir(b.dataset.sub); });
+  const [sub, id] = (location.hash || '').slice(1).split('/');
+  if (id) est.abertoId = Number(id);
+  abrir(SUBABAS.some(s => s.id === sub) ? sub : SUBABAS[0].id);
 }
 
 function abrir(id) {
   est.sub = id;
-  history.replaceState(null, '', '#' + id);
+  history.replaceState(null, '', '#' + id + (est.abertoId ? '/' + est.abertoId : ''));
   document.querySelectorAll('[data-sub]').forEach(b => b.setAttribute('aria-selected', b.dataset.sub === id));
-  const s = SUBABAS.find(x => x.id === id);
+  redesenhar();
+}
+function redesenhar() {
+  const s = SUBABAS.find(x => x.id === est.sub);
   try { s.render($('#conteudo')); }
-  catch (e) { $('#conteudo').innerHTML = `<div class="card"><div class="vazio">Erro: ${esc(e.message)}</div></div>`; }
+  catch (e) { console.error(e); $('#conteudo').innerHTML = `<div class="card"><div class="vazio">Erro: ${esc(e.message)}</div></div>`; }
+}
+function abrirProcesso(id) { est.abertoId = id; abrir('processos'); window.scrollTo(0, 0); }
+
+// ======================= Visão geral =======================
+function renderGeral(el) {
+  const hoje = hojeISO(), ate30 = somaDias(hoje, 30);
+  const emps = empresasVisiveis();
+  const fe = est.filtro.empresa;
+  const procs = est.processos.filter(p => emps.includes(p.empresa) && (!fe || p.empresa === fe));
+  const abertos = procs.filter(p => p.status === 'aberto');
+  const parcelas = [];
+  for (const p of abertos) for (const c of cambiosDe(p)) if (!c.pago) parcelas.push({ p, c, taxa: taxaAberta(p, c) });
+  parcelas.sort((a, b) => (a.c.data_prevista || '9999') < (b.c.data_prevista || '9999') ? -1 : 1);
+  const totUSD = parcelas.reduce((s, x) => s + nz(x.c.valor_usd), 0);
+  const totBRL = parcelas.reduce((s, x) => s + nz(x.c.valor_usd) * nz(x.taxa), 0);
+  const p30 = parcelas.filter(x => x.c.data_prevista && x.c.data_prevista <= ate30);
+  const atrasadas = parcelas.filter(x => x.c.data_prevista && x.c.data_prevista < hoje);
+  const semData = parcelas.filter(x => !x.c.data_prevista);
+  const creditos = est.creditos.filter(c => emps.includes(c.empresa) && (!fe || c.empresa === fe) && !c.utilizado);
+  const totCred = creditos.reduce((s, c) => s + nz(c.valor_usd), 0);
+  const caminho = abertos.filter(p => !temNac(p)).map(p => ({ p, prox: proximoCheckpoint(p), cheg: p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada }))
+    .sort((a, b) => (a.cheg || '9999') < (b.cheg || '9999') ? -1 : 1);
+  const aFechar = abertos.filter(p => temNac(p));
+
+  el.innerHTML = `${filtroEmpresa()}
+  <div class="kpis">
+    ${kpi('Processos em aberto', F0.format(abertos.length), `${caminho.length} a caminho · ${aFechar.length} nacionalizados`)}
+    ${kpi('Câmbio a pagar', U0(totUSD), `≈ ${R0(totBRL)} pela taxa da DI / prevista`)}
+    ${kpi('Câmbio próximos 30 dias', U0(p30.reduce((s, x) => s + nz(x.c.valor_usd), 0)), `${p30.length} parcela(s)` + (atrasadas.length ? ` · <span class="verm">${atrasadas.length} com data vencida</span>` : ''))}
+    ${kpi('Crédito com fornecedores', U(totCred), creditos.length ? creditos.map(c => esc(c.fornecedor)).join(', ') : 'nenhum')}
+  </div>
+  <div class="card">
+    <div class="topo"><h2>Câmbios a pagar</h2><span class="nota">parcelas ainda não fechadas, por data prevista</span></div>
+    <div class="tabela-wrap"><table>
+      <thead><tr><th>Data prevista</th><th>Fornecedor</th><th>Empresa</th><th>Pedido</th><th>Etapa</th><th class="n">US$</th><th class="n">Taxa ref.</th><th class="n">≈ R$</th></tr></thead>
+      <tbody>${parcelas.length ? parcelas.map(({ p, c, taxa }) => `<tr class="clic" data-p="${p.id}">
+        <td class="d ${c.data_prevista && c.data_prevista < hoje ? 'verm' : ''}">${c.data_prevista ? dm(c.data_prevista) : '<span class="tag aviso">sem data</span>'}</td>
+        <td>${esc(p.fornecedor)}${c.observacao ? `<div class="nota">${esc(c.observacao)}</div>` : ''}</td><td>${EMPRESAS[p.empresa] || p.empresa}</td><td>${esc(p.pedido || '—')}</td>
+        <td><span class="tag ${etapa(p).cls}">${etapa(p).nome}</span></td>
+        <td class="n">${F2.format(nz(c.valor_usd))}</td><td class="n">${TX(taxa)}</td><td class="n">${taxa ? F2.format(nz(c.valor_usd) * taxa) : '—'}</td></tr>`).join('')
+        : '<tr><td colspan="8" class="vazio">Nenhum câmbio em aberto.</td></tr>'}</tbody>
+      ${parcelas.length ? `<tfoot><tr><td colspan="5">Total${semData.length ? ` <span class="nota">(${semData.length} sem data prevista)</span>` : ''}</td><td class="n">${F2.format(totUSD)}</td><td></td><td class="n">${F2.format(totBRL)}</td></tr></tfoot>` : ''}
+    </table></div>
+  </div>
+  <div class="grade2">
+    <div class="card">
+      <div class="topo"><h2>A caminho</h2><span class="nota">próximo checkpoint de cada processo</span></div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Fornecedor</th><th>Pedido</th><th>Etapa</th><th>Próximo passo</th><th>Chegada</th></tr></thead>
+        <tbody>${caminho.length ? caminho.map(({ p, prox, cheg }) => `<tr class="clic" data-p="${p.id}">
+          <td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td><td>${esc(p.pedido || '—')}</td>
+          <td><span class="tag ${etapa(p).cls}">${etapa(p).nome}</span></td>
+          <td>${prox ? `${esc(prox.nome)} <span class="${prox.atraso ? 'verm' : 'nota'}">${prox.prev ? dm(prox.prev) : 'sem data'}${prox.atraso ? ' · atrasado' : ''}</span>` : '—'}</td>
+          <td class="d">${dm(cheg)}</td></tr>`).join('') : '<tr><td colspan="5" class="vazio">Nada a caminho.</td></tr>'}</tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="topo"><h2>Nacionalizados, aguardando fechamento</h2></div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Fornecedor</th><th>Pedido</th><th>DI</th><th class="n">Câmbio aberto</th><th class="n">Fator pré</th></tr></thead>
+        <tbody>${aFechar.length ? aFechar.map(p => { const r = resumo(p); return `<tr class="clic" data-p="${p.id}">
+          <td>${esc(p.fornecedor)}</td><td>${esc(p.pedido || '—')}</td><td class="d">${dm(p.data_di)}</td>
+          <td class="n">${r.abertoUSD ? U(r.abertoUSD) : '<span class="verde">quitado</span>'}</td><td class="n">${FT(r.fator)}</td></tr>`; }).join('')
+          : '<tr><td colspan="5" class="vazio">Nenhum.</td></tr>'}</tbody>
+      </table></div>
+    </div>
+  </div>
+  ${creditos.length ? `<div class="card"><div class="topo"><h2>Créditos com fornecedores</h2><span class="nota">excedentes pagos, a abater em compras futuras</span></div>
+    <div class="tabela-wrap"><table><thead><tr><th>Fornecedor</th><th>Empresa</th><th>Data</th><th class="n">US$</th><th class="n">R$ pago</th><th>Contrato</th>${podeEditar() ? '<th></th>' : ''}</tr></thead>
+    <tbody>${creditos.map(c => `<tr><td>${esc(c.fornecedor)}</td><td>${EMPRESAS[c.empresa] || c.empresa}</td><td class="d">${dm(c.data)}</td>
+      <td class="n">${F2.format(nz(c.valor_usd))}</td><td class="n">${R(c.valor_brl)}</td><td>${esc(c.contrato || '—')}</td>
+      ${podeEditar() ? `<td class="n"><button class="btn btn-mini" data-usar="${c.id}">Marcar como utilizado</button></td>` : ''}</tr>`).join('')}</tbody></table></div></div>` : ''}`;
+  ligarFiltroEmpresa(el);
+  el.querySelectorAll('tr[data-p]').forEach(tr => tr.onclick = () => abrirProcesso(Number(tr.dataset.p)));
+  el.querySelectorAll('[data-usar]').forEach(b => b.onclick = async () => {
+    const c = est.creditos.find(x => x.id === Number(b.dataset.usar));
+    if (!await confirmar('Crédito utilizado', `Marcar o crédito de <b>${U(c.valor_usd)}</b> com ${esc(c.fornecedor)} como utilizado?`)) return;
+    await gravar('imp_creditos', { utilizado: true }, c.id, c);
+  });
+}
+
+function kpi(rot, val, det) { return `<div class="kpi"><div class="rot">${rot}</div><div class="val">${val}</div><div class="det">${det || ''}</div></div>`; }
+function filtroEmpresa() {
+  const emps = empresasVisiveis();
+  if (emps.length < 2) return '';
+  return `<div class="filtros">${[[0, 'Todas'], ...emps.map(e => [e, EMPRESAS[e]])].map(([v, n]) =>
+    `<button class="chip" data-emp="${v}" aria-pressed="${est.filtro.empresa === v}">${n}</button>`).join('')}</div>`;
+}
+function ligarFiltroEmpresa(el) {
+  el.querySelectorAll('[data-emp]').forEach(b => b.onclick = () => { est.filtro.empresa = Number(b.dataset.emp); redesenhar(); });
+}
+
+// ======================= Processos (lista) =======================
+function renderProcessos(el) {
+  if (est.abertoId) {
+    const p = est.processos.find(x => x.id === est.abertoId);
+    if (p) return renderFicha(el, p);
+    est.abertoId = null;
+  }
+  const f = est.filtro, emps = empresasVisiveis();
+  const paises = [...new Set(est.processos.map(paisDe).filter(Boolean))].sort();
+  const b = f.busca.trim().toLowerCase();
+  const lista = est.processos.filter(p => emps.includes(p.empresa) && (!f.empresa || p.empresa === f.empresa)
+    && (!f.status || p.status === f.status) && (!f.pais || paisDe(p) === f.pais)
+    && (!b || [p.fornecedor, p.pedido, p.mercadoria, p.processo, p.di].some(x => String(x || '').toLowerCase().includes(b))))
+    .sort((a, b) => (b.data_pedido || '') < (a.data_pedido || '') ? -1 : (b.data_pedido || '') > (a.data_pedido || '') ? 1 : b.id - a.id);
+  const linhas = lista.map(p => ({ p, r: resumo(p), e: etapa(p) }));
+  const fobTot = linhas.reduce((s, x) => s + x.r.fob, 0);
+  const totTot = linhas.filter(x => x.r.fator).reduce((s, x) => s + x.r.total, 0);
+  const fobComFator = linhas.filter(x => x.r.fator).reduce((s, x) => s + x.r.fob, 0);
+
+  el.innerHTML = `<div class="filtros">
+    ${emps.length > 1 ? [[0, 'Todas'], ...emps.map(e => [e, EMPRESAS[e]])].map(([v, n]) => `<button class="chip" data-emp="${v}" aria-pressed="${f.empresa === v}">${n}</button>`).join('') + '<div class="sep"></div>' : ''}
+    ${[['aberto', 'Em aberto'], ['fechado', 'Fechados'], ['', 'Todos']].map(([v, n]) => `<button class="chip" data-st="${v}" aria-pressed="${f.status === v}">${n}</button>`).join('')}
+    <div class="sep"></div>
+    <select class="sel" id="fPais"><option value="">Todos os países</option>${paises.map(x => `<option ${x === f.pais ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+    <input class="busca" id="fBusca" type="search" placeholder="Buscar fornecedor, pedido, mercadoria, DI…" value="${esc(f.busca)}">
+    ${podeEditar() ? '<button class="btn-pri" id="btnNovo" style="margin-left:auto">+ Nova importação</button>' : ''}
+  </div>
+  <div class="card">
+    <div class="topo"><h2>${lista.length} processo(s)</h2>
+      <span class="nota">FOB ${U0(fobTot)}${fobComFator ? ` · fator médio ponderado ${FT(totTot / fobComFator)}` : ''}</span></div>
+    <div class="tabela-wrap"><table>
+      <thead><tr><th>Pedido</th><th>Fornecedor</th><th>Empresa</th><th>Mercadoria</th><th>Modal</th><th>Etapa</th><th>Chegada</th>
+        <th class="n">FOB US$</th><th class="n">Câmbio aberto US$</th><th class="n">Fator</th><th></th></tr></thead>
+      <tbody>${linhas.length ? linhas.map(({ p, r, e }) => `<tr class="clic" data-p="${p.id}">
+        <td>${esc(p.pedido || '—')}</td>
+        <td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td>
+        <td>${EMPRESAS[p.empresa] || p.empresa}</td>
+        <td>${esc(p.mercadoria || '—')}</td><td>${esc(p.modal || '—')}</td>
+        <td><span class="tag ${e.cls}">${e.nome}</span></td>
+        <td class="d">${dm(p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada)}</td>
+        <td class="n">${r.fob ? F2.format(r.fob) : '—'}</td>
+        <td class="n">${r.abertoUSD ? F2.format(r.abertoUSD) : '—'}</td>
+        <td class="n">${FT(r.fator)}${r.fator && r.tipoFator !== 'final' ? ` <span class="nota">${r.tipoFator === 'estimado' ? 'est.' : 'pré'}</span>` : ''}</td>
+        <td>${p.status === 'aberto' && r.conciliado ? '<span class="tag ok">conciliado</span>' : ''}</td>
+      </tr>`).join('') : '<tr><td colspan="11" class="vazio">Nenhum processo com esses filtros.</td></tr>'}</tbody>
+    </table></div>
+  </div>`;
+  el.querySelectorAll('[data-emp]').forEach(b => b.onclick = () => { f.empresa = Number(b.dataset.emp); redesenhar(); });
+  el.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { f.status = b.dataset.st; redesenhar(); });
+  $('#fPais').onchange = e => { f.pais = e.target.value; redesenhar(); };
+  const busca = $('#fBusca');
+  busca.oninput = () => { f.busca = busca.value; clearTimeout(busca._t); busca._t = setTimeout(() => { redesenhar(); const i = $('#fBusca'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
+  el.querySelectorAll('tr[data-p]').forEach(tr => tr.onclick = () => abrirProcesso(Number(tr.dataset.p)));
+  if ($('#btnNovo')) $('#btnNovo').onclick = () => formDados(null);
+}
+
+// ======================= Ficha do processo =======================
+function renderFicha(el, p) {
+  const r = resumo(p), e = etapa(p), forn = est.fornecedores[p.fornecedor] || {};
+  const ed = podeEditar(), hoje = hojeISO();
+  const linhaCp = CPS.map(([k, nome]) => {
+    const prev = p[`cp_${k}_prev`], ef = p[`cp_${k}_ef`];
+    const cls = ef ? 'feito' : (prev && prev < hoje && p.status === 'aberto' ? 'atraso' : '');
+    const desvio = ef && prev ? dias(prev, ef) : null;
+    return `<div class="etapa ${cls}"><div class="t">${nome}</div>
+      <div class="l">Previsto <b>${dm(prev)}</b></div><div class="l">Efetivo <b>${dm(ef)}</b>${desvio ? ` <span class="${desvio > 0 ? 'verm' : 'verde'}">${desvio > 0 ? '+' : ''}${desvio}d</span>` : ''}</div></div>`;
+  }).join('');
+  const tempoTotal = p.cp_producao_ef && p.cp_estoque_ef ? dias(p.cp_producao_ef, p.cp_estoque_ef) : null;
+
+  el.innerHTML = `<button class="btn voltar" id="btnVoltar">← Processos</button>
+  <div class="ficha-tit">
+    <h2>${esc(p.fornecedor)} · pedido ${esc(p.pedido || '—')}</h2>
+    <span class="tag ${e.cls}">${e.nome}</span>
+    ${p.status === 'aberto' && r.conciliado ? '<span class="tag ok">tudo conciliado</span>' : ''}
+    <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+      ${ed ? `<button class="btn" id="btnEditar">Editar dados</button>` : ''}
+      ${ed && p.status === 'aberto' ? `<button class="btn-pri" id="btnFechar">Fechar processo</button>` : ''}
+      ${ed && p.status === 'fechado' ? `<button class="btn" id="btnReabrir">Reabrir</button>` : ''}
+    </span>
+  </div>
+  <div class="card">
+    <div class="campos">
+      ${campo('Empresa', EMPRESAS[p.empresa] || p.empresa)}
+      ${campo('País', forn.pais || '—')}
+      ${campo('Condição de pagamento', forn.condicao_pagamento || '—')}
+      ${campo('Mercadoria', p.mercadoria || '—')}
+      ${campo('Modal', p.modal || '—')}
+      ${campo('Data do pedido', dm(p.data_pedido))}
+      ${campo('Despachante', p.despachante || '—')}
+      ${campo('Logística', p.logistica || '—')}
+      ${campo('Nº processo', p.processo || '—')}
+      ${campo('Previsão de chegada', dm(p.previsao_chegada))}
+    </div>
+    ${p.observacao ? `<div class="nota" style="margin-top:10px">${esc(p.observacao)}</div>` : ''}
+  </div>
+
+  <div class="card">
+    <div class="topo"><h2>Fator de importação</h2><span class="nota">(câmbios R$ + nacionalização R$) ÷ FOB US$</span></div>
+    <div class="fator-box">
+      ${kpi('FOB', U(r.fob))}
+      ${kpi('Câmbios', R0(r.pagoBRL + r.abertoBRL), !r.cs.length ? 'sem parcelas' : r.abertoUSD ? `${R0(r.pagoBRL)} pago + ${R0(r.abertoBRL)} em aberto (taxa ref.)` : 'tudo pago')}
+      ${kpi('Nacionalização', R0(r.nac), p.nac_conciliada ? '<span class="verde">conciliada</span>' : (temNac(p) ? '<span class="verm">a conciliar</span>' : 'aguardando DI'))}
+      ${kpi('Total', R0(r.total))}
+      ${kpi('Fator ' + (r.tipoFator || ''), FT(r.fator), [p.fator_estimado ? `estimado ${FT(p.fator_estimado)}` : '', r.variacao ? `variação cambial ${R0(r.variacao)}` : ''].filter(Boolean).join(' · '))}
+    </div>
+    ${p.fator_planilha && p.status === 'fechado' && Math.abs(p.fator_planilha - (r.fator || 0)) > 0.01 ? `<div class="nota verm" style="margin-top:8px">Fator na planilha antiga: ${FT(p.fator_planilha)}</div>` : ''}
+  </div>
+
+  <div class="card">
+    <div class="topo"><h2>Checkpoints</h2>${tempoTotal != null ? `<span class="nota">tempo total produção → estoque: ${tempoTotal} dias</span>` : ''}
+      <div class="acoes">${ed ? '<button class="btn btn-mini" id="btnCp">Atualizar checkpoints</button>' : ''}</div></div>
+    <div class="linha-tempo">${linhaCp}</div>
+  </div>
+
+  <div class="card">
+    <div class="topo"><h2>Câmbios</h2><span class="nota">${U(r.pagoUSD)} pago · ${U(r.abertoUSD)} em aberto</span>
+      <div class="acoes">${ed ? '<button class="btn btn-mini" id="btnParc">+ Parcela</button>' : ''}</div></div>
+    <div class="tabela-wrap"><table>
+      <thead><tr><th>#</th><th>Prevista</th><th class="n">US$</th><th>Fechamento</th><th class="n">Taxa</th><th class="n">Tarifa US$</th><th class="n">R$</th>
+        <th class="n">Variação x DI</th><th>Corretora</th><th>Contrato</th><th>Situação</th>${ed ? '<th></th>' : ''}</tr></thead>
+      <tbody>${r.cs.length ? r.cs.map((c, i) => {
+        const vari = c.pago && nz(p.cambio_di) ? nz(c.valor_brl) - nz(c.valor_usd) * nz(p.cambio_di) : null;
+        const sit = c.pago ? (c.conciliado ? '<span class="tag ok">pago · conciliado</span>' : '<span class="tag aviso">pago · a conciliar</span>')
+          : (c.data_prevista && c.data_prevista < hoje ? '<span class="tag alerta">em aberto · vencida</span>' : '<span class="tag">em aberto</span>');
+        return `<tr><td>${i + 1}</td><td class="d">${dm(c.data_prevista)}</td><td class="n">${F2.format(nz(c.valor_usd))}</td>
+          <td class="d">${dm(c.data_fechamento)}</td><td class="n">${c.pago ? TX(c.cambio_realizado) : `<span class="nota">${TX(taxaAberta(p, c))}</span>`}</td>
+          <td class="n">${c.tarifa ? F2.format(c.tarifa) : '—'}</td><td class="n">${c.pago ? F2.format(nz(c.valor_brl)) : '—'}</td>
+          <td class="n ${vari > 0 ? 'verm' : vari < 0 ? 'verde' : ''}">${vari != null ? F2.format(vari) : '—'}</td>
+          <td>${esc(c.corretora || '—')}</td><td>${esc(c.contrato || '—')}</td><td>${sit}${c.observacao ? `<div class="nota" style="max-width:260px">${esc(c.observacao)}</div>` : ''}</td>
+          ${ed ? `<td class="n"><button class="btn btn-mini" data-parc="${c.id}">${c.pago ? 'Editar' : 'Registrar pagamento'}</button></td>` : ''}</tr>`;
+      }).join('') : `<tr><td colspan="${ed ? 12 : 11}" class="vazio">Nenhuma parcela de câmbio cadastrada.</td></tr>`}</tbody>
+      ${r.cs.length ? `<tfoot><tr><td colspan="2">Total</td><td class="n">${F2.format(r.pagoUSD + r.abertoUSD)}</td><td colspan="3"></td><td class="n">${F2.format(r.pagoBRL)}</td><td class="n">${r.variacao ? F2.format(r.variacao) : ''}</td><td colspan="${ed ? 4 : 3}"></td></tr></tfoot>` : ''}
+    </table></div>
+  </div>
+
+  <div class="card">
+    <div class="topo"><h2>Nacionalização</h2>
+      ${p.nac_conciliada ? '<span class="tag ok">conciliada</span>' : (temNac(p) ? '<span class="tag aviso">a conciliar</span>' : '')}
+      <div class="acoes">${ed ? '<button class="btn btn-mini" id="btnNac">Lançar / validar DI</button>' : ''}</div></div>
+    <div class="campos" style="margin-bottom:10px">
+      ${campo('DI / AWB', p.di || '—')}${campo('Data DI', dm(p.data_di))}${campo('Protocolo', p.protocolo_di || '—')}
+      ${campo('Câmbio DI', TX(p.cambio_di))}${campo('Frete internacional US$', p.frete_usd != null ? F2.format(p.frete_usd) : '—')}
+    </div>
+    <div class="tabela-wrap"><table><tbody>
+      ${NAC.map(([k, n]) => `<tr><td>${n}</td><td class="n">${p[k] != null ? F2.format(p[k]) : '—'}</td></tr>`).join('')}
+    </tbody><tfoot><tr><td>Total nacionalização</td><td class="n">${R(r.nac)}</td></tr></tfoot></table></div>
+  </div>`;
+
+  $('#btnVoltar').onclick = () => { est.abertoId = null; abrir('processos'); };
+  if (!ed) return;
+  $('#btnEditar').onclick = () => formDados(p);
+  $('#btnCp').onclick = () => formCheckpoints(p);
+  $('#btnParc').onclick = () => formParcela(p, null);
+  $('#btnNac').onclick = () => formNacionalizacao(p);
+  el.querySelectorAll('[data-parc]').forEach(b => b.onclick = () => formParcela(p, est.cambios.find(c => c.id === Number(b.dataset.parc))));
+  if ($('#btnFechar')) $('#btnFechar').onclick = async () => {
+    const pend = [];
+    if (r.abertoUSD) pend.push(`${U(r.abertoUSD)} de câmbio ainda em aberto`);
+    if (r.cs.some(c => c.pago && !c.conciliado)) pend.push('parcela(s) de câmbio não conciliada(s)');
+    if (!p.nac_conciliada) pend.push('nacionalização não conciliada');
+    const msg = pend.length ? `Atenção: ${pend.join('; ')}.<br><br>Fechar mesmo assim?` : `Fator final: <b>${FT(r.fob ? r.total / r.fob : null)}</b>. Fechar o processo?`;
+    if (!await confirmar('Fechar processo', msg, 'Fechar')) return;
+    await gravar('imp_processos', { status: 'fechado' }, p.id, p);
+  };
+  if ($('#btnReabrir')) $('#btnReabrir').onclick = async () => {
+    if (!await confirmar('Reabrir processo', 'O processo volta para "em aberto". Continuar?', 'Reabrir')) return;
+    await gravar('imp_processos', { status: 'aberto' }, p.id, p);
+  };
+}
+function campo(r, v) { return `<div class="c"><div class="r">${r}</div><div class="v">${esc(v)}</div></div>`; }
+
+// ======================= formulários =======================
+// campos: [nome, rótulo, tipo ('text'|'date'|'num'|'select'|'chk'|'area'|'lista'), opções]
+function form(titulo, grupos, valores, aoSalvar, extra) {
+  const html = grupos.map(([gtit, campos]) => `${gtit ? `<div class="grupo-tit">${gtit}</div>` : ''}<div class="form">${campos.map(([k, rot, t, op]) => {
+    const v = valores[k];
+    if (t === 'chk') return `<label class="chk"><input type="checkbox" name="${k}" ${v ? 'checked' : ''}><span>${rot}</span></label>`;
+    if (t === 'select') return `<label><span>${rot}</span><select name="${k}">${op.map(([ov, on]) => `<option value="${esc(ov)}" ${String(ov) === String(v ?? '') ? 'selected' : ''}>${esc(on)}</option>`).join('')}</select></label>`;
+    if (t === 'area') return `<label class="largo"><span>${rot}</span><textarea name="${k}" rows="2">${esc(v ?? '')}</textarea></label>`;
+    if (t === 'lista') return `<label><span>${rot}</span><input name="${k}" list="dl_${k}" value="${esc(v ?? '')}" autocomplete="off"><datalist id="dl_${k}">${op.map(o => `<option value="${esc(o)}">`).join('')}</datalist></label>`;
+    const tipo = t === 'date' ? 'date' : 'text';
+    const val = t === 'num' && v != null && v !== '' ? String(v).replace('.', ',') : (v ?? '');
+    return `<label><span>${rot}</span><input name="${k}" type="${tipo}" ${t === 'num' ? 'inputmode="decimal"' : ''} value="${esc(val)}"></label>`;
+  }).join('')}</div>`).join('');
+  const m = abrirModal(`<h2>${titulo}</h2><form id="fm">${html}${extra || ''}<div class="erro" id="fmErro"></div>
+    <div class="rodape"><button type="button" class="btn" data-fechar>Cancelar</button><button type="submit" class="btn-pri">Salvar</button></div></form>`);
+  const tipos = Object.fromEntries(grupos.flatMap(g => g[1]).map(([k, , t]) => [k, t]));
+  const ler = () => {
+    const fm = m.querySelector('#fm'), out = {};
+    for (const [k, t] of Object.entries(tipos)) {
+      const i = fm.elements[k];
+      if (t === 'chk') out[k] = i.checked;
+      else if (t === 'num') { const s = paraNum(i.value); out[k] = s === '' ? null : Number(s); if (s !== '' && isNaN(out[k])) throw new Error(`Valor inválido em "${grupos.flatMap(g => g[1]).find(c => c[0] === k)[1]}"`); }
+      else out[k] = i.value.trim() === '' ? null : i.value.trim();
+    }
+    return out;
+  };
+  m.querySelector('#fm').onsubmit = async ev => {
+    ev.preventDefault();
+    const bt = m.querySelector('button[type=submit]'); bt.disabled = true;
+    try { await aoSalvar(ler(), m); fecharModal(m); }
+    catch (e) { m.querySelector('#fmErro').textContent = e.message; bt.disabled = false; }
+  };
+  return { m, ler };
+}
+function abrirModal(html) {
+  const fundo = document.createElement('div');
+  fundo.className = 'modal-fundo';
+  fundo.innerHTML = `<div class="modal" role="dialog">${html}</div>`;
+  $('#modais').appendChild(fundo);
+  fundo.addEventListener('click', e => { if (e.target === fundo || e.target.hasAttribute('data-fechar')) fecharModal(fundo); });
+  const f = fundo.querySelector('input,select,textarea'); if (f) setTimeout(() => f.focus(), 30);
+  return fundo;
+}
+function fecharModal(m) { m.remove(); }
+function confirmar(tit, msg, ok = 'Confirmar') {
+  return new Promise(res => {
+    const m = abrirModal(`<h2>${tit}</h2><div>${msg}</div><div class="rodape"><button class="btn" id="cNao">Cancelar</button><button class="btn-pri" id="cSim">${ok}</button></div>`);
+    m.querySelector('#cNao').onclick = () => { fecharModal(m); res(false); };
+    m.querySelector('#cSim').onclick = () => { fecharModal(m); res(true); };
+  });
+}
+
+function formDados(p) {
+  const novo = !p; p = p || { empresa: est.filtro.empresa || empresasVisiveis()[0], status: 'aberto' };
+  const forn = est.fornecedores[p.fornecedor] || {};
+  const nomesForn = Object.keys(est.fornecedores).sort();
+  const paises = [...new Set(Object.values(est.fornecedores).map(f => f.pais).filter(Boolean))].sort();
+  form(novo ? 'Nova importação' : 'Editar dados do processo', [
+    ['', [
+      ['empresa', 'Empresa', 'select', empresasVisiveis().map(e => [e, EMPRESAS[e]])],
+      ['fornecedor', 'Fornecedor', 'lista', nomesForn],
+      ['pedido', 'Pedido', 'text'], ['data_pedido', 'Data do pedido', 'date'],
+      ['mercadoria', 'Mercadoria', 'text'], ['modal', 'Modal', 'select', [['', '—'], ['Marítimo', 'Marítimo'], ['Aéreo', 'Aéreo']]],
+      ['despachante', 'Despachante', 'text'], ['logistica', 'Logística', 'text'], ['processo', 'Nº processo (despachante)', 'text'],
+      ['previsao_chegada', 'Previsão de chegada', 'date'], ['fob_usd', 'FOB total da invoice (US$)', 'num'], ['fator_estimado', 'Fator estimado', 'num'],
+      ['observacao', 'Observação', 'area'],
+    ]],
+    ['Fornecedor', [['_pais', 'País', 'lista', paises], ['_cond', 'Condição de pagamento', 'text']]],
+  ], { ...p, _pais: forn.pais, _cond: forn.condicao_pagamento }, async v => {
+    if (!v.fornecedor) throw new Error('Informe o fornecedor.');
+    v.empresa = Number(v.empresa);
+    const { _pais, _cond, ...reg } = v;
+    const f = est.fornecedores[v.fornecedor];
+    if (!f || f.pais !== _pais || f.condicao_pagamento !== _cond)
+      await gravarFornecedor({ nome: v.fornecedor, pais: _pais, condicao_pagamento: _cond });
+    if (novo) { reg.status = 'aberto'; const id = await inserir('imp_processos', reg); est.abertoId = id; abrir('processos'); }
+    else await gravar('imp_processos', reg, p.id, p);
+  }).m.querySelector('[name=fornecedor]').addEventListener('change', e => {
+    const f = est.fornecedores[e.target.value]; const fm = e.target.form;
+    if (f) { fm.elements._pais.value = f.pais || ''; fm.elements._cond.value = f.condicao_pagamento || ''; }
+  });
+}
+
+function formCheckpoints(p) {
+  form('Checkpoints', CPS.map(([k, n]) => [n, [[`cp_${k}_prev`, 'Previsto', 'date'], [`cp_${k}_ef`, 'Efetivo', 'date']]]), p,
+    v => gravar('imp_processos', v, p.id, p));
+}
+
+function formNacionalizacao(p) {
+  const { m } = form('Nacionalização / validação da DI', [
+    ['DI', [['di', 'DI / AWB', 'text'], ['data_di', 'Data DI', 'date'], ['protocolo_di', 'Protocolo', 'text'],
+      ['cambio_di', 'Câmbio DI', 'num'], ['frete_usd', 'Frete internacional US$', 'num']]],
+    ['Valores em R$', NAC.map(([k, n]) => [k, n, 'num'])],
+    ['', [['nac_conciliada', 'Valores conferidos e conciliados', 'chk']]],
+  ], p, v => gravar('imp_processos', v, p.id, p), '<div class="nota" style="margin-top:10px" id="nacTot"></div>');
+  const fm = m.querySelector('#fm');
+  const atual = () => {
+    const tot = NAC.reduce((s, [k]) => s + (Number(paraNum(fm.elements[k].value)) || 0), 0);
+    m.querySelector('#nacTot').textContent = 'Total nacionalização: ' + R(tot);
+  };
+  fm.addEventListener('input', atual); atual();
+}
+
+function formParcela(p, c) {
+  const novo = !c; const cs = cambiosDe(p);
+  c = c || { ordem: cs.length + 1, taxa_di: p.cambio_di, tarifa: 0, pago: false, conciliado: false };
+  const corretoras = [...new Set(est.cambios.map(x => x.corretora).filter(Boolean))].sort();
+  const { m } = form(novo ? 'Nova parcela de câmbio' : 'Parcela de câmbio', [
+    ['Previsão', [['valor_usd', 'Valor (US$)', 'num'], ['data_prevista', 'Data prevista', 'date'], ['taxa_di', 'Taxa de referência', 'num'], ['ordem', 'Ordem', 'num']]],
+    ['Fechamento do câmbio', [['pago', 'Câmbio fechado / pago', 'chk'], ['data_fechamento', 'Data do fechamento', 'date'],
+      ['cambio_realizado', 'Taxa realizada', 'num'], ['tarifa', 'Tarifa bancária (US$)', 'num'], ['valor_brl', 'Valor pago (R$)', 'num'],
+      ['corretora', 'Corretora / banco', 'lista', corretoras], ['contrato', 'Contrato de câmbio', 'text'], ['conciliado', 'Conciliado', 'chk']]],
+    ['', [['observacao', 'Observação', 'area']]],
+  ], c, async v => {
+    if (!v.valor_usd) throw new Error('Informe o valor em US$.');
+    if (v.pago && (!v.data_fechamento || !v.cambio_realizado)) throw new Error('Para marcar como pago, informe a data e a taxa realizada.');
+    if (v.pago && v.valor_brl == null) v.valor_brl = Math.round((v.valor_usd + nz(v.tarifa)) * v.cambio_realizado * 100) / 100;
+    if (!v.pago) v.conciliado = false;
+    v.tarifa = v.tarifa ?? 0;
+    if (novo) await inserir('imp_cambios', { ...v, processo_id: p.id, empresa: p.empresa });
+    else await gravar('imp_cambios', v, c.id, c);
+  }, novo ? '' : '<div style="margin-top:12px"><button type="button" class="btn btn-mini btn-perigo" id="btnExcl">Excluir parcela</button></div>');
+  const fm = m.querySelector('#fm');
+  // calcula R$ automaticamente: (US$ + tarifa) × taxa
+  const num = k => Number(paraNum(fm.elements[k].value)) || 0;
+  const recalc = () => { if (num('cambio_realizado')) fm.elements.valor_brl.value = F2.format((num('valor_usd') + num('tarifa')) * num('cambio_realizado')).replace(/\./g, ''); };
+  ['valor_usd', 'tarifa', 'cambio_realizado'].forEach(k => fm.elements[k].addEventListener('input', recalc));
+  fm.elements.cambio_realizado.addEventListener('input', () => { if (num('cambio_realizado')) fm.elements.pago.checked = true; });
+  if (!novo) m.querySelector('#btnExcl').onclick = async () => {
+    if (!await confirmar('Excluir parcela', `Excluir a parcela de <b>${U(c.valor_usd)}</b>?`, 'Excluir')) return;
+    try { await excluir('imp_cambios', c.id); fecharModal(m); } catch (e) { m.querySelector('#fmErro').textContent = e.message; }
+  };
+}
+
+// ======================= gravação =======================
+async function inserir(tabela, reg) {
+  if (tabela === 'imp_processos') reg.atualizado_em = new Date().toISOString();
+  if (est.demo) {
+    const id = Math.max(0, ...est[mapa[tabela]].map(x => x.id)) + 1;
+    est[mapa[tabela]].push({ id, ...reg }); redesenhar(); return id;
+  }
+  const { data, error } = await sb.from(tabela).insert(reg).select('id').single();
+  if (error) throw new Error(error.message);
+  await recarregar(); return data.id;
+}
+async function gravar(tabela, reg, id, obj) {
+  if (tabela === 'imp_processos') reg.atualizado_em = new Date().toISOString();
+  if (est.demo) { Object.assign(obj, reg); redesenhar(); return; }
+  const { error } = await sb.from(tabela).update(reg).eq('id', id);
+  if (error) { alertaErro(error.message); throw new Error(error.message); }
+  await recarregar();
+}
+async function excluir(tabela, id) {
+  if (est.demo) { est[mapa[tabela]] = est[mapa[tabela]].filter(x => x.id !== id); redesenhar(); return; }
+  const { error } = await sb.from(tabela).delete().eq('id', id);
+  if (error) throw new Error(error.message);
+  await recarregar();
+}
+async function gravarFornecedor(f) {
+  if (est.demo) { est.fornecedores[f.nome] = f; return; }
+  const { error } = await sb.from('imp_fornecedores').upsert(f);
+  if (error) throw new Error(error.message);
+}
+const mapa = { imp_processos: 'processos', imp_cambios: 'cambios', imp_creditos: 'creditos' };
+function alertaErro(msg) { const m = abrirModal(`<h2>Não foi possível salvar</h2><div class="erro">${esc(msg)}</div><div class="rodape"><button class="btn-pri" data-fechar>OK</button></div>`); }
+
+// ======================= leitura =======================
+async function buscarTodos(fazConsulta) {
+  const TAM = 1000; let de = 0, todos = [];
+  for (;;) {
+    const { data, error } = await fazConsulta().range(de, de + TAM - 1);
+    if (error) throw new Error(error.message);
+    todos = todos.concat(data || []);
+    if (!data || data.length < TAM) break;
+    de += TAM;
+  }
+  return todos;
+}
+const numerico = o => { for (const k in o) if (typeof o[k] === 'string' && /^-?\d+(\.\d+)?$/.test(o[k]) && !['pedido', 'processo', 'di', 'protocolo_di', 'contrato'].includes(k)) o[k] = Number(o[k]); return o; };
+async function recarregar() {
+  const [procs, cambios, creditos, forns] = await Promise.all([
+    buscarTodos(() => sb.from('imp_processos').select('*').order('id')),
+    buscarTodos(() => sb.from('imp_cambios').select('*').order('id')),
+    buscarTodos(() => sb.from('imp_creditos').select('*').order('id')),
+    buscarTodos(() => sb.from('imp_fornecedores').select('*').order('nome')),
+  ]);
+  est.processos = procs.map(numerico); est.cambios = cambios.map(numerico); est.creditos = creditos.map(numerico);
+  est.fornecedores = Object.fromEntries(forns.map(f => [f.nome, f]));
+  redesenhar();
 }
 
 // ======================= login (mesmo do painel) =======================
@@ -148,8 +754,11 @@ const temAcesso = p => !!p && p.ativo && (p.admin || (p.areas || []).includes('i
 
 async function iniciar() {
   if (!CFG.SUPABASE_URL || !window.supabase) {
-    // modo demonstração (sem Supabase): abre direto
+    if (!window.IMP_DEMO) return bloqueio('Configuração do Supabase não encontrada (config.js).');
+    est.demo = true;
     est.perfil = { nome: 'Demonstração', ativo: true, admin: true };
+    Object.assign(est, window.IMP_DEMO);
+    $('#usuario').textContent = 'Demonstração'; $('#btnSair').hidden = true;
     return mostrarApp();
   }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_CHAVE_PUBLICA);
@@ -157,9 +766,7 @@ async function iniciar() {
   if (!data.session) return mostrarLogin();
   await entrar();
 }
-
 function mostrarLogin() { $('#app').hidden = true; $('#telaLogin').hidden = false; setTimeout(() => $('#lEmail').focus(), 50); }
-
 async function entrar() {
   const { data: { user } } = await sb.auth.getUser();
   const { data: perfil, error } = await sb.from('perfis').select('*').eq('id', user.id).maybeSingle();
@@ -167,20 +774,22 @@ async function entrar() {
   if (error) return bloqueio('Não consegui ler seu perfil: ' + error.message);
   est.perfil = perfil;
   $('#usuario').textContent = (perfil && perfil.nome) || user.email;
-  if (!temAcesso(perfil)) return bloqueio(`Olá, ${user.email}. Você ainda não tem acesso ao módulo de Importações.<br>Peça ao administrador para liberar a área “Importações” no seu usuário.`);
+  if (!temAcesso(perfil)) return bloqueio(`Olá, ${esc(user.email)}. Você ainda não tem acesso ao módulo de Importações.<br>Peça ao administrador para liberar a área “Importações” no seu usuário.`);
+  $('#app').hidden = false;
+  $('#conteudo').innerHTML = '<div class="card"><div class="vazio">Carregando…</div></div>';
+  try {
+    await recarregar();
+  } catch (e) {
+    const falta = /imp_|does not exist|schema cache/i.test(e.message);
+    return bloqueio(falta ? 'As tabelas do módulo ainda não foram criadas no Supabase.<br>Rode o arquivo <b>MIGRACAO-IMPORTACOES-2026-11-25.sql</b> no SQL Editor.' : 'Erro ao carregar: ' + esc(e.message));
+  }
   mostrarApp();
 }
-
 function bloqueio(msg) {
   $('#app').hidden = false; $('#subabas').hidden = true;
   $('#conteudo').innerHTML = `<div class="card"><div class="vazio">${msg}</div></div>`;
 }
-
-function mostrarApp() {
-  $('#app').hidden = false; $('#subabas').hidden = false;
-  if (!sb) $('#btnSair').hidden = true;
-  montarSubabas();
-}
+function mostrarApp() { $('#app').hidden = false; $('#subabas').hidden = false; montarSubabas(); }
 
 $('#formLogin').onsubmit = async ev => {
   ev.preventDefault(); $('#lErro').textContent = '';
@@ -189,6 +798,7 @@ $('#formLogin').onsubmit = async ev => {
   await entrar();
 };
 $('#btnSair').onclick = async () => { if (sb) await sb.auth.signOut(); location.reload(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { const m = document.querySelector('.modal-fundo:last-child'); if (m) m.remove(); } });
 
 iniciar();
 </script>
