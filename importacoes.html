@@ -786,8 +786,12 @@ function calcularAduaneiro(itens, pr, aliq) {
   fe.adicoes = adicoes; fe.rateio_frete = porPeso ? 'peso' : 'fob';
   // ---- DHL / courier (planilha de cálculo aduaneiro)
   dh.frete_brl = fu * di * 1.06; dh.outras_despesas = n(pr.dhl_despesas);
-  // base do II e do ICMS no DHL = (FOB + frete internacional rateado) × dólar DI
-  const itD = linhas.map(x => { const a = x.a || {}; const baseD = (x.fobT + fu * parteFrete(x)) * di; const iiD = n(a.ii_dhl) * baseD, icD = n(a.icms_dhl) * baseD; return { ii: iiD, icms: icD, imp: iiD + icD }; });
+  // DHL (remessa expressa): valor aduaneiro = (FOB + frete rateado) × dólar DI; II = 60% do valor aduaneiro;
+  // ICMS "por dentro" sobre valor aduaneiro + II: (VA + II) ÷ (1 − ICMS) × ICMS  — confere com a cobrança DHL 6516931
+  //   (a DHL trunca os centavos em cada valor: frete 1.181,3967 → 1.181,39)
+  const tr2 = v => Math.floor(v * 100 + 1e-7) / 100;
+  const itD = linhas.map(x => { const a = x.a || {}; const baseD = tr2(x.fobT * di) + tr2(fu * parteFrete(x) * di); const iiD = tr2(n(a.ii_dhl) * baseD);
+    const icD = n(a.icms_dhl) < 1 ? tr2((baseD + iiD) / (1 - n(a.icms_dhl)) * n(a.icms_dhl)) : 0; return { ii: iiD, icms: icD, imp: iiD + icD }; });
   const somaD = itD.reduce((s, x) => s + x.imp, 0);
   linhas.forEach((x, i) => {
     const d = itD[i]; dh.ii += d.ii; dh.icms += d.icms;
