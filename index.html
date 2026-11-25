@@ -764,7 +764,12 @@ async function lerImportacoes() {
   const lista = await buscarTodos(() => sb.from('importacoes').select('*').order('previsao').order('id'));
   est.importacoes = lista;
   const { data: par } = await sb.from('parametros').select('chave,valor');
-  const cam = (par || []).find(p => p.chave === 'cambio'); if (cam) est.cambio = cam.valor;
+  const cam = (par || []).find(p => p.chave === 'cambio');
+  if (cam) {
+    // se o usuário trocou o câmbio só nesta tela (sem salvar), a atualização automática não desfaz a troca
+    const trocaLocal = est.cambioSalvo !== undefined && JSON.stringify(est.cambio) !== JSON.stringify(est.cambioSalvo);
+    if (trocaLocal) est.cambioSalvo = cam.valor; else { est.cambio = cam.valor; est.cambioSalvo = { ...cam.valor }; }
+  }
   const { data: cfg } = await sb.from('config_painel').select('valor').eq('chave', 'ptax').maybeSingle();
   if (cfg) est.ptax = cfg.valor;
   await lerImpFluxo();
@@ -2101,9 +2106,9 @@ function renderProj(el) {
     ${temArea('importacoes') ? `<div class="card cheio">
       <div class="controles" style="margin-bottom:4px"><h2 style="margin-right:auto">Importações no fluxo</h2>
         <span class="rot">Câmbio para projetar as parcelas em US$:</span>
-        <label class="rot"><input type="radio" name="camModo" value="manual" ${est.cambio.modo !== 'ptax' ? 'checked' : ''} ${podeEditar() ? '' : 'disabled'}> Manual</label>
-        <input type="text" inputmode="decimal" id="camManual" value="${Number(est.cambio.manual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}" style="width:90px;font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)" ${podeEditar() ? '' : 'disabled'}>
-        <label class="rot"><input type="radio" name="camModo" value="ptax" ${est.cambio.modo === 'ptax' ? 'checked' : ''} ${podeEditar() ? '' : 'disabled'}> PTAX${est.ptax && est.ptax.valor ? ' ' + Number(est.ptax.valor).toLocaleString('pt-BR', { minimumFractionDigits: 4 }) : ''}</label>
+        <label class="rot"><input type="radio" name="camModo" value="manual" ${est.cambio.modo !== 'ptax' ? 'checked' : ''}> Manual</label>
+        <input type="text" inputmode="decimal" id="camManual" value="${Number(est.cambio.manual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}" style="width:90px;font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)">
+        <label class="rot"><input type="radio" name="camModo" value="ptax" ${est.cambio.modo === 'ptax' ? 'checked' : ''}> PTAX${est.ptax && est.ptax.valor ? ' ' + Number(est.ptax.valor).toLocaleString('pt-BR', { minimumFractionDigits: 4 }) : ''}</label>
         ${podeEditar() ? '<button id="camSalvar">Salvar câmbio</button>' : ''}<span class="msg-ok" id="camMsg" style="margin:0"></span>
       </div>
       <div class="nota">Pagamentos marcados "No fluxo" nos processos do módulo Importações, ainda não pagos. Parcelas em US$ são projetadas pelo câmbio ao lado (${est.cambio.modo === 'ptax' ? 'PTAX' : 'manual'}: ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })}). Depois de pago, o valor vem do ERP. Alterar a data aqui altera o processo.</div>
@@ -2321,6 +2326,23 @@ function renderImportacoes(el) {
 
 // câmbio usado para converter parcelas de importação sem taxa (manual ou PTAX)
 function ligarCambio(el) {
+  // troca imediata (só nesta tela): recalcula o fluxo sem gravar; "Salvar câmbio" guarda a escolha
+  const lerCampos = () => {
+    const modo = (el.querySelector('input[name=camModo]:checked') || {}).value || 'ptax';
+    const t = String((el.querySelector('#camManual') || {}).value || '').trim();
+    return { modo, manual: Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t) || est.cambio.manual };
+  };
+  const aplicar = () => {
+    const y = window.scrollY, v = lerCampos();
+    if (v.modo === 'manual' && !(v.manual > 0)) return;
+    if (est.cambioSalvo === undefined) est.cambioSalvo = { ...est.cambio };
+    est.cambio = v; render(); window.scrollTo(0, y);
+    const m = document.querySelector('#camMsg');
+    if (m) m.textContent = JSON.stringify(est.cambio) !== JSON.stringify(est.cambioSalvo) ? 'Valores recalculados (não salvo).' : '';
+  };
+  el.querySelectorAll('input[name=camModo]').forEach(r => r.onchange = aplicar);
+  const inp = el.querySelector('#camManual');
+  if (inp) inp.onchange = () => { const r = el.querySelector('input[name=camModo][value=manual]'); if (r) r.checked = true; aplicar(); };
   const bt = el.querySelector('#camSalvar'); if (!bt) return;
   bt.onclick = async () => {
     const modo = el.querySelector('input[name=camModo]:checked').value;
@@ -2334,6 +2356,7 @@ function ligarCambio(el) {
       if (error) return mostrarErro(error.message);
       if (!data || !data.length) return mostrarErro('O câmbio não foi gravado (sem permissão de edição ou parâmetro "cambio" inexistente).');
     }
+    est.cambioSalvo = { ...est.cambio };
     render(); const m = document.querySelector('#camMsg'); if (m) m.textContent = `Câmbio salvo: ${modo === 'ptax' ? 'PTAX' : 'manual'} ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })}.`;
   };
 }
