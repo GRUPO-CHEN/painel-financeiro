@@ -703,8 +703,8 @@ function renderFicha(el, p) {
     await depoisDeGravar();
   };
   if ($('#btnGerarNum')) $('#btnGerarNum').onclick = () => formParcela(p, null, 'Numerário',
-    { valor_previsto_brl: Math.round(estm.resultado.numerario * 100) / 100, data_prevista: p.cp_numerario_prev || p.previsao_chegada || null,
-      observacao: 'Numerário previsto pela estimativa (impostos + despesas + frete internacional).' });
+    { valor_previsto_brl: Math.round(estm.resultado.numerario * 100) / 100, data_prevista: p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada || null,
+      no_fluxo: !!(p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada), observacao: `${OBS_NUM_EST} (impostos + despesas + fretes).` });
   el.querySelectorAll('[data-parc]').forEach(b => b.onclick = () => { const c = est.cambios.find(x => x.id === Number(b.dataset.parc)); formParcela(p, c, c.tipo || 'Câmbio'); });
   if ($('#btnFechar')) $('#btnFechar').onclick = async () => {
     const pend = [];
@@ -731,40 +731,65 @@ function linhaEstReal(l) {
 function campo(r, v) { return `<div class="c"><div class="r">${r}</div><div class="v">${esc(v)}</div></div>`; }
 
 // ======================= Calculadora aduaneira =======================
-// motor da calculadora aduaneira (mesmas fórmulas da MATRIZ - CÁLCULO ADUANEIRO)
+// motor da calculadora aduaneira — método da planilha MATRIZ NEW - VALIDAÇÃO DI (cenário próprio)
+// e da MATRIZ - CÁLCULO ADUANEIRO (cenário DHL / courier)
+function taxaSiscomex(n) {
+  n = Math.max(0, Math.round(n || 0));
+  if (!n) return 0;
+  return 115.67 + Math.min(n, 2) * 38.56 + Math.max(Math.min(n - 2, 3), 0) * 30.85 + Math.max(Math.min(n - 5, 5), 0) * 23.14
+    + Math.max(Math.min(n - 10, 10), 0) * 15.42 + Math.max(Math.min(n - 20, 30), 0) * 7.71 + Math.max(n - 50, 0) * 3.86;
+}
 function calcularAduaneiro(itens, pr, aliq) {
   const n = v => Number(v) || 0;
-  const linhas = itens.map(it => ({ ...it, fobT: n(it.qtd) * n(it.fob), a: aliq[it.familia] || null }));
+  const linhas = itens.map(it => ({ ...it, fobT: n(it.qtd) * n(it.fob), pesoT: n(it.peso), a: aliq[it.familia] || null }));
   const sumF = linhas.reduce((s, x) => s + x.fobT, 0);
-  const di = n(pr.dolar_di), dc = n(pr.dolar_cambio) || di, fu = n(pr.frete_usd);
-  const despTot = n(pr.sdas) + n(pr.armazenagem) + n(pr.despachante) + n(pr.frete_nacional) + n(pr.outras);
-  const vazio = () => ({ fob_usd: sumF, cambio_brl: sumF * dc, frete_brl: 0, ii: 0, ipi: 0, pis: 0, cofins: 0, icms: 0,
+  const sumP = linhas.reduce((s, x) => s + x.pesoT, 0);
+  const porPeso = sumP > 0 && linhas.every(x => x.pesoT > 0);          // frete rateado por peso líquido (como na DI)
+  const parteFrete = x => porPeso ? x.pesoT / sumP : (sumF ? x.fobT / sumF : 0);
+  const di = n(pr.dolar_di), dc = n(pr.dolar_cambio) || di, fu = n(pr.frete_usd), acr = n(pr.outros_acresc);
+  const vmld = sumF + fu;
+  const adicoes = n(pr.adicoes) || new Set(linhas.filter(x => x.fobT).map(x => x.familia || '?')).size;
+  const sisc = taxaSiscomex(adicoes);
+  const freteBRL = fu * di + n(pr.frete_desp);
+  const base0 = () => ({ fob_usd: sumF, cambio_brl: sumF * dc, frete_brl: 0, ii: 0, ipi: 0, pis: 0, cofins: 0, icms: 0, siscomex: 0, afrmm: 0, sdas: 0,
     sdas_afrmm_siscomex: 0, armazenagem: 0, despachante_valor: 0, outras_despesas: 0, frete_nacional: 0 });
-  // ---- próprio (Feromax / Supply)
-  const fe = vazio(), dh = vazio();
-  fe.frete_brl = fu * di * 1.06 + n(pr.logistica);
-  fe.sdas_afrmm_siscomex = n(pr.sdas); fe.armazenagem = n(pr.armazenagem); fe.despachante_valor = n(pr.despachante);
-  fe.frete_nacional = n(pr.frete_nacional); fe.outras_despesas = n(pr.outras);
-  dh.frete_brl = fu * di * 1.06; dh.outras_despesas = n(pr.dhl_despesas);
-  const itF = [], itD = [];
-  for (const x of linhas) {
+  const fe = base0(), dh = base0();
+  // ---- próprio (método DI)
+  const it = linhas.map(x => {
     const a = x.a || {};
-    const freteU = sumF ? x.fobT * fu / sumF : 0;
-    const base = (x.fobT + freteU) * di;
-    const ii = n(a.ii) * base, ipi = n(a.ipi) * (base + ii), pis = n(a.pis) * base, cof = n(a.cofins) * base;
-    const icms = n(a.icms) < 1 ? (base + ii + ipi + pis + cof) / (1 - n(a.icms)) * n(a.icms) : 0;
-    itF.push({ ii, ipi, pis, cofins: cof, icms, imp: ii + ipi + pis + cof + icms, camb: x.fobT * dc });
-    const iiD = n(a.ii_dhl) * x.fobT * di, icD = n(a.icms_dhl) * x.fobT * di;
-    itD.push({ ii: iiD, icms: icD, imp: iiD + icD, camb: x.fobT * dc });
-  }
-  const somaCI = itF.reduce((s, x) => s + x.camb + x.imp, 0), somaD = itD.reduce((s, x) => s + x.imp, 0);
+    const freteU = fu * parteFrete(x), acrU = sumF ? acr * x.fobT / sumF : 0;
+    const O = (x.fobT + freteU + acrU) * di;                       // base II, PIS, COFINS (valor aduaneiro)
+    const ii = n(a.ii) * O, pis = n(a.pis) * O, cof = n(a.cofins) * O;
+    const ipi = n(a.ipi) * (O + ii);
+    const parteV = vmld ? (x.fobT + freteU + acrU) / vmld : 0;
+    const sc = sisc * parteV, af = n(pr.afrmm) * parteV;
+    const baseIcms = n(a.icms) < 1 ? (O + ii + pis + cof + ipi + sc + af) / (1 - n(a.icms)) : 0;
+    const icms = baseIcms * n(a.icms);
+    return { ii, pis, cofins: cof, ipi, icms, sc, af, baseIcms };
+  });
+  const sumBase = it.reduce((s, x) => s + x.baseIcms, 0);
+  const despIcms = n(pr.armazenagem) + n(pr.sdas) + n(pr.despachante) + n(pr.outras);   // rateadas pela base do ICMS
   linhas.forEach((x, i) => {
-    const f = itF[i], d = itD[i];
-    for (const k of ['ii', 'ipi', 'pis', 'cofins', 'icms']) fe[k] += f[k];
-    dh.ii += d.ii; dh.icms += d.icms;
-    const custoF = f.imp + f.camb + (somaCI ? (f.camb + f.imp) * despTot / somaCI : 0) + (sumF ? x.fobT * fe.frete_brl / sumF : 0);
-    const custoD = d.imp + d.camb + (somaD ? d.imp * n(pr.dhl_despesas) / somaD : 0) + (sumF ? x.fobT * dh.frete_brl / sumF : 0);
-    x.fatorF = x.fobT ? custoF / x.fobT : null; x.custoUnF = x.fatorF != null ? n(x.fob) * x.fatorF : null;
+    const y = it[i];
+    for (const k of ['ii', 'ipi', 'pis', 'cofins', 'icms']) fe[k] += y[k];
+    fe.siscomex += y.sc; fe.afrmm += y.af;
+    const custo = x.fobT * dc + y.ii + y.pis + y.cofins + y.ipi + y.icms + y.sc + y.af
+      + (sumBase ? despIcms * y.baseIcms / sumBase : 0) + (freteBRL + n(pr.frete_nacional)) * parteFrete(x);
+    x.fatorF = x.fobT ? custo / x.fobT : null; x.custoUnF = x.fatorF != null ? n(x.fob) * x.fatorF : null;
+  });
+  if (!sumBase) { fe.siscomex = sisc; fe.afrmm = n(pr.afrmm); }
+  fe.sdas = n(pr.sdas);
+  fe.sdas_afrmm_siscomex = fe.sdas + fe.siscomex + fe.afrmm;
+  fe.armazenagem = n(pr.armazenagem); fe.despachante_valor = n(pr.despachante); fe.outras_despesas = n(pr.outras);
+  fe.frete_nacional = n(pr.frete_nacional); fe.frete_brl = freteBRL;
+  fe.adicoes = adicoes; fe.rateio_frete = porPeso ? 'peso' : 'fob';
+  // ---- DHL / courier (planilha de cálculo aduaneiro)
+  dh.frete_brl = fu * di * 1.06; dh.outras_despesas = n(pr.dhl_despesas);
+  const itD = linhas.map(x => { const a = x.a || {}; const iiD = n(a.ii_dhl) * x.fobT * di, icD = n(a.icms_dhl) * x.fobT * di; return { ii: iiD, icms: icD, imp: iiD + icD }; });
+  const somaD = itD.reduce((s, x) => s + x.imp, 0);
+  linhas.forEach((x, i) => {
+    const d = itD[i]; dh.ii += d.ii; dh.icms += d.icms;
+    const custoD = d.imp + x.fobT * dc + (somaD ? d.imp * n(pr.dhl_despesas) / somaD : 0) + (sumF ? x.fobT * dh.frete_brl / sumF : 0);
     x.fatorD = x.fobT ? custoD / x.fobT : null; x.custoUnD = x.fatorD != null ? n(x.fob) * x.fatorD : null;
   });
   const fecha = r => {
@@ -776,14 +801,15 @@ function calcularAduaneiro(itens, pr, aliq) {
     r.creditos = r.icms + r.ipi;
     r.custo_real = r.total - r.creditos;
     r.fator2 = sumF ? r.custo_real / sumF : null;
+    r.dif_cambial = sumF * (dc - di);
     return r;
   };
   return { itens: linhas, feromax: fecha(fe), dhl: fecha(dh), semAliq: linhas.filter(x => !x.a).map(x => x.familia) };
 }
 
-const PREM = [['frete_usd', 'Frete internacional (US$)'], ['dolar_di', 'Dólar DI estimado'], ['dolar_cambio', 'Dólar câmbio estimado'],
-  ['logistica', 'Despesas logística (R$)'], ['sdas', 'SDAS / AFRMM / Siscomex (R$)'], ['armazenagem', 'Armazenagem (R$)'],
-  ['despachante', 'Despachante (R$)'], ['frete_nacional', 'Frete nacional (R$)'], ['outras', 'Outras despesas (R$)'], ['dhl_despesas', 'Despesas DHL (R$)']];
+const PREM = [['frete_usd', 'Frete internacional (US$)'], ['outros_acresc', 'Outros acréscimos (US$)'], ['dolar_di', 'Dólar DI estimado'], ['dolar_cambio', 'Dólar câmbio estimado'],
+  ['frete_desp', 'Despesas do frete internacional (R$)'], ['afrmm', 'AFRMM (R$) · aprox. 8% do frete marítimo'], ['sdas', 'SDAS (R$)'], ['armazenagem', 'Armazenagem (R$)'],
+  ['despachante', 'Despachante (R$)'], ['frete_nacional', 'Frete nacional (R$)'], ['outras', 'Outras despesas (R$)'], ['adicoes', 'Nº de adições (vazio = nº de famílias)'], ['dhl_despesas', 'Despesas DHL (R$)']];
 const ALQ = [['ii', 'II'], ['ipi', 'IPI'], ['icms', 'ICMS'], ['pis', 'PIS'], ['cofins', 'COFINS'], ['ii_dhl', 'II DHL'], ['icms_dhl', 'ICMS DHL']];
 const CENARIOS = { feromax: 'Próprio (Feromax / Supply)', dhl: 'DHL (courier)' };
 
@@ -793,17 +819,17 @@ function novaCalc(p) {
   return {
     processo_id: p ? p.id : null,
     cenario: (e && e.cenario) || 'feromax',
-    premissas: e && e.premissas ? Object.fromEntries(PREM.map(([k]) => [k, e.premissas[k] != null ? String(e.premissas[k]).replace('.', ',') : ''])) :
-      { frete_usd: '', dolar_di: ref, dolar_cambio: ref, logistica: '', sdas: '', armazenagem: '', despachante: '', frete_nacional: '', outras: '', dhl_despesas: '250' },
-    itens: e && e.itens && e.itens.length ? e.itens.map(x => ({ codigo: x.codigo || '', qtd: String(x.qtd ?? ''), fob: String(x.fob ?? '').replace('.', ','), familia: x.familia || '' }))
-      : [{ codigo: '', qtd: '1', fob: p && p.fob_usd ? String(p.fob_usd).replace('.', ',') : '', familia: '' }],
+    premissas: e && e.premissas ? Object.fromEntries(PREM.map(([k]) => { const v = e.premissas[k] ?? (k === 'frete_desp' ? e.premissas.logistica : null); return [k, v != null && v !== 0 ? String(v).replace('.', ',') : '']; })) :
+      { frete_usd: '', outros_acresc: '', dolar_di: ref, dolar_cambio: ref, frete_desp: '', afrmm: '', sdas: '', armazenagem: '', despachante: '', frete_nacional: '', outras: '', adicoes: '', dhl_despesas: '250' },
+    itens: e && e.itens && e.itens.length ? e.itens.map(x => ({ codigo: x.codigo || '', qtd: String(x.qtd ?? ''), fob: String(x.fob ?? '').replace('.', ','), familia: x.familia || '', peso: x.peso ? String(x.peso).replace('.', ',') : '' }))
+      : [{ codigo: '', qtd: '1', fob: p && p.fob_usd ? String(p.fob_usd).replace('.', ',') : '', familia: '', peso: '' }],
   };
 }
 function abrirCalculadora(p) { est.calc = novaCalc(p); est.abertoId = null; abrir('calculadora'); window.scrollTo(0, 0); }
 const numCalc = v => Number(paraNum(v)) || 0;
 function resultadoCalc() {
   const c = est.calc;
-  const itens = c.itens.filter(x => numCalc(x.qtd) && numCalc(x.fob)).map(x => ({ codigo: x.codigo, qtd: numCalc(x.qtd), fob: numCalc(x.fob), familia: x.familia }));
+  const itens = c.itens.filter(x => numCalc(x.qtd) && numCalc(x.fob)).map(x => ({ codigo: x.codigo, qtd: numCalc(x.qtd), fob: numCalc(x.fob), familia: x.familia, peso: numCalc(x.peso) || null }));
   const pr = Object.fromEntries(PREM.map(([k]) => [k, numCalc(c.premissas[k])]));
   return { itens, pr, r: calcularAduaneiro(itens, pr, est.aliquotas) };
 }
@@ -824,20 +850,21 @@ function renderCalculadora(el) {
   </div>
   ${!familias.length ? '<div class="card"><div class="vazio">Nenhuma alíquota cadastrada. Rode o SQL do módulo (imp_aliquotas) ou cadastre abaixo.</div></div>' : ''}
   <div class="card">
-    <div class="topo"><h2>Premissas</h2><span class="nota">mesmas da planilha MATRIZ – CÁLCULO ADUANEIRO${est.cambioRef ? ` · câmbio do painel: ${TX(est.cambioRef)}` : ''}</span></div>
+    <div class="topo"><h2>Premissas</h2><span class="nota">cálculo pelo método da planilha MATRIZ NEW – VALIDAÇÃO DI${est.cambioRef ? ` · câmbio do painel: ${TX(est.cambioRef)}` : ''}</span></div>
     <div class="calc-grade">${PREM.map(([k, n]) => `<label><span>${n}</span><input data-pr="${k}" inputmode="decimal" value="${esc(c.premissas[k])}"></label>`).join('')}</div>
   </div>
   <div class="card">
-    <div class="topo"><h2>Itens da invoice</h2><span class="nota">família define as alíquotas</span>
+    <div class="topo"><h2>Itens da invoice</h2><span class="nota">cada família = uma adição (NCM) · com o peso líquido de todos os itens, o frete é rateado por peso, como na DI</span>
       <div class="acoes"><button class="btn btn-mini" id="cColar">Colar da planilha</button><button class="btn btn-mini" id="cItem">+ Item</button></div></div>
     <div class="tabela-wrap"><table>
-      <thead><tr><th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th>
+      <thead><tr><th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th><th class="n" style="width:100px">Peso líq. kg</th>
         <th class="n">FOB total</th><th class="n">Fator próprio</th><th class="n">Custo unit. próprio</th><th class="n">Fator DHL</th><th class="n">Custo unit. DHL</th><th></th></tr></thead>
       <tbody>${c.itens.map((x, i) => `<tr>
         <td><input class="ci" data-it="${i}" data-campo="codigo" value="${esc(x.codigo)}"></td>
         <td><select class="ci" data-it="${i}" data-campo="familia"><option value="">— escolha —</option>${familias.map(f => `<option ${f === x.familia ? 'selected' : ''}>${esc(f)}</option>`).join('')}${x.familia && !familias.includes(x.familia) ? `<option selected>${esc(x.familia)}</option>` : ''}</select></td>
         <td><input class="ci n" data-it="${i}" data-campo="qtd" inputmode="decimal" value="${esc(x.qtd)}"></td>
         <td><input class="ci n" data-it="${i}" data-campo="fob" inputmode="decimal" value="${esc(x.fob)}"></td>
+        <td><input class="ci n" data-it="${i}" data-campo="peso" inputmode="decimal" value="${esc(x.peso || '')}" placeholder="opcional"></td>
         <td class="n" id="cFob${i}"></td><td class="n" id="cFtF${i}"></td><td class="n" id="cCuF${i}"></td><td class="n" id="cFtD${i}"></td><td class="n" id="cCuD${i}"></td>
         <td class="n">${c.itens.length > 1 ? `<button class="btn btn-mini btn-perigo" data-rm="${i}" title="Remover">×</button>` : ''}</td></tr>`).join('')}</tbody>
     </table></div>
@@ -871,7 +898,7 @@ function renderCalculadora(el) {
   el.querySelectorAll('[data-pr]').forEach(i => i.oninput = () => { c.premissas[i.dataset.pr] = i.value; atualizarCalc(); });
   el.querySelectorAll('[data-it]').forEach(i => { const ev = i.tagName === 'SELECT' ? 'onchange' : 'oninput'; i[ev] = () => { c.itens[Number(i.dataset.it)][i.dataset.campo] = i.value; atualizarCalc(); }; });
   el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { c.itens.splice(Number(b.dataset.rm), 1); redesenhar(); });
-  $('#cItem').onclick = () => { const ult = c.itens[c.itens.length - 1]; c.itens.push({ codigo: '', qtd: '1', fob: '', familia: ult ? ult.familia : '' }); redesenhar(); };
+  $('#cItem').onclick = () => { const ult = c.itens[c.itens.length - 1]; c.itens.push({ codigo: '', qtd: '1', fob: '', familia: ult ? ult.familia : '', peso: '' }); redesenhar(); };
   $('#cColar').onclick = colarItens;
   el.querySelectorAll('[data-cen]').forEach(b => b.onclick = () => { c.cenario = b.dataset.cen; redesenhar(); });
   $('#cAliq').ontoggle = e => { est.calcAliqAberto = e.target.open; };
@@ -903,29 +930,36 @@ function atualizarCalc() {
   const lin = (n, a, b, opt = {}) => `<tr${opt.forte ? ' style="font-weight:650"' : ''}><td>${n}</td><td class="n">${opt.f ? FT(a) : opt.u ? U(a) : F2.format(a)}</td><td class="n">${opt.f ? FT(b) : opt.u ? U(b) : F2.format(b)}</td></tr>`;
   const box = document.getElementById('cResultado'); if (!box) return;
   const semFam = [...new Set(r.semAliq)];
-  box.innerHTML = `<div class="topo"><h2>Resultado</h2><span class="nota">cenário marcado para salvar: <b>${CENARIOS[c.cenario]}</b></span></div>
+  box.innerHTML = `<div class="topo"><h2>Resultado</h2><span class="nota">cenário marcado para salvar: <b>${CENARIOS[c.cenario]}</b> · ${F.adicoes} adição(ões) · frete rateado por ${F.rateio_frete === 'peso' ? 'peso líquido' : 'FOB (informe o peso de todos os itens para ratear por peso)'}</span></div>
     ${semFam.length ? `<div class="nota verm" style="margin-bottom:8px">Itens sem família/alíquota (impostos zerados): ${semFam.map(x => esc(x || 'sem família')).join(', ')}</div>` : ''}
     <div class="tabela-wrap"><table>
       <thead><tr><th></th><th class="n">${CENARIOS.feromax}</th><th class="n">${CENARIOS.dhl}</th></tr></thead>
       <tbody>
         ${lin('Valor total da invoice (FOB)', F.fob_usd, D.fob_usd, { u: true })}
         ${lin('Câmbio (FOB × dólar câmbio)', F.cambio_brl, D.cambio_brl)}
-        ${lin('II', F.ii, D.ii)}${lin('IPI', F.ipi, D.ipi)}${lin('PIS', F.pis, D.pis)}${lin('COFINS', F.cofins, D.cofins)}${lin('ICMS', F.icms, D.icms)}
+        ${lin('Diferença cambial (câmbio − DI)', F.dif_cambial, D.dif_cambial)}
+        ${lin('II', F.ii, D.ii)}${lin('PIS', F.pis, D.pis)}${lin('COFINS', F.cofins, D.cofins)}${lin('IPI', F.ipi, D.ipi)}${lin('ICMS', F.icms, D.icms)}
         ${lin('Impostos total', F.impostos, D.impostos, { forte: true })}
-        ${lin('Despesas (SDAS, armazenagem, despachante, frete nacional, outras / DHL)', F.despesas, D.despesas)}
+        ${lin(`Taxa Siscomex (${F.adicoes} adição(ões))`, F.siscomex, D.siscomex)}
+        ${lin('AFRMM', F.afrmm, D.afrmm)}
+        ${lin('SDAS', F.sdas, D.sdas)}
+        ${lin('Armazenagem', F.armazenagem, D.armazenagem)}
+        ${lin('Despachante', F.despachante_valor, D.despachante_valor)}
+        ${lin('Outras despesas / despesas DHL', F.outras_despesas, D.outras_despesas)}
         ${lin('Frete internacional (R$)', F.frete_brl, D.frete_brl)}
+        ${lin('Frete nacional', F.frete_nacional, D.frete_nacional)}
         ${lin('Numerários total', F.numerario, D.numerario, { forte: true })}
         ${lin('Total importação', F.total, D.total, { forte: true })}
-        ${lin('Fator de compras', F.fator, D.fator, { f: true, forte: true })}
+        ${lin('Fator de importação', F.fator, D.fator, { f: true, forte: true })}
         ${lin('Crédito ICMS + IPI', F.creditos, D.creditos)}
         ${lin('Custo real (sem créditos)', F.custo_real, D.custo_real)}
-        ${lin('Fator de compras 2 (sem créditos)', F.fator2, D.fator2, { f: true })}
+        ${lin('Fator 2 (sem créditos)', F.fator2, D.fator2, { f: true })}
       </tbody></table></div>`;
 }
 
 function colarItens() {
   const m = abrirModal(`<h2>Colar itens da planilha</h2>
-    <div class="nota" style="margin-bottom:8px">Copie do Excel as colunas <b>Código · Quantidade · FOB unitário · Família</b> (a família é opcional) e cole abaixo.</div>
+    <div class="nota" style="margin-bottom:8px">Copie do Excel as colunas <b>Código · Quantidade · FOB unitário · Família · Peso líquido (kg)</b> (família e peso são opcionais) e cole abaixo.</div>
     <textarea id="cTxt" rows="10" style="width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)"></textarea>
     <label class="chk-fluxo" style="margin-top:8px"><input type="checkbox" id="cSubst" checked> Substituir os itens atuais</label>
     <div class="erro" id="cErr"></div>
@@ -938,7 +972,7 @@ function colarItens() {
     for (const l of linhas) {
       if (l.length < 3) continue;
       if (isNaN(Number(paraNum(l[1]))) || isNaN(Number(paraNum(l[2])))) continue; // cabeçalho
-      novos.push({ codigo: l[0], qtd: l[1], fob: l[2], familia: l[3] ? achaFam(l[3]) : (est.calc.itens[0] || {}).familia || '' });
+      novos.push({ codigo: l[0], qtd: l[1], fob: l[2], familia: l[3] ? achaFam(l[3]) : (est.calc.itens[0] || {}).familia || '', peso: l[4] || '' });
     }
     if (!novos.length) return void (m.querySelector('#cErr').textContent = 'Nenhuma linha reconhecida (código, quantidade, FOB).');
     est.calc.itens = m.querySelector('#cSubst').checked ? novos : est.calc.itens.filter(x => numCalc(x.fob)).concat(novos);
@@ -957,12 +991,29 @@ async function salvarEstimativa() {
   const estimativa = { data: hojeISO(), cenario: c.cenario, premissas: pr,
     itens: itens.map(x => ({ ...x, aliq: est.aliquotas[x.familia] ? Object.fromEntries(ALQ.map(([k]) => [k, est.aliquotas[x.familia][k]])) : null })),
     resultado: arred(res) };
-  const msg = `Fator estimado <b>${FT(res.fator)}</b> · total ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br>Salvar no pedido ${esc(p.pedido || '')} · ${esc(p.fornecedor)}?`;
+  const dataNum = p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada;
+  const msg = `Fator estimado <b>${FT(res.fator)}</b> · total ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>
+    O numerário previsto ${dataNum ? `entra no Fluxo de caixa projetado em <b>${dm(dataNum)}</b> (data prevista do numerário/chegada)` : 'é criado, mas <b>sem data</b>: informe a previsão de chegada ou do numerário para ele entrar no fluxo'}.<br><br>Salvar no pedido ${esc(p.pedido || '')} · ${esc(p.fornecedor)}?`;
   if (!await confirmar('Salvar estimativa', msg, 'Salvar')) return;
   const reg = { estimativa, fator_estimado: Math.round(res.fator * 1e6) / 1e6 };
   if (!p.fob_usd) reg.fob_usd = Math.round(res.fob_usd * 100) / 100;
   await gravar('imp_processos', reg, p.id, p, true);
+  await numerarioDaEstimativa(p, res.numerario);
   est.abertoId = p.id; abrir('processos'); await depoisDeGravar();
+}
+
+// numerário previsto pela estimativa: cria (ou atualiza, se ainda não pago) e leva ao Fluxo de caixa projetado
+const OBS_NUM_EST = 'Numerário previsto pela estimativa';
+async function numerarioDaEstimativa(p, valor) {
+  valor = Math.round(nz(valor) * 100) / 100;
+  if (!valor) return;
+  const data = p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada || null;
+  const ja = pagamentosDe(p).find(c => !ehCambio(c) && !c.pago && String(c.observacao || '').startsWith(OBS_NUM_EST));
+  const obs = `${OBS_NUM_EST} (impostos + despesas + fretes) de ${dm(hojeISO())}.`;
+  if (ja) await gravar('imp_cambios', { valor_previsto_brl: valor, observacao: obs, data_prevista: ja.data_prevista || data, no_fluxo: !!(ja.data_prevista || data) }, ja.id, ja, true);
+  else if (!pagamentosDe(p).some(c => !ehCambio(c) && c.pago))
+    await inserirSemRecarregar('imp_cambios', { processo_id: p.id, empresa: p.empresa, tipo: 'Numerário', valor_previsto_brl: valor, data_prevista: data,
+      no_fluxo: !!data, ordem: pagamentosDe(p).length + 1, observacao: obs + (data ? '' : ' Sem data prevista: informe a data para entrar no fluxo.') });
 }
 
 // ======================= formulários =======================
@@ -1126,6 +1177,12 @@ async function inserir(tabela, reg) {
   const { data, error } = await sb.from(tabela).insert(reg).select('id').single();
   if (error) throw new Error(error.message);
   await recarregar(); return data.id;
+}
+async function inserirSemRecarregar(tabela, reg) {
+  if (est.demo) { const id = Math.max(0, ...est[mapa[tabela]].map(x => x.id)) + 1; est[mapa[tabela]].push({ id, ...reg }); return id; }
+  const { data, error } = await sb.from(tabela).insert(reg).select('id').single();
+  if (error) { alertaErro(error.message); throw new Error(error.message); }
+  return data.id;
 }
 async function gravar(tabela, reg, id, obj, semRecarregar) {
   if (tabela === 'imp_processos') reg.atualizado_em = new Date().toISOString();
