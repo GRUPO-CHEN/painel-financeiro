@@ -288,7 +288,7 @@ td .acoes-linha { display: flex; gap: 6px; } td .acoes-linha button { padding: 3
     <label class="sub" style="display:flex;gap:6px;align-items:center">
       <input type="checkbox" id="auto" checked title="Atualiza sozinho a cada 2 horas e sempre às 17:45"> Atualização automática
     </label>
-    <button id="btnAtualizar" title="Buscar os dados agora">Atualizar</button>
+    <button id="btnAtualizar" title="Busca de novo os dados no banco. O ERP é copiado para o banco pelo sincronizador do PC a cada 5 minutos.">Atualizar</button>
     <button id="btnTema" title="Tema claro/escuro" aria-label="Alternar tema">🌙</button>
   </header>
 
@@ -782,11 +782,11 @@ async function lerImpFluxo() {
     est.impFluxo = parc.filter(c => c.data_prevista && pm.has(c.processo_id) && pm.get(c.processo_id).status !== 'fechado').map(c => ({ ...c, processo: pm.get(c.processo_id) }));
   } catch (_) { est.impFluxo = []; }
 }
-// valor em R$ de um pagamento do módulo: câmbio = US$ × (câmbio DI, taxa da parcela, dólar da estimativa ou câmbio do painel)
+// valor em R$ de um pagamento do módulo no fluxo: câmbio = US$ × câmbio do painel (PTAX ou manual, card "Importações no fluxo")
+// (o câmbio ainda vai ser fechado no futuro; a taxa da DI/estimativa continua valendo para o fator dentro do processo)
 function valorImpModulo(c) {
   if ((c.tipo || 'Câmbio') !== 'Câmbio') return { valor: Number(c.valor_previsto_brl || 0), taxa: null };
-  const p = c.processo || {};
-  const taxa = Number(p.cambio_di) || Number(c.taxa_di) || Number(p.estimativa && p.estimativa.premissas && p.estimativa.premissas.dolar_cambio) || cambioAtual();
+  const taxa = cambioAtual() || Number(c.processo && c.processo.cambio_di) || Number(c.taxa_di) || 0;
   return { valor: Number(c.valor_usd || 0) * taxa, taxa };
 }
 
@@ -932,6 +932,9 @@ async function carregar() {
       if (meu !== seq) return; est.dadosDre = d; desc = 'DRE';
     } else if (aba === 'importacoes') {
       if (!est.demo) { await lerGeracoes(); await lerImportacoes(); }
+      // recarrega os dados do módulo embutido (processos, pagamentos, produtos…)
+      const fr = $('#impModulo');
+      try { const w = fr && fr.contentWindow; if (w && w.recarregar && w.est && !w.est.demo && w.est.perfil) await w.recarregar(); } catch (_) {}
       if (meu !== seq) return; desc = 'importações';
     } else if (aba === 'usuarios') {
       if (!est.demo) { await lerGeracoes(); await lerUsuarios(); }
@@ -2097,13 +2100,13 @@ function renderProj(el) {
     </div>
     ${temArea('importacoes') ? `<div class="card cheio">
       <div class="controles" style="margin-bottom:4px"><h2 style="margin-right:auto">Importações no fluxo</h2>
-        <span class="rot">Câmbio para parcelas sem taxa:</span>
+        <span class="rot">Câmbio para projetar as parcelas em US$:</span>
         <label class="rot"><input type="radio" name="camModo" value="manual" ${est.cambio.modo !== 'ptax' ? 'checked' : ''} ${podeEditar() ? '' : 'disabled'}> Manual</label>
         <input type="text" inputmode="decimal" id="camManual" value="${Number(est.cambio.manual || 0).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}" style="width:90px;font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)" ${podeEditar() ? '' : 'disabled'}>
         <label class="rot"><input type="radio" name="camModo" value="ptax" ${est.cambio.modo === 'ptax' ? 'checked' : ''} ${podeEditar() ? '' : 'disabled'}> PTAX${est.ptax && est.ptax.valor ? ' ' + Number(est.ptax.valor).toLocaleString('pt-BR', { minimumFractionDigits: 4 }) : ''}</label>
         ${podeEditar() ? '<button id="camSalvar">Salvar câmbio</button>' : ''}<span class="msg-ok" id="camMsg" style="margin:0"></span>
       </div>
-      <div class="nota">Pagamentos marcados "No fluxo" nos processos do módulo Importações, ainda não pagos. Depois de pago, o valor vem do ERP. Alterar a data aqui altera o processo.</div>
+      <div class="nota">Pagamentos marcados "No fluxo" nos processos do módulo Importações, ainda não pagos. Parcelas em US$ são projetadas pelo câmbio ao lado (${est.cambio.modo === 'ptax' ? 'PTAX' : 'manual'}: ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })}). Depois de pago, o valor vem do ERP. Alterar a data aqui altera o processo.</div>
       <div class="tabela-wrap"><table>
         <thead><tr><th>Previsão</th><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Pedido</th><th class="n">US$</th><th class="n">Taxa</th><th class="n">Valor</th><th></th></tr></thead>
         <tbody>${p.imps.length ? p.imps.map(i => `<tr>
@@ -2327,10 +2330,11 @@ function ligarCambio(el) {
     if (modo === 'ptax' && !(est.ptax && est.ptax.valor)) return void (el.querySelector('#camMsg').textContent = 'PTAX ainda não disponível; use manual.');
     est.cambio = { modo, manual };
     if (!est.demo) {
-      const { error } = await sb.from('parametros').update({ valor: est.cambio }).eq('chave', 'cambio');
+      const { data, error } = await sb.from('parametros').update({ valor: est.cambio }).eq('chave', 'cambio').select('chave');
       if (error) return mostrarErro(error.message);
+      if (!data || !data.length) return mostrarErro('O câmbio não foi gravado (sem permissão de edição ou parâmetro "cambio" inexistente).');
     }
-    render(); const m = document.querySelector('#camMsg'); if (m) m.textContent = 'Câmbio salvo.';
+    render(); const m = document.querySelector('#camMsg'); if (m) m.textContent = `Câmbio salvo: ${modo === 'ptax' ? 'PTAX' : 'manual'} ${cambioAtual().toLocaleString('pt-BR', { minimumFractionDigits: 4 })}.`;
   };
 }
 function irParaAba(aba) { const b = document.querySelector(`.aba[data-aba="${aba}"]`); if (b) b.click(); }
