@@ -114,6 +114,16 @@ tfoot td { font-weight: 650; border-bottom: 0; }
 .tag.alerta { background: var(--crit-soft); color: var(--critical); }
 .tag.aviso { background: var(--warn-soft); color: var(--warn); }
 .tag.azul { background: var(--s1-soft); color: var(--accent); }
+th.ord { cursor: pointer; user-select: none; }
+th.ord:hover { color: var(--text); }
+th.ord .seta { font-size: 10px; margin-left: 3px; color: var(--accent); }
+.calc-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 14px; }
+.calc-grade label span { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 3px; }
+.calc-grade input, td input.ci, td select.ci { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
+td input.ci.n { text-align: right; }
+td.dif-pos { color: var(--critical); } td.dif-neg { color: var(--good); }
+details.aliq summary { cursor: pointer; font-weight: 620; font-size: 14.5px; }
+.chk-fluxo { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
 .verm { color: var(--critical); }
 .verde { color: var(--good); }
 .voltar { margin-bottom: 12px; }
@@ -225,7 +235,8 @@ const est = {
   perfil: null, sub: null, demo: false,
   processos: [], cambios: [], creditos: [], fornecedores: {},
   filtro: { empresa: 0, status: 'aberto', busca: '', pais: '' },
-  abertoId: null,
+  abertoId: null, ord: {}, aliquotas: {}, cambioRef: null,
+  calc: null,
 };
 
 // ======================= regras do processo =======================
@@ -235,11 +246,43 @@ const NAC = [['frete_brl', 'Frete internacional (R$)'], ['ii', 'II'], ['ipi', 'I
 const CPS = [['producao', 'Início da produção'], ['saida', 'Saída do fornecedor'], ['embarque', 'Embarque (ETD)'],
   ['chegada', 'Chegada Brasil (ETA)'], ['numerario', 'Pagamento numerário'], ['estoque', 'Chegada no estoque']];
 
-const cambiosDe = p => est.cambios.filter(c => c.processo_id === p.id).sort((a, b) => (a.ordem ?? 99) - (b.ordem ?? 99) || a.id - b.id);
+// pagamentos programados do processo: parcelas de câmbio (US$) e numerários / outros (R$)
+const pagamentosDe = p => est.cambios.filter(c => c.processo_id === p.id).sort((a, b) => (a.ordem ?? 99) - (b.ordem ?? 99) || a.id - b.id);
+const ehCambio = c => (c.tipo || 'Câmbio') === 'Câmbio';
+const cambiosDe = p => pagamentosDe(p).filter(ehCambio);
+// valor previsto em R$ de um pagamento em aberto (câmbio pela taxa de referência; numerário pelo valor informado)
+const previstoBRL = (p, c) => ehCambio(c) ? (taxaAberta(p, c) ? nz(c.valor_usd) * taxaAberta(p, c) : null) : nz(c.valor_previsto_brl);
+
+// ---- ordenação por coluna (clique no cabeçalho)
+function ordenar(chave, linhas, cols, padrao) {
+  const o = est.ord[chave] || padrao; if (!o) return linhas;
+  const c = cols.find(x => x.id === o.col); if (!c || !c.v) return linhas;
+  const m = o.dir === 'desc' ? -1 : 1;
+  return [...linhas].sort((a, b) => {
+    const x = c.v(a), y = c.v(b);
+    const vx = x == null || x === '' || (typeof x === 'number' && isNaN(x)), vy = y == null || y === '' || (typeof y === 'number' && isNaN(y));
+    if (vx && vy) return 0; if (vx) return 1; if (vy) return -1;
+    return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR', { numeric: true, sensitivity: 'base' })) * m;
+  });
+}
+function cabecalho(chave, cols, padrao) {
+  const o = est.ord[chave] || padrao || {};
+  return '<tr>' + cols.map(c => c.v
+    ? `<th class="ord ${c.cls || ''}" data-ordk="${chave}" data-ordc="${c.id}" title="Ordenar">${c.nome}<span class="seta">${o.col === c.id ? (o.dir === 'desc' ? '▼' : '▲') : ''}</span></th>`
+    : `<th class="${c.cls || ''}">${c.nome}</th>`).join('') + '</tr>';
+}
+function ligarOrdenacao(el) {
+  el.querySelectorAll('th[data-ordk]').forEach(th => th.onclick = ev => {
+    ev.stopPropagation();
+    const k = th.dataset.ordk, c = th.dataset.ordc, o = est.ord[k];
+    est.ord[k] = { col: c, dir: o && o.col === c && o.dir === 'asc' ? 'desc' : 'asc' };
+    redesenhar();
+  });
+}
 const totalNac = p => NAC.reduce((s, [k]) => s + nz(p[k]), 0);
 const temNac = p => !!p.data_di || NAC.some(([k]) => p[k] != null && p[k] !== 0);
-// taxa usada para parcelas ainda não pagas: câmbio da DI; sem DI, a taxa prevista da parcela
-const taxaAberta = (p, c) => nz(p.cambio_di) || nz(c.taxa_di) || null;
+// taxa usada para parcelas ainda não pagas: câmbio da DI; sem DI, a taxa prevista da parcela; depois a da estimativa; por fim o câmbio do painel
+const taxaAberta = (p, c) => nz(p.cambio_di) || nz(c.taxa_di) || nz(p.estimativa && p.estimativa.premissas && p.estimativa.premissas.dolar_cambio) || nz(est.cambioRef) || null;
 
 function resumo(p) {
   const cs = cambiosDe(p);
@@ -295,6 +338,7 @@ const empresasVisiveis = () => est.perfil && !est.perfil.admin && Array.isArray(
 const SUBABAS = [
   { id: 'geral', nome: 'Visão geral', render: renderGeral },
   { id: 'processos', nome: 'Processos', render: renderProcessos },
+  { id: 'calculadora', nome: 'Calculadora aduaneira', render: renderCalculadora },
 ];
 
 function montarSubabas() {
@@ -324,50 +368,81 @@ function renderGeral(el) {
   const hoje = hojeISO(), ate30 = somaDias(hoje, 30);
   const emps = empresasVisiveis();
   const fe = est.filtro.empresa;
+  const ed = podeEditar();
   const procs = est.processos.filter(p => emps.includes(p.empresa) && (!fe || p.empresa === fe));
   const abertos = procs.filter(p => p.status === 'aberto');
   const parcelas = [];
-  for (const p of abertos) for (const c of cambiosDe(p)) if (!c.pago) parcelas.push({ p, c, taxa: taxaAberta(p, c) });
-  parcelas.sort((a, b) => (a.c.data_prevista || '9999') < (b.c.data_prevista || '9999') ? -1 : 1);
-  const totUSD = parcelas.reduce((s, x) => s + nz(x.c.valor_usd), 0);
-  const totBRL = parcelas.reduce((s, x) => s + nz(x.c.valor_usd) * nz(x.taxa), 0);
-  const p30 = parcelas.filter(x => x.c.data_prevista && x.c.data_prevista <= ate30);
+  for (const p of abertos) for (const c of pagamentosDe(p)) if (!c.pago) parcelas.push({ p, c, taxa: ehCambio(c) ? taxaAberta(p, c) : null, brl: previstoBRL(p, c) });
+  const camb = parcelas.filter(x => ehCambio(x.c)), nums = parcelas.filter(x => !ehCambio(x.c));
+  const totUSD = camb.reduce((s, x) => s + nz(x.c.valor_usd), 0);
+  const totBRL = parcelas.reduce((s, x) => s + nz(x.brl), 0);
+  const p30 = camb.filter(x => x.c.data_prevista && x.c.data_prevista <= ate30);
   const atrasadas = parcelas.filter(x => x.c.data_prevista && x.c.data_prevista < hoje);
   const semData = parcelas.filter(x => !x.c.data_prevista);
+  const noFluxo = parcelas.filter(x => x.c.no_fluxo);
   const creditos = est.creditos.filter(c => emps.includes(c.empresa) && (!fe || c.empresa === fe) && !c.utilizado);
   const totCred = creditos.reduce((s, c) => s + nz(c.valor_usd), 0);
-  const caminho = abertos.filter(p => !temNac(p)).map(p => ({ p, prox: proximoCheckpoint(p), cheg: p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada }))
-    .sort((a, b) => (a.cheg || '9999') < (b.cheg || '9999') ? -1 : 1);
-  const aFechar = abertos.filter(p => temNac(p));
+  const caminho = abertos.filter(p => !temNac(p)).map(p => ({ p, prox: proximoCheckpoint(p), cheg: p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada, e: etapa(p) }));
+  const aFechar = abertos.filter(p => temNac(p)).map(p => ({ p, r: resumo(p) }));
+
+  const colsPag = [
+    { id: 'data', nome: 'Data prevista', v: x => x.c.data_prevista },
+    { id: 'tipo', nome: 'Tipo', v: x => x.c.tipo || 'Câmbio' },
+    { id: 'forn', nome: 'Fornecedor', v: x => x.p.fornecedor },
+    { id: 'emp', nome: 'Empresa', v: x => EMPRESAS[x.p.empresa] },
+    { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
+    { id: 'etapa', nome: 'Etapa', v: x => etapa(x.p).nome },
+    { id: 'usd', nome: 'US$', cls: 'n', v: x => ehCambio(x.c) ? nz(x.c.valor_usd) : null },
+    { id: 'taxa', nome: 'Taxa ref.', cls: 'n', v: x => x.taxa },
+    { id: 'brl', nome: '≈ R$', cls: 'n', v: x => x.brl },
+    { id: 'fluxo', nome: 'No fluxo', v: x => x.c.no_fluxo ? 1 : 0 },
+  ];
+  const colsCam = [
+    { id: 'forn', nome: 'Fornecedor', v: x => x.p.fornecedor }, { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
+    { id: 'etapa', nome: 'Etapa', v: x => x.e.nome }, { id: 'prox', nome: 'Próximo passo', v: x => x.prox && x.prox.prev },
+    { id: 'cheg', nome: 'Chegada', v: x => x.cheg },
+  ];
+  const colsFec = [
+    { id: 'forn', nome: 'Fornecedor', v: x => x.p.fornecedor }, { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
+    { id: 'di', nome: 'DI', v: x => x.p.data_di }, { id: 'ab', nome: 'Câmbio aberto', cls: 'n', v: x => x.r.abertoUSD },
+    { id: 'fat', nome: 'Fator pré', cls: 'n', v: x => x.r.fator },
+  ];
+  const lPag = ordenar('gPag', parcelas, colsPag, { col: 'data', dir: 'asc' });
+  const lCam = ordenar('gCam', caminho, colsCam, { col: 'cheg', dir: 'asc' });
+  const lFec = ordenar('gFec', aFechar, colsFec, { col: 'di', dir: 'asc' });
 
   el.innerHTML = `${filtroEmpresa()}
   <div class="kpis">
     ${kpi('Processos em aberto', F0.format(abertos.length), `${caminho.length} a caminho · ${aFechar.length} nacionalizados`)}
-    ${kpi('Câmbio a pagar', U0(totUSD), `≈ ${R0(totBRL)} pela taxa da DI / prevista`)}
+    ${kpi('Câmbio a pagar', U0(totUSD), `≈ ${R0(camb.reduce((s, x) => s + nz(x.brl), 0))} pela taxa da DI / prevista`)}
     ${kpi('Câmbio próximos 30 dias', U0(p30.reduce((s, x) => s + nz(x.c.valor_usd), 0)), `${p30.length} parcela(s)` + (atrasadas.length ? ` · <span class="verm">${atrasadas.length} com data vencida</span>` : ''))}
+    ${kpi('Numerários previstos', R0(nums.reduce((s, x) => s + nz(x.brl), 0)), `${nums.length} lançamento(s)`)}
+    ${kpi('No fluxo de caixa', R0(noFluxo.reduce((s, x) => s + nz(x.brl), 0)), `${noFluxo.length} de ${parcelas.length} pagamentos em aberto`)}
     ${kpi('Crédito com fornecedores', U(totCred), creditos.length ? creditos.map(c => esc(c.fornecedor)).join(', ') : 'nenhum')}
   </div>
   <div class="card">
-    <div class="topo"><h2>Câmbios a pagar</h2><span class="nota">parcelas ainda não fechadas, por data prevista</span></div>
+    <div class="topo"><h2>Pagamentos a fazer</h2><span class="nota">câmbios e numerários em aberto · marque "No fluxo" para levar ao Fluxo de caixa projetado</span></div>
     <div class="tabela-wrap"><table>
-      <thead><tr><th>Data prevista</th><th>Fornecedor</th><th>Empresa</th><th>Pedido</th><th>Etapa</th><th class="n">US$</th><th class="n">Taxa ref.</th><th class="n">≈ R$</th></tr></thead>
-      <tbody>${parcelas.length ? parcelas.map(({ p, c, taxa }) => `<tr class="clic" data-p="${p.id}">
+      <thead>${cabecalho('gPag', colsPag, { col: 'data', dir: 'asc' })}</thead>
+      <tbody>${lPag.length ? lPag.map(({ p, c, taxa, brl }) => `<tr class="clic" data-p="${p.id}">
         <td class="d ${c.data_prevista && c.data_prevista < hoje ? 'verm' : ''}">${c.data_prevista ? dm(c.data_prevista) : '<span class="tag aviso">sem data</span>'}</td>
+        <td>${esc(c.tipo || 'Câmbio')}</td>
         <td>${esc(p.fornecedor)}${c.observacao ? `<div class="nota">${esc(c.observacao)}</div>` : ''}</td><td>${EMPRESAS[p.empresa] || p.empresa}</td><td>${esc(p.pedido || '—')}</td>
         <td><span class="tag ${etapa(p).cls}">${etapa(p).nome}</span></td>
-        <td class="n">${F2.format(nz(c.valor_usd))}</td><td class="n">${TX(taxa)}</td><td class="n">${taxa ? F2.format(nz(c.valor_usd) * taxa) : '—'}</td></tr>`).join('')
-        : '<tr><td colspan="8" class="vazio">Nenhum câmbio em aberto.</td></tr>'}</tbody>
-      ${parcelas.length ? `<tfoot><tr><td colspan="5">Total${semData.length ? ` <span class="nota">(${semData.length} sem data prevista)</span>` : ''}</td><td class="n">${F2.format(totUSD)}</td><td></td><td class="n">${F2.format(totBRL)}</td></tr></tfoot>` : ''}
+        <td class="n">${ehCambio(c) ? F2.format(nz(c.valor_usd)) : '—'}</td><td class="n">${TX(taxa)}</td><td class="n">${brl ? F2.format(brl) : '—'}</td>
+        <td>${chkFluxo(c, ed)}</td></tr>`).join('')
+        : '<tr><td colspan="10" class="vazio">Nenhum pagamento em aberto.</td></tr>'}</tbody>
+      ${parcelas.length ? `<tfoot><tr><td colspan="6">Total${semData.length ? ` <span class="nota">(${semData.length} sem data prevista)</span>` : ''}</td><td class="n">${F2.format(totUSD)}</td><td></td><td class="n">${F2.format(totBRL)}</td><td></td></tr></tfoot>` : ''}
     </table></div>
   </div>
   <div class="grade2">
     <div class="card">
       <div class="topo"><h2>A caminho</h2><span class="nota">próximo checkpoint de cada processo</span></div>
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Fornecedor</th><th>Pedido</th><th>Etapa</th><th>Próximo passo</th><th>Chegada</th></tr></thead>
-        <tbody>${caminho.length ? caminho.map(({ p, prox, cheg }) => `<tr class="clic" data-p="${p.id}">
+        <thead>${cabecalho('gCam', colsCam, { col: 'cheg', dir: 'asc' })}</thead>
+        <tbody>${lCam.length ? lCam.map(({ p, prox, cheg, e }) => `<tr class="clic" data-p="${p.id}">
           <td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td><td>${esc(p.pedido || '—')}</td>
-          <td><span class="tag ${etapa(p).cls}">${etapa(p).nome}</span></td>
+          <td><span class="tag ${e.cls}">${e.nome}</span></td>
           <td>${prox ? `${esc(prox.nome)} <span class="${prox.atraso ? 'verm' : 'nota'}">${prox.prev ? dm(prox.prev) : 'sem data'}${prox.atraso ? ' · atrasado' : ''}</span>` : '—'}</td>
           <td class="d">${dm(cheg)}</td></tr>`).join('') : '<tr><td colspan="5" class="vazio">Nada a caminho.</td></tr>'}</tbody>
       </table></div>
@@ -375,25 +450,40 @@ function renderGeral(el) {
     <div class="card">
       <div class="topo"><h2>Nacionalizados, aguardando fechamento</h2></div>
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Fornecedor</th><th>Pedido</th><th>DI</th><th class="n">Câmbio aberto</th><th class="n">Fator pré</th></tr></thead>
-        <tbody>${aFechar.length ? aFechar.map(p => { const r = resumo(p); return `<tr class="clic" data-p="${p.id}">
+        <thead>${cabecalho('gFec', colsFec, { col: 'di', dir: 'asc' })}</thead>
+        <tbody>${lFec.length ? lFec.map(({ p, r }) => `<tr class="clic" data-p="${p.id}">
           <td>${esc(p.fornecedor)}</td><td>${esc(p.pedido || '—')}</td><td class="d">${dm(p.data_di)}</td>
-          <td class="n">${r.abertoUSD ? U(r.abertoUSD) : '<span class="verde">quitado</span>'}</td><td class="n">${FT(r.fator)}</td></tr>`; }).join('')
+          <td class="n">${r.abertoUSD ? U(r.abertoUSD) : '<span class="verde">quitado</span>'}</td><td class="n">${FT(r.fator)}</td></tr>`).join('')
           : '<tr><td colspan="5" class="vazio">Nenhum.</td></tr>'}</tbody>
       </table></div>
     </div>
   </div>
   ${creditos.length ? `<div class="card"><div class="topo"><h2>Créditos com fornecedores</h2><span class="nota">excedentes pagos, a abater em compras futuras</span></div>
-    <div class="tabela-wrap"><table><thead><tr><th>Fornecedor</th><th>Empresa</th><th>Data</th><th class="n">US$</th><th class="n">R$ pago</th><th>Contrato</th>${podeEditar() ? '<th></th>' : ''}</tr></thead>
+    <div class="tabela-wrap"><table><thead><tr><th>Fornecedor</th><th>Empresa</th><th>Data</th><th class="n">US$</th><th class="n">R$ pago</th><th>Contrato</th>${ed ? '<th></th>' : ''}</tr></thead>
     <tbody>${creditos.map(c => `<tr><td>${esc(c.fornecedor)}</td><td>${EMPRESAS[c.empresa] || c.empresa}</td><td class="d">${dm(c.data)}</td>
       <td class="n">${F2.format(nz(c.valor_usd))}</td><td class="n">${R(c.valor_brl)}</td><td>${esc(c.contrato || '—')}</td>
-      ${podeEditar() ? `<td class="n"><button class="btn btn-mini" data-usar="${c.id}">Marcar como utilizado</button></td>` : ''}</tr>`).join('')}</tbody></table></div></div>` : ''}`;
+      ${ed ? `<td class="n"><button class="btn btn-mini" data-usar="${c.id}">Marcar como utilizado</button></td>` : ''}</tr>`).join('')}</tbody></table></div></div>` : ''}`;
   ligarFiltroEmpresa(el);
-  el.querySelectorAll('tr[data-p]').forEach(tr => tr.onclick = () => abrirProcesso(Number(tr.dataset.p)));
+  ligarOrdenacao(el);
+  ligarFluxo(el);
+  el.querySelectorAll('tr[data-p]').forEach(tr => tr.onclick = ev => { if (ev.target.closest('label,input')) return; abrirProcesso(Number(tr.dataset.p)); });
   el.querySelectorAll('[data-usar]').forEach(b => b.onclick = async () => {
     const c = est.creditos.find(x => x.id === Number(b.dataset.usar));
     if (!await confirmar('Crédito utilizado', `Marcar o crédito de <b>${U(c.valor_usd)}</b> com ${esc(c.fornecedor)} como utilizado?`)) return;
     await gravar('imp_creditos', { utilizado: true }, c.id, c);
+  });
+}
+
+// caixinha "No fluxo" de um pagamento em aberto (leva o valor ao Fluxo de caixa projetado do painel)
+function chkFluxo(c, ed) {
+  if (c.pago) return '<span class="nota">pago</span>';
+  return `<label class="chk-fluxo" title="${c.data_prevista ? 'Levar ao Fluxo de caixa projetado' : 'Informe a data prevista para levar ao fluxo'}"><input type="checkbox" data-fluxo="${c.id}" ${c.no_fluxo ? 'checked' : ''} ${ed && c.data_prevista ? '' : 'disabled'}> No fluxo</label>`;
+}
+function ligarFluxo(el) {
+  el.querySelectorAll('[data-fluxo]').forEach(i => i.onchange = async ev => {
+    ev.stopPropagation();
+    const c = est.cambios.find(x => x.id === Number(i.dataset.fluxo));
+    try { await gravar('imp_cambios', { no_fluxo: i.checked }, c.id, c); } catch (_) { i.checked = !i.checked; }
   });
 }
 
@@ -422,10 +512,26 @@ function renderProcessos(el) {
     && (!f.status || p.status === f.status) && (!f.pais || paisDe(p) === f.pais)
     && (!b || [p.fornecedor, p.pedido, p.mercadoria, p.processo, p.di].some(x => String(x || '').toLowerCase().includes(b))))
     .sort((a, b) => (b.data_pedido || '') < (a.data_pedido || '') ? -1 : (b.data_pedido || '') > (a.data_pedido || '') ? 1 : b.id - a.id);
-  const linhas = lista.map(p => ({ p, r: resumo(p), e: etapa(p) }));
+  const colsP = [
+    { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
+    { id: 'forn', nome: 'Fornecedor', v: x => x.p.fornecedor },
+    { id: 'emp', nome: 'Empresa', v: x => EMPRESAS[x.p.empresa] },
+    { id: 'merc', nome: 'Mercadoria', v: x => x.p.mercadoria },
+    { id: 'modal', nome: 'Modal', v: x => x.p.modal },
+    { id: 'etapa', nome: 'Etapa', v: x => x.e.nome },
+    { id: 'dped', nome: 'Data pedido', v: x => x.p.data_pedido },
+    { id: 'cheg', nome: 'Chegada', v: x => x.p.cp_chegada_ef || x.p.cp_chegada_prev || x.p.previsao_chegada },
+    { id: 'fob', nome: 'FOB US$', cls: 'n', v: x => x.r.fob || null },
+    { id: 'ab', nome: 'Câmbio aberto US$', cls: 'n', v: x => x.r.abertoUSD || null },
+    { id: 'fest', nome: 'Fator est.', cls: 'n', v: x => x.p.fator_estimado != null ? Number(x.p.fator_estimado) : null },
+    { id: 'fat', nome: 'Fator', cls: 'n', v: x => x.r.tipoFator === 'estimado' ? null : x.r.fator },
+    { id: 'conc', nome: '' },
+  ];
+  const linhas = ordenar('proc', lista.map(p => ({ p, r: resumo(p), e: etapa(p) })), colsP, { col: 'dped', dir: 'desc' });
+  const comFator = linhas.filter(x => x.r.fator && x.r.tipoFator !== 'estimado');
   const fobTot = linhas.reduce((s, x) => s + x.r.fob, 0);
-  const totTot = linhas.filter(x => x.r.fator).reduce((s, x) => s + x.r.total, 0);
-  const fobComFator = linhas.filter(x => x.r.fator).reduce((s, x) => s + x.r.fob, 0);
+  const totTot = comFator.reduce((s, x) => s + x.r.total, 0);
+  const fobComFator = comFator.reduce((s, x) => s + x.r.fob, 0);
 
   el.innerHTML = `<div class="filtros">
     ${emps.length > 1 ? [[0, 'Todas'], ...emps.map(e => [e, EMPRESAS[e]])].map(([v, n]) => `<button class="chip" data-emp="${v}" aria-pressed="${f.empresa === v}">${n}</button>`).join('') + '<div class="sep"></div>' : ''}
@@ -437,24 +543,26 @@ function renderProcessos(el) {
   </div>
   <div class="card">
     <div class="topo"><h2>${lista.length} processo(s)</h2>
-      <span class="nota">FOB ${U0(fobTot)}${fobComFator ? ` · fator médio ponderado ${FT(totTot / fobComFator)}` : ''}</span></div>
+      <span class="nota">FOB ${U0(fobTot)}${fobComFator ? ` · fator médio ponderado ${FT(totTot / fobComFator)}` : ''} · clique no título da coluna para ordenar</span></div>
     <div class="tabela-wrap"><table>
-      <thead><tr><th>Pedido</th><th>Fornecedor</th><th>Empresa</th><th>Mercadoria</th><th>Modal</th><th>Etapa</th><th>Chegada</th>
-        <th class="n">FOB US$</th><th class="n">Câmbio aberto US$</th><th class="n">Fator</th><th></th></tr></thead>
+      <thead>${cabecalho('proc', colsP, { col: 'dped', dir: 'desc' })}</thead>
       <tbody>${linhas.length ? linhas.map(({ p, r, e }) => `<tr class="clic" data-p="${p.id}">
         <td>${esc(p.pedido || '—')}</td>
         <td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td>
         <td>${EMPRESAS[p.empresa] || p.empresa}</td>
         <td>${esc(p.mercadoria || '—')}</td><td>${esc(p.modal || '—')}</td>
         <td><span class="tag ${e.cls}">${e.nome}</span></td>
+        <td class="d">${dm(p.data_pedido)}</td>
         <td class="d">${dm(p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada)}</td>
         <td class="n">${r.fob ? F2.format(r.fob) : '—'}</td>
         <td class="n">${r.abertoUSD ? F2.format(r.abertoUSD) : '—'}</td>
-        <td class="n">${FT(r.fator)}${r.fator && r.tipoFator !== 'final' ? ` <span class="nota">${r.tipoFator === 'estimado' ? 'est.' : 'pré'}</span>` : ''}</td>
+        <td class="n">${p.fator_estimado != null ? FT(Number(p.fator_estimado)) : '—'}</td>
+        <td class="n">${r.tipoFator && r.tipoFator !== 'estimado' ? FT(r.fator) + (r.tipoFator !== 'final' ? ' <span class="nota">pré</span>' : '') : '—'}</td>
         <td>${p.status === 'aberto' && r.conciliado ? '<span class="tag ok">conciliado</span>' : ''}</td>
-      </tr>`).join('') : '<tr><td colspan="11" class="vazio">Nenhum processo com esses filtros.</td></tr>'}</tbody>
+      </tr>`).join('') : '<tr><td colspan="13" class="vazio">Nenhum processo com esses filtros.</td></tr>'}</tbody>
     </table></div>
   </div>`;
+  ligarOrdenacao(el);
   el.querySelectorAll('[data-emp]').forEach(b => b.onclick = () => { f.empresa = Number(b.dataset.emp); redesenhar(); });
   el.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { f.status = b.dataset.st; redesenhar(); });
   $('#fPais').onchange = e => { f.pais = e.target.value; redesenhar(); };
@@ -476,6 +584,20 @@ function renderFicha(el, p) {
       <div class="l">Previsto <b>${dm(prev)}</b></div><div class="l">Efetivo <b>${dm(ef)}</b>${desvio ? ` <span class="${desvio > 0 ? 'verm' : 'verde'}">${desvio > 0 ? '+' : ''}${desvio}d</span>` : ''}</div></div>`;
   }).join('');
   const tempoTotal = p.cp_producao_ef && p.cp_estoque_ef ? dias(p.cp_producao_ef, p.cp_estoque_ef) : null;
+  const pags = pagamentosDe(p);
+  const abertosSemFluxo = pags.some(c => !c.pago && !c.no_fluxo && c.data_prevista);
+  const estm = p.estimativa && p.estimativa.resultado ? p.estimativa : null;
+  const temNumerario = pags.some(c => !ehCambio(c));
+  const er = estm ? estm.resultado : {};
+  const real = k => temNac(p) ? nz(p[k]) : null;
+  const linhasEstReal = [
+    { nome: 'FOB (US$)', e: estm ? er.fob_usd : null, r: r.fob || null, usd: true },
+    { nome: 'Câmbio (R$)' + (r.abertoUSD ? ' <span class="nota">inclui parcelas em aberto pela taxa ref.</span>' : ''), e: estm ? er.cambio_brl : null, r: r.cs.length && !r.semTaxa ? r.pagoBRL + r.abertoBRL : null },
+    ...NAC.map(([k, n]) => ({ nome: n, e: estm ? nz(er[k]) : null, r: real(k) })),
+    { nome: '<b>Total nacionalização</b>', e: estm ? er.numerario : null, r: temNac(p) ? r.nac : null, forte: true },
+    { nome: '<b>Total importação</b>', e: estm ? er.total : null, r: temNac(p) && r.cs.length ? r.total : null, forte: true },
+    { nome: '<b>Fator</b>', e: estm ? er.fator : (p.fator_estimado != null ? Number(p.fator_estimado) : null), r: r.tipoFator && r.tipoFator !== 'estimado' ? r.fator : null, fator: true, forte: true },
+  ];
 
   el.innerHTML = `<button class="btn voltar" id="btnVoltar">← Processos</button>
   <div class="ficha-tit">
@@ -511,7 +633,8 @@ function renderFicha(el, p) {
       ${kpi('Câmbios', R0(r.pagoBRL + r.abertoBRL), !r.cs.length ? 'sem parcelas' : r.abertoUSD ? `${R0(r.pagoBRL)} pago + ${R0(r.abertoBRL)} em aberto (taxa ref.)` : 'tudo pago')}
       ${kpi('Nacionalização', R0(r.nac), p.nac_conciliada ? '<span class="verde">conciliada</span>' : (temNac(p) ? '<span class="verm">a conciliar</span>' : 'aguardando DI'))}
       ${kpi('Total', R0(r.total))}
-      ${kpi('Fator ' + (r.tipoFator || ''), FT(r.fator), [p.fator_estimado ? `estimado ${FT(p.fator_estimado)}` : '', r.variacao ? `variação cambial ${R0(r.variacao)}` : ''].filter(Boolean).join(' · '))}
+      ${kpi('Fator ' + (r.tipoFator && r.tipoFator !== 'estimado' ? r.tipoFator : 'realizado'), r.tipoFator && r.tipoFator !== 'estimado' ? FT(r.fator) : '—', r.variacao ? `variação cambial ${R0(r.variacao)}` : '')}
+      ${kpi('Fator estimado', p.fator_estimado != null ? FT(Number(p.fator_estimado)) : '—', p.fator_estimado != null && r.tipoFator && r.tipoFator !== 'estimado' ? `diferença ${(r.fator - p.fator_estimado >= 0 ? '+' : '') + FT(r.fator - p.fator_estimado)}` : 'calculadora aduaneira')}
     </div>
     ${p.fator_planilha && p.status === 'fechado' && Math.abs(p.fator_planilha - (r.fator || 0)) > 0.01 ? `<div class="nota verm" style="margin-top:8px">Fator na planilha antiga: ${FT(p.fator_planilha)}</div>` : ''}
   </div>
@@ -523,46 +646,66 @@ function renderFicha(el, p) {
   </div>
 
   <div class="card">
-    <div class="topo"><h2>Câmbios</h2><span class="nota">${U(r.pagoUSD)} pago · ${U(r.abertoUSD)} em aberto</span>
-      <div class="acoes">${ed ? '<button class="btn btn-mini" id="btnParc">+ Parcela</button>' : ''}</div></div>
+    <div class="topo"><h2>Pagamentos programados</h2><span class="nota">câmbio: ${U(r.pagoUSD)} pago · ${U(r.abertoUSD)} em aberto${pags.some(c => !ehCambio(c)) ? ` · numerário: ${R0(pags.filter(c => !ehCambio(c) && !c.pago).reduce((s2, c) => s2 + nz(c.valor_previsto_brl), 0))} em aberto` : ''}</span>
+      <div class="acoes">${ed ? `${abertosSemFluxo ? '<button class="btn btn-mini" id="btnTudoFluxo">Levar em aberto ao fluxo</button>' : ''}<button class="btn btn-mini" id="btnParc">+ Câmbio</button><button class="btn btn-mini" id="btnNum">+ Numerário / outro</button>` : ''}</div></div>
     <div class="tabela-wrap"><table>
-      <thead><tr><th>#</th><th>Prevista</th><th class="n">US$</th><th>Fechamento</th><th class="n">Taxa</th><th class="n">Tarifa US$</th><th class="n">R$</th>
-        <th class="n">Variação x DI</th><th>Corretora</th><th>Contrato</th><th>Situação</th>${ed ? '<th></th>' : ''}</tr></thead>
-      <tbody>${r.cs.length ? r.cs.map((c, i) => {
-        const vari = c.pago && nz(p.cambio_di) ? nz(c.valor_brl) - nz(c.valor_usd) * nz(p.cambio_di) : null;
+      <thead><tr><th>#</th><th>Tipo</th><th>Prevista</th><th class="n">Valor</th><th>Pagamento</th><th class="n">Taxa</th><th class="n">Tarifa US$</th><th class="n">R$ pago</th>
+        <th class="n">Variação x DI</th><th>Corretora</th><th>Contrato</th><th>Situação</th><th>Fluxo</th>${ed ? '<th></th>' : ''}</tr></thead>
+      <tbody>${pags.length ? pags.map((c, i) => {
+        const cam = ehCambio(c);
+        const vari = cam && c.pago && nz(p.cambio_di) ? nz(c.valor_brl) - nz(c.valor_usd) * nz(p.cambio_di) : null;
         const sit = c.pago ? (c.conciliado ? '<span class="tag ok">pago · conciliado</span>' : '<span class="tag aviso">pago · a conciliar</span>')
           : (c.data_prevista && c.data_prevista < hoje ? '<span class="tag alerta">em aberto · vencida</span>' : '<span class="tag">em aberto</span>');
-        return `<tr><td>${i + 1}</td><td class="d">${dm(c.data_prevista)}</td><td class="n">${F2.format(nz(c.valor_usd))}</td>
-          <td class="d">${dm(c.data_fechamento)}</td><td class="n">${c.pago ? TX(c.cambio_realizado) : `<span class="nota">${TX(taxaAberta(p, c))}</span>`}</td>
+        return `<tr><td>${i + 1}</td><td>${esc(c.tipo || 'Câmbio')}</td><td class="d">${dm(c.data_prevista)}</td>
+          <td class="n">${cam ? U(c.valor_usd) : R(c.valor_previsto_brl)}</td>
+          <td class="d">${dm(c.data_fechamento)}</td><td class="n">${!cam ? '—' : c.pago ? TX(c.cambio_realizado) : `<span class="nota">${TX(taxaAberta(p, c))}</span>`}</td>
           <td class="n">${c.tarifa ? F2.format(c.tarifa) : '—'}</td><td class="n">${c.pago ? F2.format(nz(c.valor_brl)) : '—'}</td>
           <td class="n ${vari > 0 ? 'verm' : vari < 0 ? 'verde' : ''}">${vari != null ? F2.format(vari) : '—'}</td>
           <td>${esc(c.corretora || '—')}</td><td>${esc(c.contrato || '—')}</td><td>${sit}${c.observacao ? `<div class="nota" style="max-width:260px">${esc(c.observacao)}</div>` : ''}</td>
+          <td>${chkFluxo(c, ed)}</td>
           ${ed ? `<td class="n"><button class="btn btn-mini" data-parc="${c.id}">${c.pago ? 'Editar' : 'Registrar pagamento'}</button></td>` : ''}</tr>`;
-      }).join('') : `<tr><td colspan="${ed ? 12 : 11}" class="vazio">Nenhuma parcela de câmbio cadastrada.</td></tr>`}</tbody>
-      ${r.cs.length ? `<tfoot><tr><td colspan="2">Total</td><td class="n">${F2.format(r.pagoUSD + r.abertoUSD)}</td><td colspan="3"></td><td class="n">${F2.format(r.pagoBRL)}</td><td class="n">${r.variacao ? F2.format(r.variacao) : ''}</td><td colspan="${ed ? 4 : 3}"></td></tr></tfoot>` : ''}
+      }).join('') : `<tr><td colspan="${ed ? 14 : 13}" class="vazio">Nenhum pagamento programado.</td></tr>`}</tbody>
+      ${r.cs.length ? `<tfoot><tr><td colspan="3">Total câmbio</td><td class="n">${U(r.pagoUSD + r.abertoUSD)}</td><td colspan="3"></td><td class="n">${F2.format(r.pagoBRL)}</td><td class="n">${r.variacao ? F2.format(r.variacao) : ''}</td><td colspan="${ed ? 5 : 4}"></td></tr></tfoot>` : ''}
     </table></div>
+    <div class="nota" style="margin-top:8px">"No fluxo" leva o pagamento em aberto ao Fluxo de caixa projetado do painel. Depois de pago, ele sai do fluxo (o pagamento passa a vir do ERP).</div>
   </div>
 
   <div class="card">
-    <div class="topo"><h2>Nacionalização</h2>
+    <div class="topo"><h2>Nacionalização · estimado × realizado</h2>
       ${p.nac_conciliada ? '<span class="tag ok">conciliada</span>' : (temNac(p) ? '<span class="tag aviso">a conciliar</span>' : '')}
-      <div class="acoes">${ed ? '<button class="btn btn-mini" id="btnNac">Lançar / validar DI</button>' : ''}</div></div>
+      ${estm ? `<span class="nota">estimativa de ${dm(estm.data)} · cenário ${estm.cenario === 'dhl' ? 'DHL (courier)' : 'próprio'}</span>` : ''}
+      <div class="acoes">${ed ? `<button class="btn btn-mini" id="btnCalc">${estm ? 'Abrir estimativa na calculadora' : 'Fazer estimativa'}</button>${estm && !temNumerario ? '<button class="btn btn-mini" id="btnGerarNum">Gerar numerário previsto</button>' : ''}<button class="btn btn-mini" id="btnNac">Lançar / validar DI</button>` : ''}</div></div>
     <div class="campos" style="margin-bottom:10px">
       ${campo('DI / AWB', p.di || '—')}${campo('Data DI', dm(p.data_di))}${campo('Protocolo', p.protocolo_di || '—')}
       ${campo('Câmbio DI', TX(p.cambio_di))}${campo('Frete internacional US$', p.frete_usd != null ? F2.format(p.frete_usd) : '—')}
+      ${estm ? campo('Dólar DI estimado', TX(estm.premissas.dolar_di)) + campo('Dólar câmbio estimado', TX(estm.premissas.dolar_cambio)) : ''}
     </div>
-    <div class="tabela-wrap"><table><tbody>
-      ${NAC.map(([k, n]) => `<tr><td>${n}</td><td class="n">${p[k] != null ? F2.format(p[k]) : '—'}</td></tr>`).join('')}
-    </tbody><tfoot><tr><td>Total nacionalização</td><td class="n">${R(r.nac)}</td></tr></tfoot></table></div>
+    <div class="tabela-wrap"><table>
+      <thead><tr><th></th><th class="n">Estimado</th><th class="n">Realizado</th><th class="n">Diferença</th><th class="n">%</th></tr></thead>
+      <tbody>${linhasEstReal.map(l => linhaEstReal(l)).join('')}</tbody>
+    </table></div>
+    ${!estm ? '<div class="nota" style="margin-top:8px">Sem estimativa: use "Fazer estimativa" para calcular na calculadora aduaneira e comparar com o realizado.</div>' : ''}
   </div>`;
 
   $('#btnVoltar').onclick = () => { est.abertoId = null; abrir('processos'); };
   if (!ed) return;
   $('#btnEditar').onclick = () => formDados(p);
   $('#btnCp').onclick = () => formCheckpoints(p);
-  $('#btnParc').onclick = () => formParcela(p, null);
+  $('#btnParc').onclick = () => formParcela(p, null, 'Câmbio');
+  $('#btnNum').onclick = () => formParcela(p, null, 'Numerário');
   $('#btnNac').onclick = () => formNacionalizacao(p);
-  el.querySelectorAll('[data-parc]').forEach(b => b.onclick = () => formParcela(p, est.cambios.find(c => c.id === Number(b.dataset.parc))));
+  $('#btnCalc').onclick = () => abrirCalculadora(p);
+  ligarFluxo(el);
+  if ($('#btnTudoFluxo')) $('#btnTudoFluxo').onclick = async () => {
+    const alvo = pags.filter(c => !c.pago && !c.no_fluxo && c.data_prevista);
+    if (!await confirmar('Levar ao fluxo de caixa', `Levar ${alvo.length} pagamento(s) em aberto ao Fluxo de caixa projetado?`, 'Levar ao fluxo')) return;
+    for (const c of alvo) await gravar('imp_cambios', { no_fluxo: true }, c.id, c, true);
+    await depoisDeGravar();
+  };
+  if ($('#btnGerarNum')) $('#btnGerarNum').onclick = () => formParcela(p, null, 'Numerário',
+    { valor_previsto_brl: Math.round(estm.resultado.numerario * 100) / 100, data_prevista: p.cp_numerario_prev || p.previsao_chegada || null,
+      observacao: 'Numerário previsto pela estimativa (impostos + despesas + frete internacional).' });
+  el.querySelectorAll('[data-parc]').forEach(b => b.onclick = () => { const c = est.cambios.find(x => x.id === Number(b.dataset.parc)); formParcela(p, c, c.tipo || 'Câmbio'); });
   if ($('#btnFechar')) $('#btnFechar').onclick = async () => {
     const pend = [];
     if (r.abertoUSD) pend.push(`${U(r.abertoUSD)} de câmbio ainda em aberto`);
@@ -577,7 +720,250 @@ function renderFicha(el, p) {
     await gravar('imp_processos', { status: 'aberto' }, p.id, p);
   };
 }
+function linhaEstReal(l) {
+  const fmt = v => v == null ? '—' : l.fator ? FT(v) : l.usd ? U(v) : F2.format(v);
+  const d = l.e != null && l.r != null ? l.r - l.e : null;
+  const pc = d != null && l.e ? d / l.e * 100 : null;
+  const cls = d == null || Math.abs(d) < 0.005 ? '' : d > 0 ? 'dif-pos' : 'dif-neg';
+  return `<tr${l.forte ? ' style="font-weight:600"' : ''}><td>${l.nome}</td><td class="n">${fmt(l.e)}</td><td class="n">${fmt(l.r)}</td>
+    <td class="n ${cls}">${d == null ? '—' : (d > 0 ? '+' : '') + (l.fator ? FT(d) : F2.format(d))}</td><td class="n ${cls}">${pc == null ? '—' : (pc > 0 ? '+' : '') + nf(1).format(pc) + '%'}</td></tr>`;
+}
 function campo(r, v) { return `<div class="c"><div class="r">${r}</div><div class="v">${esc(v)}</div></div>`; }
+
+// ======================= Calculadora aduaneira =======================
+// motor da calculadora aduaneira (mesmas fórmulas da MATRIZ - CÁLCULO ADUANEIRO)
+function calcularAduaneiro(itens, pr, aliq) {
+  const n = v => Number(v) || 0;
+  const linhas = itens.map(it => ({ ...it, fobT: n(it.qtd) * n(it.fob), a: aliq[it.familia] || null }));
+  const sumF = linhas.reduce((s, x) => s + x.fobT, 0);
+  const di = n(pr.dolar_di), dc = n(pr.dolar_cambio) || di, fu = n(pr.frete_usd);
+  const despTot = n(pr.sdas) + n(pr.armazenagem) + n(pr.despachante) + n(pr.frete_nacional) + n(pr.outras);
+  const vazio = () => ({ fob_usd: sumF, cambio_brl: sumF * dc, frete_brl: 0, ii: 0, ipi: 0, pis: 0, cofins: 0, icms: 0,
+    sdas_afrmm_siscomex: 0, armazenagem: 0, despachante_valor: 0, outras_despesas: 0, frete_nacional: 0 });
+  // ---- próprio (Feromax / Supply)
+  const fe = vazio(), dh = vazio();
+  fe.frete_brl = fu * di * 1.06 + n(pr.logistica);
+  fe.sdas_afrmm_siscomex = n(pr.sdas); fe.armazenagem = n(pr.armazenagem); fe.despachante_valor = n(pr.despachante);
+  fe.frete_nacional = n(pr.frete_nacional); fe.outras_despesas = n(pr.outras);
+  dh.frete_brl = fu * di * 1.06; dh.outras_despesas = n(pr.dhl_despesas);
+  const itF = [], itD = [];
+  for (const x of linhas) {
+    const a = x.a || {};
+    const freteU = sumF ? x.fobT * fu / sumF : 0;
+    const base = (x.fobT + freteU) * di;
+    const ii = n(a.ii) * base, ipi = n(a.ipi) * (base + ii), pis = n(a.pis) * base, cof = n(a.cofins) * base;
+    const icms = n(a.icms) < 1 ? (base + ii + ipi + pis + cof) / (1 - n(a.icms)) * n(a.icms) : 0;
+    itF.push({ ii, ipi, pis, cofins: cof, icms, imp: ii + ipi + pis + cof + icms, camb: x.fobT * dc });
+    const iiD = n(a.ii_dhl) * x.fobT * di, icD = n(a.icms_dhl) * x.fobT * di;
+    itD.push({ ii: iiD, icms: icD, imp: iiD + icD, camb: x.fobT * dc });
+  }
+  const somaCI = itF.reduce((s, x) => s + x.camb + x.imp, 0), somaD = itD.reduce((s, x) => s + x.imp, 0);
+  linhas.forEach((x, i) => {
+    const f = itF[i], d = itD[i];
+    for (const k of ['ii', 'ipi', 'pis', 'cofins', 'icms']) fe[k] += f[k];
+    dh.ii += d.ii; dh.icms += d.icms;
+    const custoF = f.imp + f.camb + (somaCI ? (f.camb + f.imp) * despTot / somaCI : 0) + (sumF ? x.fobT * fe.frete_brl / sumF : 0);
+    const custoD = d.imp + d.camb + (somaD ? d.imp * n(pr.dhl_despesas) / somaD : 0) + (sumF ? x.fobT * dh.frete_brl / sumF : 0);
+    x.fatorF = x.fobT ? custoF / x.fobT : null; x.custoUnF = x.fatorF != null ? n(x.fob) * x.fatorF : null;
+    x.fatorD = x.fobT ? custoD / x.fobT : null; x.custoUnD = x.fatorD != null ? n(x.fob) * x.fatorD : null;
+  });
+  const fecha = r => {
+    r.impostos = r.ii + r.ipi + r.pis + r.cofins + r.icms;
+    r.despesas = r.sdas_afrmm_siscomex + r.armazenagem + r.despachante_valor + r.outras_despesas + r.frete_nacional;
+    r.numerario = r.impostos + r.despesas + r.frete_brl;
+    r.total = r.cambio_brl + r.numerario;
+    r.fator = sumF ? r.total / sumF : null;
+    r.creditos = r.icms + r.ipi;
+    r.custo_real = r.total - r.creditos;
+    r.fator2 = sumF ? r.custo_real / sumF : null;
+    return r;
+  };
+  return { itens: linhas, feromax: fecha(fe), dhl: fecha(dh), semAliq: linhas.filter(x => !x.a).map(x => x.familia) };
+}
+
+const PREM = [['frete_usd', 'Frete internacional (US$)'], ['dolar_di', 'Dólar DI estimado'], ['dolar_cambio', 'Dólar câmbio estimado'],
+  ['logistica', 'Despesas logística (R$)'], ['sdas', 'SDAS / AFRMM / Siscomex (R$)'], ['armazenagem', 'Armazenagem (R$)'],
+  ['despachante', 'Despachante (R$)'], ['frete_nacional', 'Frete nacional (R$)'], ['outras', 'Outras despesas (R$)'], ['dhl_despesas', 'Despesas DHL (R$)']];
+const ALQ = [['ii', 'II'], ['ipi', 'IPI'], ['icms', 'ICMS'], ['pis', 'PIS'], ['cofins', 'COFINS'], ['ii_dhl', 'II DHL'], ['icms_dhl', 'ICMS DHL']];
+const CENARIOS = { feromax: 'Próprio (Feromax / Supply)', dhl: 'DHL (courier)' };
+
+function novaCalc(p) {
+  const e = p && p.estimativa;
+  const ref = est.cambioRef ? String(est.cambioRef).replace('.', ',') : '';
+  return {
+    processo_id: p ? p.id : null,
+    cenario: (e && e.cenario) || 'feromax',
+    premissas: e && e.premissas ? Object.fromEntries(PREM.map(([k]) => [k, e.premissas[k] != null ? String(e.premissas[k]).replace('.', ',') : ''])) :
+      { frete_usd: '', dolar_di: ref, dolar_cambio: ref, logistica: '', sdas: '', armazenagem: '', despachante: '', frete_nacional: '', outras: '', dhl_despesas: '250' },
+    itens: e && e.itens && e.itens.length ? e.itens.map(x => ({ codigo: x.codigo || '', qtd: String(x.qtd ?? ''), fob: String(x.fob ?? '').replace('.', ','), familia: x.familia || '' }))
+      : [{ codigo: '', qtd: '1', fob: p && p.fob_usd ? String(p.fob_usd).replace('.', ',') : '', familia: '' }],
+  };
+}
+function abrirCalculadora(p) { est.calc = novaCalc(p); est.abertoId = null; abrir('calculadora'); window.scrollTo(0, 0); }
+const numCalc = v => Number(paraNum(v)) || 0;
+function resultadoCalc() {
+  const c = est.calc;
+  const itens = c.itens.filter(x => numCalc(x.qtd) && numCalc(x.fob)).map(x => ({ codigo: x.codigo, qtd: numCalc(x.qtd), fob: numCalc(x.fob), familia: x.familia }));
+  const pr = Object.fromEntries(PREM.map(([k]) => [k, numCalc(c.premissas[k])]));
+  return { itens, pr, r: calcularAduaneiro(itens, pr, est.aliquotas) };
+}
+
+function renderCalculadora(el) {
+  if (!est.calc) est.calc = novaCalc(null);
+  const c = est.calc, ed = podeEditar();
+  const familias = Object.keys(est.aliquotas).sort();
+  const proc = est.processos.find(x => x.id === c.processo_id);
+  const opcoes = est.processos.filter(x => x.status === 'aberto' || x.id === c.processo_id)
+    .sort((a, b) => String(b.pedido || '').localeCompare(String(a.pedido || ''), 'pt-BR', { numeric: true }));
+  el.innerHTML = `
+  <div class="filtros">
+    <span class="nota">Processo:</span>
+    <select class="sel" id="cProc"><option value="">— simulação avulsa —</option>${opcoes.map(x => `<option value="${x.id}" ${x.id === c.processo_id ? 'selected' : ''}>${esc(x.pedido || 's/ pedido')} · ${esc(x.fornecedor)} · ${EMPRESAS[x.empresa] || ''}</option>`).join('')}</select>
+    ${proc ? `<button class="btn" id="cVerProc">Abrir processo</button>` : ''}
+    <button class="btn" id="cLimpar" style="margin-left:auto">Limpar</button>
+  </div>
+  ${!familias.length ? '<div class="card"><div class="vazio">Nenhuma alíquota cadastrada. Rode o SQL do módulo (imp_aliquotas) ou cadastre abaixo.</div></div>' : ''}
+  <div class="card">
+    <div class="topo"><h2>Premissas</h2><span class="nota">mesmas da planilha MATRIZ – CÁLCULO ADUANEIRO${est.cambioRef ? ` · câmbio do painel: ${TX(est.cambioRef)}` : ''}</span></div>
+    <div class="calc-grade">${PREM.map(([k, n]) => `<label><span>${n}</span><input data-pr="${k}" inputmode="decimal" value="${esc(c.premissas[k])}"></label>`).join('')}</div>
+  </div>
+  <div class="card">
+    <div class="topo"><h2>Itens da invoice</h2><span class="nota">família define as alíquotas</span>
+      <div class="acoes"><button class="btn btn-mini" id="cColar">Colar da planilha</button><button class="btn btn-mini" id="cItem">+ Item</button></div></div>
+    <div class="tabela-wrap"><table>
+      <thead><tr><th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th>
+        <th class="n">FOB total</th><th class="n">Fator próprio</th><th class="n">Custo unit. próprio</th><th class="n">Fator DHL</th><th class="n">Custo unit. DHL</th><th></th></tr></thead>
+      <tbody>${c.itens.map((x, i) => `<tr>
+        <td><input class="ci" data-it="${i}" data-campo="codigo" value="${esc(x.codigo)}"></td>
+        <td><select class="ci" data-it="${i}" data-campo="familia"><option value="">— escolha —</option>${familias.map(f => `<option ${f === x.familia ? 'selected' : ''}>${esc(f)}</option>`).join('')}${x.familia && !familias.includes(x.familia) ? `<option selected>${esc(x.familia)}</option>` : ''}</select></td>
+        <td><input class="ci n" data-it="${i}" data-campo="qtd" inputmode="decimal" value="${esc(x.qtd)}"></td>
+        <td><input class="ci n" data-it="${i}" data-campo="fob" inputmode="decimal" value="${esc(x.fob)}"></td>
+        <td class="n" id="cFob${i}"></td><td class="n" id="cFtF${i}"></td><td class="n" id="cCuF${i}"></td><td class="n" id="cFtD${i}"></td><td class="n" id="cCuD${i}"></td>
+        <td class="n">${c.itens.length > 1 ? `<button class="btn btn-mini btn-perigo" data-rm="${i}" title="Remover">×</button>` : ''}</td></tr>`).join('')}</tbody>
+    </table></div>
+  </div>
+  <div class="card" id="cResultado"></div>
+  <div class="card">
+    <div class="topo"><h2>Salvar estimativa</h2></div>
+    <div class="filtros" style="margin:0">
+      ${Object.entries(CENARIOS).map(([k, n]) => `<button class="chip" data-cen="${k}" aria-pressed="${c.cenario === k}">${n}</button>`).join('')}
+      <div class="sep"></div>
+      ${ed ? `<button class="btn-pri" id="cSalvar" ${proc ? '' : 'disabled title="Escolha o processo no topo"'}>Salvar como estimativa ${proc ? 'do pedido ' + esc(proc.pedido || '') : 'do processo'}</button>` : ''}
+      <span class="nota">${proc ? (proc.estimativa ? `substitui a estimativa de ${dm(proc.estimativa.data)}` : 'o processo ainda não tem estimativa') : 'escolha o processo no topo para salvar'}</span>
+    </div>
+  </div>
+  <div class="card">
+    <details class="aliq" id="cAliq" ${est.calcAliqAberto ? 'open' : ''}><summary>Alíquotas por família de produto</summary>
+      <div class="nota" style="margin:6px 0 10px">Usadas no cálculo de cada item. Valores em %.</div>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Família</th>${ALQ.map(([, n]) => `<th class="n">${n}</th>`).join('')}</tr></thead>
+        <tbody>${familias.map(f => `<tr><td>${esc(f)}</td>${ALQ.map(([k]) => `<td class="n">${ed ? `<input class="ci n" style="width:76px" data-aq="${esc(f)}" data-ak="${k}" value="${est.aliquotas[f][k] != null ? nf(2).format(est.aliquotas[f][k] * 100) : ''}">` : (est.aliquotas[f][k] != null ? nf(2).format(est.aliquotas[f][k] * 100) : '—')}</td>`).join('')}</tr>`).join('')}
+        ${ed ? `<tr><td><input class="ci" id="aqNova" placeholder="nova família"></td>${ALQ.map(([k]) => `<td class="n"><input class="ci n" style="width:76px" data-aqn="${k}"></td>`).join('')}</tr>` : ''}</tbody>
+      </table></div>
+      ${ed ? '<div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn-pri" id="aqSalvar">Salvar alíquotas</button><span class="nota" id="aqMsg"></span></div>' : ''}
+    </details>
+  </div>`;
+
+  // eventos
+  $('#cProc').onchange = e => { const p = est.processos.find(x => x.id === Number(e.target.value)); est.calc = p ? novaCalc(p) : { ...c, processo_id: null }; redesenhar(); };
+  if ($('#cVerProc')) $('#cVerProc').onclick = () => abrirProcesso(c.processo_id);
+  $('#cLimpar').onclick = () => { est.calc = novaCalc(null); redesenhar(); };
+  el.querySelectorAll('[data-pr]').forEach(i => i.oninput = () => { c.premissas[i.dataset.pr] = i.value; atualizarCalc(); });
+  el.querySelectorAll('[data-it]').forEach(i => { const ev = i.tagName === 'SELECT' ? 'onchange' : 'oninput'; i[ev] = () => { c.itens[Number(i.dataset.it)][i.dataset.campo] = i.value; atualizarCalc(); }; });
+  el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { c.itens.splice(Number(b.dataset.rm), 1); redesenhar(); });
+  $('#cItem').onclick = () => { const ult = c.itens[c.itens.length - 1]; c.itens.push({ codigo: '', qtd: '1', fob: '', familia: ult ? ult.familia : '' }); redesenhar(); };
+  $('#cColar').onclick = colarItens;
+  el.querySelectorAll('[data-cen]').forEach(b => b.onclick = () => { c.cenario = b.dataset.cen; redesenhar(); });
+  $('#cAliq').ontoggle = e => { est.calcAliqAberto = e.target.open; };
+  if ($('#cSalvar')) $('#cSalvar').onclick = salvarEstimativa;
+  if ($('#aqSalvar')) $('#aqSalvar').onclick = async () => {
+    const pc = v => { const t = paraNum(v); return t === '' ? null : Number(t) / 100; };
+    const lista = familias.map(f => { const o = { familia: f }; for (const [k] of ALQ) o[k] = pc(el.querySelector(`[data-aq="${CSS.escape(f)}"][data-ak="${k}"]`).value); return o; });
+    const nova = $('#aqNova').value.trim().toUpperCase();
+    if (nova) { const o = { familia: nova }; for (const [k] of ALQ) o[k] = pc(el.querySelector(`[data-aqn="${k}"]`).value); lista.push(o); }
+    if (lista.some(o => ALQ.some(([k]) => o[k] != null && (isNaN(o[k]) || o[k] < 0 || o[k] >= 1)))) return void ($('#aqMsg').textContent = 'Verifique os valores (0 a 99,99%).');
+    try { await gravarAliquotas(lista); est.calcAliqAberto = true; redesenhar(); } catch (e) { $('#aqMsg').textContent = e.message; }
+  };
+  atualizarCalc();
+}
+
+function atualizarCalc() {
+  const c = est.calc; const { r } = resultadoCalc();
+  // colunas calculadas de cada item
+  let k = 0;
+  c.itens.forEach((x, i) => {
+    const ok = numCalc(x.qtd) && numCalc(x.fob);
+    const it = ok ? r.itens[k++] : null;
+    const set = (id, v) => { const td = document.getElementById(id); if (td) td.innerHTML = v; };
+    set('cFob' + i, it ? F2.format(it.fobT) : '—');
+    set('cFtF' + i, it && it.a ? FT(it.fatorF) : '—'); set('cCuF' + i, it && it.a ? F2.format(it.custoUnF) : '—');
+    set('cFtD' + i, it && it.a ? FT(it.fatorD) : '—'); set('cCuD' + i, it && it.a ? F2.format(it.custoUnD) : '—');
+  });
+  const F = r.feromax, D = r.dhl;
+  const lin = (n, a, b, opt = {}) => `<tr${opt.forte ? ' style="font-weight:650"' : ''}><td>${n}</td><td class="n">${opt.f ? FT(a) : opt.u ? U(a) : F2.format(a)}</td><td class="n">${opt.f ? FT(b) : opt.u ? U(b) : F2.format(b)}</td></tr>`;
+  const box = document.getElementById('cResultado'); if (!box) return;
+  const semFam = [...new Set(r.semAliq)];
+  box.innerHTML = `<div class="topo"><h2>Resultado</h2><span class="nota">cenário marcado para salvar: <b>${CENARIOS[c.cenario]}</b></span></div>
+    ${semFam.length ? `<div class="nota verm" style="margin-bottom:8px">Itens sem família/alíquota (impostos zerados): ${semFam.map(x => esc(x || 'sem família')).join(', ')}</div>` : ''}
+    <div class="tabela-wrap"><table>
+      <thead><tr><th></th><th class="n">${CENARIOS.feromax}</th><th class="n">${CENARIOS.dhl}</th></tr></thead>
+      <tbody>
+        ${lin('Valor total da invoice (FOB)', F.fob_usd, D.fob_usd, { u: true })}
+        ${lin('Câmbio (FOB × dólar câmbio)', F.cambio_brl, D.cambio_brl)}
+        ${lin('II', F.ii, D.ii)}${lin('IPI', F.ipi, D.ipi)}${lin('PIS', F.pis, D.pis)}${lin('COFINS', F.cofins, D.cofins)}${lin('ICMS', F.icms, D.icms)}
+        ${lin('Impostos total', F.impostos, D.impostos, { forte: true })}
+        ${lin('Despesas (SDAS, armazenagem, despachante, frete nacional, outras / DHL)', F.despesas, D.despesas)}
+        ${lin('Frete internacional (R$)', F.frete_brl, D.frete_brl)}
+        ${lin('Numerários total', F.numerario, D.numerario, { forte: true })}
+        ${lin('Total importação', F.total, D.total, { forte: true })}
+        ${lin('Fator de compras', F.fator, D.fator, { f: true, forte: true })}
+        ${lin('Crédito ICMS + IPI', F.creditos, D.creditos)}
+        ${lin('Custo real (sem créditos)', F.custo_real, D.custo_real)}
+        ${lin('Fator de compras 2 (sem créditos)', F.fator2, D.fator2, { f: true })}
+      </tbody></table></div>`;
+}
+
+function colarItens() {
+  const m = abrirModal(`<h2>Colar itens da planilha</h2>
+    <div class="nota" style="margin-bottom:8px">Copie do Excel as colunas <b>Código · Quantidade · FOB unitário · Família</b> (a família é opcional) e cole abaixo.</div>
+    <textarea id="cTxt" rows="10" style="width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)"></textarea>
+    <label class="chk-fluxo" style="margin-top:8px"><input type="checkbox" id="cSubst" checked> Substituir os itens atuais</label>
+    <div class="erro" id="cErr"></div>
+    <div class="rodape"><button class="btn" data-fechar>Cancelar</button><button class="btn-pri" id="cOk">Incluir</button></div>`);
+  m.querySelector('#cOk').onclick = () => {
+    const fams = Object.keys(est.aliquotas);
+    const achaFam = t => { t = String(t || '').trim(); return fams.find(f => f.toLowerCase() === t.toLowerCase()) || t.toUpperCase(); };
+    const linhas = m.querySelector('#cTxt').value.split(/\r?\n/).map(l => l.split(/\t|;/).map(x => x.trim())).filter(l => l.some(Boolean));
+    const novos = [];
+    for (const l of linhas) {
+      if (l.length < 3) continue;
+      if (isNaN(Number(paraNum(l[1]))) || isNaN(Number(paraNum(l[2])))) continue; // cabeçalho
+      novos.push({ codigo: l[0], qtd: l[1], fob: l[2], familia: l[3] ? achaFam(l[3]) : (est.calc.itens[0] || {}).familia || '' });
+    }
+    if (!novos.length) return void (m.querySelector('#cErr').textContent = 'Nenhuma linha reconhecida (código, quantidade, FOB).');
+    est.calc.itens = m.querySelector('#cSubst').checked ? novos : est.calc.itens.filter(x => numCalc(x.fob)).concat(novos);
+    fecharModal(m); redesenhar();
+  };
+}
+
+async function salvarEstimativa() {
+  const c = est.calc, p = est.processos.find(x => x.id === c.processo_id);
+  if (!p) return;
+  const { itens, pr, r } = resultadoCalc();
+  if (!itens.length) return alertaErro('Informe pelo menos um item com quantidade e FOB.');
+  if (!pr.dolar_di) return alertaErro('Informe o dólar DI estimado.');
+  const res = r[c.cenario];
+  const arred = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v]));
+  const estimativa = { data: hojeISO(), cenario: c.cenario, premissas: pr,
+    itens: itens.map(x => ({ ...x, aliq: est.aliquotas[x.familia] ? Object.fromEntries(ALQ.map(([k]) => [k, est.aliquotas[x.familia][k]])) : null })),
+    resultado: arred(res) };
+  const msg = `Fator estimado <b>${FT(res.fator)}</b> · total ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br>Salvar no pedido ${esc(p.pedido || '')} · ${esc(p.fornecedor)}?`;
+  if (!await confirmar('Salvar estimativa', msg, 'Salvar')) return;
+  const reg = { estimativa, fator_estimado: Math.round(res.fator * 1e6) / 1e6 };
+  if (!p.fob_usd) reg.fob_usd = Math.round(res.fob_usd * 100) / 100;
+  await gravar('imp_processos', reg, p.id, p, true);
+  est.abertoId = p.id; abrir('processos'); await depoisDeGravar();
+}
 
 // ======================= formulários =======================
 // campos: [nome, rótulo, tipo ('text'|'date'|'num'|'select'|'chk'|'area'|'lista'), opções]
@@ -643,7 +1029,7 @@ function formDados(p) {
       ['pedido', 'Pedido', 'text'], ['data_pedido', 'Data do pedido', 'date'],
       ['mercadoria', 'Mercadoria', 'text'], ['modal', 'Modal', 'select', [['', '—'], ['Marítimo', 'Marítimo'], ['Aéreo', 'Aéreo']]],
       ['despachante', 'Despachante', 'text'], ['logistica', 'Logística', 'text'], ['processo', 'Nº processo (despachante)', 'text'],
-      ['previsao_chegada', 'Previsão de chegada', 'date'], ['fob_usd', 'FOB total da invoice (US$)', 'num'], ['fator_estimado', 'Fator estimado', 'num'],
+      ['previsao_chegada', 'Previsão de chegada', 'date'], ['fob_usd', 'FOB total da invoice (US$)', 'num'], ['fator_estimado', 'Fator estimado (ou use a calculadora)', 'num'],
       ['observacao', 'Observação', 'area'],
     ]],
     ['Fornecedor', [['_pais', 'País', 'lista', paises], ['_cond', 'Condição de pagamento', 'text']]],
@@ -682,33 +1068,50 @@ function formNacionalizacao(p) {
   fm.addEventListener('input', atual); atual();
 }
 
-function formParcela(p, c) {
-  const novo = !c; const cs = cambiosDe(p);
-  c = c || { ordem: cs.length + 1, taxa_di: p.cambio_di, tarifa: 0, pago: false, conciliado: false };
+function formParcela(p, c, tipo, preset) {
+  const novo = !c; const pags = pagamentosDe(p);
+  tipo = (c && c.tipo) || tipo || 'Câmbio';
+  const cam = tipo === 'Câmbio';
+  c = c || { ordem: pags.length + 1, tipo, taxa_di: cam ? p.cambio_di : null, tarifa: 0, pago: false, conciliado: false, no_fluxo: false, ...(preset || {}) };
   const corretoras = [...new Set(est.cambios.map(x => x.corretora).filter(Boolean))].sort();
-  const { m } = form(novo ? 'Nova parcela de câmbio' : 'Parcela de câmbio', [
-    ['Previsão', [['valor_usd', 'Valor (US$)', 'num'], ['data_prevista', 'Data prevista', 'date'], ['taxa_di', 'Taxa de referência', 'num'], ['ordem', 'Ordem', 'num']]],
+  const grupos = cam ? [
+    ['Previsão', [['valor_usd', 'Valor (US$)', 'num'], ['data_prevista', 'Data prevista', 'date'], ['taxa_di', 'Taxa de referência', 'num'], ['ordem', 'Ordem', 'num'],
+      ['no_fluxo', 'Levar ao Fluxo de caixa projetado', 'chk']]],
     ['Fechamento do câmbio', [['pago', 'Câmbio fechado / pago', 'chk'], ['data_fechamento', 'Data do fechamento', 'date'],
       ['cambio_realizado', 'Taxa realizada', 'num'], ['tarifa', 'Tarifa bancária (US$)', 'num'], ['valor_brl', 'Valor pago (R$)', 'num'],
       ['corretora', 'Corretora / banco', 'lista', corretoras], ['contrato', 'Contrato de câmbio', 'text'], ['conciliado', 'Conciliado', 'chk']]],
     ['', [['observacao', 'Observação', 'area']]],
-  ], c, async v => {
-    if (!v.valor_usd) throw new Error('Informe o valor em US$.');
-    if (v.pago && (!v.data_fechamento || !v.cambio_realizado)) throw new Error('Para marcar como pago, informe a data e a taxa realizada.');
-    if (v.pago && v.valor_brl == null) v.valor_brl = Math.round((v.valor_usd + nz(v.tarifa)) * v.cambio_realizado * 100) / 100;
+  ] : [
+    ['Previsão', [['tipo', 'Tipo', 'select', [['Numerário', 'Numerário (despachante)'], ['Outros', 'Outros']]], ['valor_previsto_brl', 'Valor previsto (R$)', 'num'],
+      ['data_prevista', 'Data prevista', 'date'], ['ordem', 'Ordem', 'num'], ['no_fluxo', 'Levar ao Fluxo de caixa projetado', 'chk']]],
+    ['Pagamento', [['pago', 'Pago', 'chk'], ['data_fechamento', 'Data do pagamento', 'date'], ['valor_brl', 'Valor pago (R$)', 'num'], ['conciliado', 'Conciliado', 'chk']]],
+    ['', [['observacao', 'Observação', 'area']]],
+  ];
+  const { m } = form(novo ? (cam ? 'Nova parcela de câmbio' : 'Novo numerário / pagamento') : (cam ? 'Parcela de câmbio' : 'Numerário / pagamento'), grupos, c, async v => {
+    if (cam) {
+      if (!v.valor_usd) throw new Error('Informe o valor em US$.');
+      if (v.pago && (!v.data_fechamento || !v.cambio_realizado)) throw new Error('Para marcar como pago, informe a data e a taxa realizada.');
+      if (v.pago && v.valor_brl == null) v.valor_brl = Math.round((v.valor_usd + nz(v.tarifa)) * v.cambio_realizado * 100) / 100;
+      v.tarifa = v.tarifa ?? 0; v.tipo = 'Câmbio';
+    } else {
+      if (!v.valor_previsto_brl && !v.valor_brl) throw new Error('Informe o valor previsto em R$.');
+      if (v.pago && (!v.data_fechamento || v.valor_brl == null)) throw new Error('Para marcar como pago, informe a data e o valor pago.');
+    }
     if (!v.pago) v.conciliado = false;
-    v.tarifa = v.tarifa ?? 0;
+    if (v.no_fluxo && !v.data_prevista) throw new Error('Para levar ao fluxo de caixa, informe a data prevista.');
     if (novo) await inserir('imp_cambios', { ...v, processo_id: p.id, empresa: p.empresa });
     else await gravar('imp_cambios', v, c.id, c);
-  }, novo ? '' : '<div style="margin-top:12px"><button type="button" class="btn btn-mini btn-perigo" id="btnExcl">Excluir parcela</button></div>');
+  }, novo ? '' : '<div style="margin-top:12px"><button type="button" class="btn btn-mini btn-perigo" id="btnExcl">Excluir</button></div>');
   const fm = m.querySelector('#fm');
-  // calcula R$ automaticamente: (US$ + tarifa) × taxa
   const num = k => Number(paraNum(fm.elements[k].value)) || 0;
-  const recalc = () => { if (num('cambio_realizado')) fm.elements.valor_brl.value = F2.format((num('valor_usd') + num('tarifa')) * num('cambio_realizado')).replace(/\./g, ''); };
-  ['valor_usd', 'tarifa', 'cambio_realizado'].forEach(k => fm.elements[k].addEventListener('input', recalc));
-  fm.elements.cambio_realizado.addEventListener('input', () => { if (num('cambio_realizado')) fm.elements.pago.checked = true; });
+  if (cam) {
+    // calcula R$ automaticamente: (US$ + tarifa) × taxa
+    const recalc = () => { if (num('cambio_realizado')) fm.elements.valor_brl.value = F2.format((num('valor_usd') + num('tarifa')) * num('cambio_realizado')).replace(/\./g, ''); };
+    ['valor_usd', 'tarifa', 'cambio_realizado'].forEach(k => fm.elements[k].addEventListener('input', recalc));
+    fm.elements.cambio_realizado.addEventListener('input', () => { if (num('cambio_realizado')) fm.elements.pago.checked = true; });
+  }
   if (!novo) m.querySelector('#btnExcl').onclick = async () => {
-    if (!await confirmar('Excluir parcela', `Excluir a parcela de <b>${U(c.valor_usd)}</b>?`, 'Excluir')) return;
+    if (!await confirmar('Excluir', `Excluir ${cam ? 'a parcela de <b>' + U(c.valor_usd) + '</b>' : 'o lançamento de <b>' + R(c.valor_previsto_brl || c.valor_brl) + '</b>'}?`, 'Excluir')) return;
     try { await excluir('imp_cambios', c.id); fecharModal(m); } catch (e) { m.querySelector('#fmErro').textContent = e.message; }
   };
 }
@@ -724,13 +1127,14 @@ async function inserir(tabela, reg) {
   if (error) throw new Error(error.message);
   await recarregar(); return data.id;
 }
-async function gravar(tabela, reg, id, obj) {
+async function gravar(tabela, reg, id, obj, semRecarregar) {
   if (tabela === 'imp_processos') reg.atualizado_em = new Date().toISOString();
-  if (est.demo) { Object.assign(obj, reg); redesenhar(); return; }
+  if (est.demo) { Object.assign(obj, reg); if (!semRecarregar) redesenhar(); return; }
   const { error } = await sb.from(tabela).update(reg).eq('id', id);
   if (error) { alertaErro(error.message); throw new Error(error.message); }
-  await recarregar();
+  if (!semRecarregar) await recarregar();
 }
+async function depoisDeGravar() { if (est.demo) redesenhar(); else await recarregar(); }
 async function excluir(tabela, id) {
   if (est.demo) { est[mapa[tabela]] = est[mapa[tabela]].filter(x => x.id !== id); redesenhar(); return; }
   const { error } = await sb.from(tabela).delete().eq('id', id);
@@ -743,6 +1147,12 @@ async function gravarFornecedor(f) {
   if (error) throw new Error(error.message);
 }
 const mapa = { imp_processos: 'processos', imp_cambios: 'cambios', imp_creditos: 'creditos' };
+async function gravarAliquotas(lista) {
+  if (est.demo) { for (const a of lista) est.aliquotas[a.familia] = a; return; }
+  const { error } = await sb.from('imp_aliquotas').upsert(lista);
+  if (error) throw new Error(error.message);
+  await recarregar();
+}
 function alertaErro(msg) { const m = abrirModal(`<h2>Não foi possível salvar</h2><div class="erro">${esc(msg)}</div><div class="rodape"><button class="btn-pri" data-fechar>OK</button></div>`); }
 
 // ======================= leitura =======================
@@ -767,6 +1177,14 @@ async function recarregar() {
   ]);
   est.processos = procs.map(numerico); est.cambios = cambios.map(numerico); est.creditos = creditos.map(numerico);
   est.fornecedores = Object.fromEntries(forns.map(f => [f.nome, f]));
+  // alíquotas por família de produto (calculadora aduaneira)
+  try { const al = await buscarTodos(() => sb.from('imp_aliquotas').select('*').order('familia')); est.aliquotas = Object.fromEntries(al.map(a => [a.familia, numerico(a)])); } catch (_) { est.aliquotas = {}; }
+  // câmbio de referência do painel (PTAX ou manual) para a calculadora
+  if (est.cambioRef == null) try {
+    const [{ data: par }, { data: cfg }] = await Promise.all([sb.from('parametros').select('chave,valor').eq('chave', 'cambio').maybeSingle(), sb.from('config_painel').select('valor').eq('chave', 'ptax').maybeSingle()]);
+    const cam = par && par.valor, ptax = cfg && cfg.valor && Number(cfg.valor.valor);
+    est.cambioRef = cam && cam.modo === 'ptax' && ptax ? ptax : (cam && Number(cam.manual)) || ptax || null;
+  } catch (_) {}
   redesenhar();
 }
 
