@@ -181,7 +181,7 @@ details.aliq summary { cursor: pointer; font-weight: 620; font-size: 14.5px; }
 td.cen-sel, th.cen-sel { background: color-mix(in srgb, var(--acento, #8a5cd1) 9%, transparent); }
 .data-clic { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .data-clic:hover { color: var(--acento, #8a5cd1); }
-.filtros-emb { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 14px; }
+.filtros-emb { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 8px 12px; }
 .filtro-emb { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted, #777); }
 .filtro-emb .sel { width: 100%; }
 .tab-emb td, .tab-emb th { white-space: nowrap; }
@@ -191,7 +191,7 @@ td.cen-sel, th.cen-sel { background: color-mix(in srgb, var(--acento, #8a5cd1) 9
 .barra-trilho { background: color-mix(in srgb, currentColor 7%, transparent); border-radius: 4px; height: 14px; overflow: hidden; }
 .barra { display: block; height: 100%; border-radius: 4px; }
 .barra-val { text-align: right; font-variant-numeric: tabular-nums; }
-.tabela-wrap.rolagem { max-height: calc(100vh - 110px); overflow: auto; overscroll-behavior: contain; }
+.tabela-wrap.rolagem { max-height: calc(100vh - 110px); overflow: auto; overflow-x: scroll; }
 .rolagem thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: inset 0 -1px 0 var(--line); }
 .rolagem tfoot td { position: sticky; bottom: 0; z-index: 1; background: var(--surface); box-shadow: inset 0 1px 0 var(--line); }
 </style>
@@ -391,14 +391,13 @@ const comClientes = () => empresasFiltro().some(temClientes);
 function chipsEmpresas() {
   const vis = empresasVisiveis(); if (vis.length < 2) return '';
   const sel = empresasFiltro();
-  return `${vis.map(e => `<button class="chip" data-empsel="${e}" aria-pressed="${sel.includes(e)}" title="Clique: só esta · Ctrl+clique: junta ou tira">${esc(EMPRESAS[e])}</button>`).join('')}
-    <span class="nota" style="align-self:center">Ctrl+clique para escolher mais de uma</span><div class="sep"></div>`;
+  return `${vis.map(e => `<button class="chip" data-empsel="${e}" aria-pressed="${sel.includes(e)}" title="Clique para marcar ou desmarcar">${esc(EMPRESAS[e])}</button>`).join('')}<div class="sep"></div>`;
 }
 function ligarChipsEmpresas(el) {
   el.querySelectorAll('[data-empsel]').forEach(b => b.onclick = ev => {
     const e = Number(b.dataset.empsel); let sel = empresasFiltro();
-    if (ev.ctrlKey || ev.metaKey || ev.shiftKey) { sel = sel.includes(e) ? sel.filter(x => x !== e) : [...sel, e]; if (!sel.length) sel = [e]; }
-    else sel = [e];
+    sel = sel.includes(e) ? sel.filter(x => x !== e) : [...sel, e];
+    if (!sel.length) return;   // pelo menos uma empresa marcada
     est.empSel = sel; try { localStorage.setItem('imp-empresas', JSON.stringify(sel)); } catch (_) {}
     redesenhar();
   });
@@ -428,9 +427,17 @@ function abrir(id) {
   document.querySelectorAll('[data-sub]').forEach(b => b.setAttribute('aria-selected', b.dataset.sub === id));
   redesenhar();
 }
+// cada tabela com rolagem ocupa até o fim da tela: a barra de rolagem lateral (horizontal) fica sempre à vista
+function ajustarRolagem() {
+  document.querySelectorAll('.tabela-wrap.rolagem').forEach(w => {
+    const topo = w.getBoundingClientRect().top + window.scrollY;
+    w.style.maxHeight = Math.max(280, window.innerHeight - Math.min(topo, window.innerHeight * 0.55) - 24) + 'px';
+  });
+}
+addEventListener('resize', () => ajustarRolagem());
 function redesenhar() {
   const s = SUBABAS.find(x => x.id === est.sub);
-  try { s.render($('#conteudo')); }
+  try { s.render($('#conteudo')); ajustarRolagem(); }
   catch (e) { console.error(e); $('#conteudo').innerHTML = `<div class="card"><div class="vazio">Erro: ${esc(e.message)}</div></div>`; }
 }
 function abrirProcesso(id) { est.abertoId = id; abrir('processos'); window.scrollTo(0, 0); }
@@ -555,6 +562,28 @@ function renderGeral(el) {
   });
 }
 
+// comissão da assessoria: valor (quem digita) + situação paga / a receber e data (gestor)
+function formComissao(p) {
+  const g = podeFechar();
+  const { m } = form('Comissão · ' + (p.cliente || p.fornecedor), [['', [['comissao_valor', 'Valor da comissão (R$)', 'num'],
+    ...(g ? [['_sit', 'Situação', 'select', [['a', 'A receber'], ['p', 'Paga / recebida']]], ['comissao_paga_em', 'Data do recebimento', 'date']] : [])]]],
+    { ...p, _sit: p.comissao_paga ? 'p' : 'a', comissao_paga_em: p.comissao_paga_em || (p.comissao_paga ? null : hojeISO()) }, v => {
+      const reg = { comissao_valor: v.comissao_valor };
+      if (g) { reg.comissao_paga = v._sit === 'p'; reg.comissao_paga_em = reg.comissao_paga ? (v.comissao_paga_em || hojeISO()) : null; }
+      return gravar('imp_processos', reg, p.id, p);
+    });
+  const fm = m.querySelector('#fm');
+  if (g) { const ver = () => { fm.elements.comissao_paga_em.closest('label').style.display = fm.elements._sit.value === 'p' ? '' : 'none'; }; fm.elements._sit.addEventListener('change', ver); ver(); }
+}
+function formCarga(p) {
+  if (!podeFechar()) return alertaErro('O pagamento da carga é marcado pelo gestor de importações.');
+  const { m } = form('Pagamento da carga · ' + (p.cliente || p.fornecedor), [['', [['_sit', 'Situação', 'select', [['a', 'Pendente'], ['p', 'Paga']]], ['carga_paga_em', 'Data do pagamento', 'date']]]],
+    { _sit: p.carga_paga ? 'p' : 'a', carga_paga_em: p.carga_paga_em || (p.carga_paga ? null : hojeISO()) }, v =>
+      gravar('imp_processos', { carga_paga: v._sit === 'p', carga_paga_em: v._sit === 'p' ? (v.carga_paga_em || null) : null }, p.id, p));
+  const fm = m.querySelector('#fm'); const ver = () => { fm.elements.carga_paga_em.closest('label').style.display = fm.elements._sit.value === 'p' ? '' : 'none'; };
+  fm.elements._sit.addEventListener('change', ver); ver();
+}
+
 // ======================= EMBARQUES (controle de embarques / monitoramento de cargas) =======================
 // status logístico pelo checkpoint: aguardando embarque → em trânsito → em desembaraço → entregue
 function statusEmb(p) {
@@ -635,13 +664,6 @@ function renderEmbarques(el) {
     ${sel('eDesp', 'Despachante', opc(p => p.despachante).map(x => [x, x]), f.desp)}
     ${sel('ePag', 'Pagamento carga', [['pago', 'Pago'], ['pendente', 'Pendente / parcial'], ['sem', 'Sem informação']], f.pag)}
   </div></div>
-  <div class="kpis">
-    ${kpi('Embarques', F0.format(lista.length), `${[...new Set(lista.map(p => p.tipo_container).filter(Boolean))].slice(0, 4).map(t => `${lista.filter(p => p.tipo_container === t).length}× ${esc(t)}`).join(' · ')}`)}
-    ${kpi('Entregues', F0.format(conta('entregue')), lista.length ? Math.round(conta('entregue') / lista.length * 100) + '% do total' : '')}
-    ${kpi('Em trânsito', F0.format(conta('transito')), lista.filter(p => statusEmb(p).k === 'transito').slice(0, 4).map(p => '#' + p.id).join(' · '))}
-    ${kpi('Em desembaraço', F0.format(conta('desembaraco')), conta('desembaraco') ? '' : 'nenhuma pendência')}
-    ${kpi('Aguardando embarque', F0.format(conta('aguardando')), '')}
-  </div>
   <div class="card">
     <div class="topo"><h2>Controle de embarques</h2><span class="nota">exibindo ${lista.length} de ${base.length} · clique na data para atualizar o checkpoint; na linha, abre o processo</span></div>
     <div class="tabela-wrap rolagem"><table class="tab-emb">
@@ -657,11 +679,18 @@ function renderEmbarques(el) {
         <td class="d">${dataCp(p, p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada)}</td>
         <td class="d">${dataCp(p, p.cp_estoque_ef || p.cp_estoque_prev)}</td>
         <td class="mono">${esc(p.di || '—')}</td><td>${esc(p.nf_entrada || '—')}</td>
-        <td><span class="${pg.k === 'pago' ? 'verde' : pg.k === 'pendente' ? 'verm' : 'nota'}">${pg.txt}</span></td>
-        ${comCli ? `<td>${!temClientes(p.empresa) ? '<span class="nota">—</span>' : p.comissao_paga ? `<span class="verde">${p.comissao_paga_em ? dm(p.comissao_paga_em) : 'paga'}</span>` : p.comissao_valor ? `<span class="verm">${R0(p.comissao_valor)}</span>` : '<span class="nota">—</span>'}</td>` : ''}
+        <td><span class="${pg.k === 'pago' ? 'verde' : pg.k === 'pendente' ? 'verm' : 'nota'} ${podeFechar() && temClientes(p.empresa) ? 'data-clic' : ''}" ${podeFechar() && temClientes(p.empresa) ? `data-carga="${p.id}" title="Marcar pagamento da carga"` : ''}>${pg.txt}</span></td>
+        ${comCli ? `<td>${!temClientes(p.empresa) ? '<span class="nota">—</span>' : `<span class="${podeEditar() ? 'data-clic' : ''}" ${podeEditar() ? `data-com="${p.id}" title="Comissão: valor e situação"` : ''}>${p.comissao_paga ? `<span class="verde">${p.comissao_paga_em ? dm(p.comissao_paga_em) : 'paga'}</span>` : p.comissao_valor ? `<span class="verm">${R0(p.comissao_valor)}</span>` : '<span class="nota">informar</span>'}</span>`}</td>` : ''}
         <td>${p.rfi_link ? (/^https?:/i.test(p.rfi_link) ? `<a href="${esc(p.rfi_link)}" target="_blank" rel="noopener" title="Abrir RFI">📄</a>` : `<span title="${esc(p.rfi_link)}">📄</span>`) : '—'}</td>
         <td class="n">${FT(fatorEmb(p))}</td></tr>`; }).join('') : `<tr><td colspan="${cols.length}" class="vazio">Nenhum embarque com esses filtros.</td></tr>`}</tbody>
     </table></div>
+  </div>
+  <div class="kpis">
+    ${kpi('Embarques', F0.format(lista.length), `${[...new Set(lista.map(p => p.tipo_container).filter(Boolean))].slice(0, 4).map(t => `${lista.filter(p => p.tipo_container === t).length}× ${esc(t)}`).join(' · ')}`)}
+    ${kpi('Entregues', F0.format(conta('entregue')), lista.length ? Math.round(conta('entregue') / lista.length * 100) + '% do total' : '')}
+    ${kpi('Em trânsito', F0.format(conta('transito')), lista.filter(p => statusEmb(p).k === 'transito').slice(0, 4).map(p => '#' + p.id).join(' · '))}
+    ${kpi('Em desembaraço', F0.format(conta('desembaraco')), conta('desembaraco') ? '' : 'nenhuma pendência')}
+    ${kpi('Aguardando embarque', F0.format(conta('aguardando')), '')}
   </div>
   <div class="grade2">
     ${barras('Distribuição por status', STATUS_EMB.map(([k, n]) => [n, conta(k)]).filter(([, v]) => v), '#2f8f5b')}
@@ -677,8 +706,10 @@ function renderEmbarques(el) {
   $('#eLimpar').onclick = () => { est.filtroEmb = null; redesenhar(); };
   el.querySelectorAll('tr[data-p]').forEach(tr => tr.onclick = ev => {
     if (ev.target.closest('a')) return;
-    const cp = ev.target.closest('[data-cp]');
+    const cp = ev.target.closest('[data-cp]'), cm = ev.target.closest('[data-com]'), cg = ev.target.closest('[data-carga]');
     if (cp) return formCheckpoints(est.processos.find(x => x.id === Number(cp.dataset.cp)));
+    if (cm) return formComissao(est.processos.find(x => x.id === Number(cm.dataset.com)));
+    if (cg) return formCarga(est.processos.find(x => x.id === Number(cg.dataset.carga)));
     est.abertoId = Number(tr.dataset.p); abrir('processos');
   });
 }
@@ -852,9 +883,9 @@ function renderFicha(el, p) {
       ${kpi('Pagamento da carga', pagCarga(p).k === 'pago' ? 'pago' : pagCarga(p).txt, p.carga_paga ? (p.carga_paga_em ? 'em ' + dm(p.carga_paga_em) : 'marcado como pago') : (cambiosDe(p).length ? 'pelas parcelas de câmbio' : ''))}
     </div>
     ${ed ? `<div class="filtros" style="margin:10px 0 0">
-      <button class="btn btn-mini" id="btnComValor">${p.comissao_valor ? 'Alterar valor da comissão' : 'Informar comissão'}</button>
-      ${podeFechar() ? (p.comissao_paga ? '<button class="btn btn-mini" id="btnComDesf">Desfazer comissão recebida</button>' : '<button class="btn-pri btn-mini" id="btnComPaga">Registrar comissão recebida</button>')
-        + (p.carga_paga ? '<button class="btn btn-mini" id="btnCargaDesf">Desfazer carga paga</button>' : '<button class="btn btn-mini" id="btnCargaPaga">Marcar carga paga</button>') : '<span class="nota">o recebimento da comissão e o pagamento da carga são marcados pelo gestor</span>'}
+      <button class="btn-pri" id="btnComissao">Comissão: valor e situação</button>
+      <button class="btn" id="btnCarga">Pagamento da carga</button>
+      ${podeFechar() ? '' : '<span class="nota">a situação (paga / a receber) é marcada pelo gestor</span>'}
     </div>` : ''}
   </div>` : ''}
 
@@ -932,14 +963,8 @@ function renderFicha(el, p) {
   };
   $('#btnEditar').onclick = () => formDados(p);
   $('#btnCp').onclick = () => formCheckpoints(p);
-  if ($('#btnComValor')) $('#btnComValor').onclick = () => form('Comissão do processo', [['', [['comissao_valor', 'Valor da comissão (R$)', 'num']]]], p,
-    v => gravar('imp_processos', { comissao_valor: v.comissao_valor }, p.id, p));
-  if ($('#btnComPaga')) $('#btnComPaga').onclick = () => form('Comissão recebida', [['', [['comissao_valor', 'Valor recebido (R$)', 'num'], ['comissao_paga_em', 'Data do recebimento', 'date']]]],
-    { ...p, comissao_paga_em: hojeISO() }, v => { if (!v.comissao_paga_em) throw new Error('Informe a data.'); return gravar('imp_processos', { comissao_valor: v.comissao_valor ?? p.comissao_valor, comissao_paga: true, comissao_paga_em: v.comissao_paga_em }, p.id, p); });
-  if ($('#btnComDesf')) $('#btnComDesf').onclick = async () => { if (await confirmar('Desfazer', 'Voltar a comissão para "a receber"?', 'Desfazer')) await gravar('imp_processos', { comissao_paga: false, comissao_paga_em: null }, p.id, p); };
-  if ($('#btnCargaPaga')) $('#btnCargaPaga').onclick = () => form('Pagamento da carga', [['', [['carga_paga_em', 'Data do pagamento', 'date']]]],
-    { carga_paga_em: hojeISO() }, v => gravar('imp_processos', { carga_paga: true, carga_paga_em: v.carga_paga_em }, p.id, p));
-  if ($('#btnCargaDesf')) $('#btnCargaDesf').onclick = async () => { if (await confirmar('Desfazer', 'Voltar o pagamento da carga para pendente?', 'Desfazer')) await gravar('imp_processos', { carga_paga: false, carga_paga_em: null }, p.id, p); };
+  if ($('#btnComissao')) $('#btnComissao').onclick = () => formComissao(p);
+  if ($('#btnCarga')) $('#btnCarga').onclick = () => formCarga(p);
   $('#btnParc').onclick = () => formParcela(p, null, 'Câmbio');
   $('#btnNum').onclick = () => formParcela(p, null, 'Numerário');
   $('#btnNac').onclick = () => formNacionalizacao(p);
