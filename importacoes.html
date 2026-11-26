@@ -191,7 +191,7 @@ td.cen-sel, th.cen-sel { background: color-mix(in srgb, var(--acento, #8a5cd1) 9
 .barra-trilho { background: color-mix(in srgb, currentColor 7%, transparent); border-radius: 4px; height: 14px; overflow: hidden; }
 .barra { display: block; height: 100%; border-radius: 4px; }
 .barra-val { text-align: right; font-variant-numeric: tabular-nums; }
-.tabela-wrap.rolagem { max-height: calc(100vh - 110px); overflow: auto; overflow-x: scroll; }
+.tabela-wrap.rolagem { max-height: calc(100vh - 110px); overflow: auto; }
 .rolagem thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: inset 0 -1px 0 var(--line); }
 .rolagem tfoot td { position: sticky; bottom: 0; z-index: 1; background: var(--surface); box-shadow: inset 0 1px 0 var(--line); }
 </style>
@@ -376,6 +376,8 @@ const fornDe = p => (((est.porBase || {})[baseDe(p.empresa)] || {}).forn || {})[
 const paisDe = p => fornDe(p).pais || '';
 const podeEditar = () => !!est.perfil && (est.perfil.admin || (est.perfil.editor && (est.perfil.areas || []).includes('importacoes')));
 // gestor de importações: fecha/reabre processo, marca pago/conciliado e usa créditos (admin, ou quem tem a área "imp_gestor")
+// marcar / desmarcar pago: gestor, ou qualquer um que digita numa empresa com "pago_livre" (Smarthub)
+const podePagar = e => podeFechar() || (podeEditar() && !!(EMP_CFG[e] && EMP_CFG[e].pago_livre));
 const podeFechar = () => !!est.perfil && (est.perfil.admin || (podeEditar() && (est.perfil.areas || []).includes('imp_gestor')));
 const empresasVisiveis = () => est.perfil && !est.perfil.admin && Array.isArray(est.perfil.empresas)
   ? est.perfil.empresas.filter(e => EMPRESAS[e]) : Object.keys(EMPRESAS).map(Number);
@@ -564,7 +566,7 @@ function renderGeral(el) {
 
 // comissão da assessoria: valor (quem digita) + situação paga / a receber e data (gestor)
 function formComissao(p) {
-  const g = podeFechar();
+  const g = podePagar(p.empresa);
   const { m } = form('Comissão · ' + (p.cliente || p.fornecedor), [['', [['comissao_valor', 'Valor da comissão (R$)', 'num'],
     ...(g ? [['_sit', 'Situação', 'select', [['a', 'A receber'], ['p', 'Paga / recebida']]], ['comissao_paga_em', 'Data do recebimento', 'date']] : [])]]],
     { ...p, _sit: p.comissao_paga ? 'p' : 'a', comissao_paga_em: p.comissao_paga_em || (p.comissao_paga ? null : hojeISO()) }, v => {
@@ -576,7 +578,7 @@ function formComissao(p) {
   if (g) { const ver = () => { fm.elements.comissao_paga_em.closest('label').style.display = fm.elements._sit.value === 'p' ? '' : 'none'; }; fm.elements._sit.addEventListener('change', ver); ver(); }
 }
 function formCarga(p) {
-  if (!podeFechar()) return alertaErro('O pagamento da carga é marcado pelo gestor de importações.');
+  if (!podePagar(p.empresa)) return alertaErro('O pagamento da carga é marcado pelo gestor de importações.');
   const { m } = form('Pagamento da carga · ' + (p.cliente || p.fornecedor), [['', [['_sit', 'Situação', 'select', [['a', 'Pendente'], ['p', 'Paga']]], ['carga_paga_em', 'Data do pagamento', 'date']]]],
     { _sit: p.carga_paga ? 'p' : 'a', carga_paga_em: p.carga_paga_em || (p.carga_paga ? null : hojeISO()) }, v =>
       gravar('imp_processos', { carga_paga: v._sit === 'p', carga_paga_em: v._sit === 'p' ? (v.carga_paga_em || null) : null }, p.id, p));
@@ -679,7 +681,7 @@ function renderEmbarques(el) {
         <td class="d">${dataCp(p, p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada)}</td>
         <td class="d">${dataCp(p, p.cp_estoque_ef || p.cp_estoque_prev)}</td>
         <td class="mono">${esc(p.di || '—')}</td><td>${esc(p.nf_entrada || '—')}</td>
-        <td><span class="${pg.k === 'pago' ? 'verde' : pg.k === 'pendente' ? 'verm' : 'nota'} ${podeFechar() && temClientes(p.empresa) ? 'data-clic' : ''}" ${podeFechar() && temClientes(p.empresa) ? `data-carga="${p.id}" title="Marcar pagamento da carga"` : ''}>${pg.txt}</span></td>
+        <td><span class="${pg.k === 'pago' ? 'verde' : pg.k === 'pendente' ? 'verm' : 'nota'} ${podePagar(p.empresa) && temClientes(p.empresa) ? 'data-clic' : ''}" ${podePagar(p.empresa) && temClientes(p.empresa) ? `data-carga="${p.id}" title="Marcar pagamento da carga"` : ''}>${pg.txt}</span></td>
         ${comCli ? `<td>${!temClientes(p.empresa) ? '<span class="nota">—</span>' : `<span class="${podeEditar() ? 'data-clic' : ''}" ${podeEditar() ? `data-com="${p.id}" title="Comissão: valor e situação"` : ''}>${p.comissao_paga ? `<span class="verde">${p.comissao_paga_em ? dm(p.comissao_paga_em) : 'paga'}</span>` : p.comissao_valor ? `<span class="verm">${R0(p.comissao_valor)}</span>` : '<span class="nota">informar</span>'}</span>`}</td>` : ''}
         <td>${p.rfi_link ? (/^https?:/i.test(p.rfi_link) ? `<a href="${esc(p.rfi_link)}" target="_blank" rel="noopener" title="Abrir RFI">📄</a>` : `<span title="${esc(p.rfi_link)}">📄</span>`) : '—'}</td>
         <td class="n">${FT(fatorEmb(p))}</td></tr>`; }).join('') : `<tr><td colspan="${cols.length}" class="vazio">Nenhum embarque com esses filtros.</td></tr>`}</tbody>
@@ -885,7 +887,7 @@ function renderFicha(el, p) {
     ${ed ? `<div class="filtros" style="margin:10px 0 0">
       <button class="btn-pri" id="btnComissao">Comissão: valor e situação</button>
       <button class="btn" id="btnCarga">Pagamento da carga</button>
-      ${podeFechar() ? '' : '<span class="nota">a situação (paga / a receber) é marcada pelo gestor</span>'}
+      ${podePagar(p.empresa) ? '' : '<span class="nota">a situação (paga / a receber) é marcada pelo gestor</span>'}
     </div>` : ''}
   </div>` : ''}
 
@@ -926,7 +928,7 @@ function renderFicha(el, p) {
           <td class="n ${vari > 0 ? 'verm' : vari < 0 ? 'verde' : ''}">${vari != null ? F2.format(vari) : '—'}</td>
           <td>${esc(c.corretora || '—')}</td><td>${esc(c.contrato || '—')}</td><td>${sit}${c.observacao ? `<div class="nota" style="max-width:260px">${esc(c.observacao)}</div>` : ''}</td>
           <td>${chkFluxo(c, ed)}</td>
-          ${ed ? `<td class="n">${podeFechar() ? `<button class="btn btn-mini" data-parc="${c.id}">${c.pago ? 'Editar' : 'Registrar pagamento'}</button>` : c.pago ? '' : `<button class="btn btn-mini" data-parc="${c.id}">Editar</button>`}</td>` : ''}</tr>`;
+          ${ed ? `<td class="n">${podePagar(p.empresa) ? `<button class="btn btn-mini" data-parc="${c.id}" ${c.pago ? 'title="Para reabrir, desmarque Pago"' : ''}>${c.pago ? 'Editar / reabrir' : 'Registrar pagamento'}</button>` : c.pago ? '' : `<button class="btn btn-mini" data-parc="${c.id}">Editar</button>`}</td>` : ''}</tr>`;
       }).join('') : `<tr><td colspan="${ed ? 14 : 13}" class="vazio">Nenhum pagamento programado.</td></tr>`}</tbody>
       ${r.cs.length ? `<tfoot><tr><td colspan="3">Total câmbio</td><td class="n">${U(r.pagoUSD + r.abertoUSD)}</td><td colspan="3"></td><td class="n">${F2.format(r.pagoBRL)}</td><td class="n">${r.variacao ? F2.format(r.variacao) : ''}</td><td colspan="${ed ? 5 : 4}"></td></tr></tfoot>` : ''}
     </table></div>
@@ -1874,7 +1876,7 @@ function formParcela(p, c, tipo, preset) {
   const cam = tipo === 'Câmbio';
   c = c || { ordem: pags.length + 1, tipo, taxa_di: cam ? p.cambio_di : null, tarifa: 0, pago: false, conciliado: false, no_fluxo: false, ...(preset || {}) };
   const corretoras = [...new Set(est.cambios.map(x => x.corretora).filter(Boolean))].sort();
-  const gestor = podeFechar();
+  const gestor = podePagar(p.empresa);
   if (!gestor && c.pago) return alertaErro('Pagamento já registrado: só o gestor de importações altera.');
   const gruposT = cam ? [
     ['Previsão', [['valor_usd', 'Valor (US$)', 'num'], ['data_prevista', 'Data prevista', 'date'], ['taxa_di', 'Taxa de referência', 'num'], ['ordem', 'Ordem', 'num'],
