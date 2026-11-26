@@ -181,6 +181,16 @@ details.aliq summary { cursor: pointer; font-weight: 620; font-size: 14.5px; }
 td.cen-sel, th.cen-sel { background: color-mix(in srgb, var(--acento, #8a5cd1) 9%, transparent); }
 .data-clic { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .data-clic:hover { color: var(--acento, #8a5cd1); }
+.filtros-emb { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 14px; }
+.filtro-emb { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted, #777); }
+.filtro-emb .sel { width: 100%; }
+.tab-emb td, .tab-emb th { white-space: nowrap; }
+.tab-emb .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.barra-lin { display: grid; grid-template-columns: minmax(90px, 34%) 1fr 34px; gap: 8px; align-items: center; margin: 6px 0; font-size: 13px; }
+.barra-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barra-trilho { background: color-mix(in srgb, currentColor 7%, transparent); border-radius: 4px; height: 14px; overflow: hidden; }
+.barra { display: block; height: 100%; border-radius: 4px; }
+.barra-val { text-align: right; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -239,7 +249,16 @@ const paraNum = t => { t = String(t || '').trim().replace(/\s|R\$|US\$/g, ''); r
 
 const CFG = window.PAINEL_CONFIG || {};
 let sb = null;
-const EMPRESAS = { 1: 'Feromax', 2: 'Supply' };
+// empresas do módulo (parametros "imp_empresas"): 1 e 2 entram no fluxo de caixa; Smarthub e Fortify são só de importação
+let EMPRESAS = { 1: 'Feromax', 2: 'Supply' };
+let EMP_CFG = { 1: { nome: 'Feromax', fluxo: true }, 2: { nome: 'Supply', fluxo: true } };
+const temFluxo = e => { const c = EMP_CFG[e]; return c ? c.fluxo !== false : Number(e) < 100; };   // vai para o Fluxo de caixa projetado?
+const temClientes = e => !!(EMP_CFG[e] && EMP_CFG[e].clientes);                                  // importa para clientes (assessoria)
+function aplicarEmpresas(cfg) {
+  if (!cfg || typeof cfg !== 'object') return;
+  EMP_CFG = Object.fromEntries(Object.entries(cfg).map(([k, v]) => [Number(k), typeof v === 'string' ? { nome: v } : v]));
+  EMPRESAS = Object.fromEntries(Object.entries(EMP_CFG).map(([k, v]) => [k, v.nome || 'Empresa ' + k]));
+}
 const est = {
   perfil: null, sub: null, demo: false,
   processos: [], cambios: [], creditos: [], fornecedores: {},
@@ -253,7 +272,7 @@ const NAC = [['frete_brl', 'Frete internacional (R$)'], ['ii', 'II'], ['ipi', 'I
   ['sdas_afrmm_siscomex', 'SDAS / AFRMM / Siscomex'], ['armazenagem', 'Armazenagem'], ['despachante_valor', 'Despachante'],
   ['outras_despesas', 'Outras despesas'], ['frete_nacional', 'Frete nacional']];
 const CPS = [['producao', 'Início da produção'], ['saida', 'Saída do fornecedor'], ['embarque', 'Embarque (ETD)'],
-  ['chegada', 'Chegada Brasil (ETA)'], ['numerario', 'Pagamento numerário'], ['estoque', 'Chegada no estoque']];
+  ['chegada', 'Chegada Brasil (ETA)'], ['numerario', 'Pagamento numerário'], ['estoque', 'Chegada no estoque / cliente']];
 
 // pagamentos programados do processo: parcelas de câmbio (US$) e numerários / outros (R$)
 const pagamentosDe = p => est.cambios.filter(c => c.processo_id === p.id).sort((a, b) => (a.ordem ?? 99) - (b.ordem ?? 99) || a.id - b.id);
@@ -343,12 +362,13 @@ const podeEditar = () => !!est.perfil && (est.perfil.admin || (est.perfil.editor
 // gestor de importações: fecha/reabre processo, marca pago/conciliado e usa créditos (admin, ou quem tem a área "imp_gestor")
 const podeFechar = () => !!est.perfil && (est.perfil.admin || (podeEditar() && (est.perfil.areas || []).includes('imp_gestor')));
 const empresasVisiveis = () => est.perfil && !est.perfil.admin && Array.isArray(est.perfil.empresas)
-  ? est.perfil.empresas.filter(e => EMPRESAS[e]) : [1, 2];
+  ? est.perfil.empresas.filter(e => EMPRESAS[e]) : Object.keys(EMPRESAS).map(Number);
 
 // ======================= SUB-ABAS =======================
 const SUBABAS = [
   { id: 'geral', nome: 'Visão geral', render: renderGeral },
   { id: 'processos', nome: 'Processos', render: renderProcessos },
+  { id: 'embarques', nome: 'Embarques', render: renderEmbarques },
   { id: 'calculadora', nome: 'Calculadora aduaneira', render: renderCalculadora },
   { id: 'produtos', nome: 'Produtos (pesos e medidas)', render: renderProdutos },
 ];
@@ -492,9 +512,138 @@ function renderGeral(el) {
   });
 }
 
+// ======================= EMBARQUES (controle de embarques / monitoramento de cargas) =======================
+// status logístico pelo checkpoint: aguardando embarque → em trânsito → em desembaraço → entregue
+function statusEmb(p) {
+  if (p.cp_estoque_ef || (p.status === 'fechado' && !p.cp_embarque_ef && !p.cp_chegada_ef)) return { k: 'entregue', nome: 'Entregue', cls: 'ok' };
+  if (p.cp_chegada_ef || p.data_di) return { k: 'desembaraco', nome: 'Em desembaraço', cls: 'aviso' };
+  if (p.cp_embarque_ef) return { k: 'transito', nome: 'Em trânsito', cls: 'azul' };
+  return { k: 'aguardando', nome: 'Aguardando embarque', cls: '' };
+}
+const STATUS_EMB = [['aguardando', 'Aguardando embarque'], ['transito', 'Em trânsito'], ['desembaraco', 'Em desembaraço'], ['entregue', 'Entregue']];
+function pagCarga(p) {
+  if (p.carga_paga) return { k: 'pago', txt: p.carga_paga_em ? dm(p.carga_paga_em) : 'ok' };
+  const cs = cambiosDe(p);
+  if (!cs.length) return { k: 'sem', txt: '—' };
+  const pagos = cs.filter(c => c.pago);
+  if (pagos.length === cs.length) return { k: 'pago', txt: dm(pagos.map(c => c.data_fechamento).filter(Boolean).sort().pop()) || 'ok' };
+  return { k: 'pendente', txt: pagos.length ? `parcial (${pagos.length}/${cs.length})` : 'pendente' };
+}
+const textoCarga = p => { const x = pagCarga(p); return x.k === 'pago' ? 'pago ' + (x.txt === 'ok' ? '' : x.txt) : x.txt; };
+function textoComissao(p) {
+  if (p.comissao_paga) return 'paga' + (p.comissao_paga_em ? ' ' + dm(p.comissao_paga_em) : '') + (p.comissao_valor ? ' · ' + R(p.comissao_valor) : '');
+  return p.comissao_valor ? 'a receber ' + R(p.comissao_valor) : '—';
+}
+const fatorEmb = p => { const r = resumo(p); return r.tipoFator && r.tipoFator !== 'estimado' && r.fator ? r.fator : (p.fator_planilha != null ? Number(p.fator_planilha) : null); };
+
+function renderEmbarques(el) {
+  const f = est.filtroEmb || (est.filtroEmb = { empresa: 0, status: '', cliente: '', forn: '', agente: '', desp: '', pag: '', ativos: false });
+  const emps = empresasVisiveis();
+  const base = est.processos.filter(p => emps.includes(p.empresa) && (!f.empresa || p.empresa === f.empresa));
+  const opc = campo => [...new Set(base.map(campo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
+  const lista = base.filter(p => (!f.status || statusEmb(p).k === f.status) && (!f.cliente || p.cliente === f.cliente) && (!f.forn || p.fornecedor === f.forn)
+    && (!f.agente || p.logistica === f.agente) && (!f.desp || p.despachante === f.desp) && (!f.pag || pagCarga(p).k === f.pag)
+    && (!f.ativos || statusEmb(p).k !== 'entregue' || p.status === 'aberto'));
+  const conta = k => lista.filter(p => statusEmb(p).k === k).length;
+  const comCli = lista.some(p => p.cliente);
+  const cols = [
+    { id: 'id', nome: 'Nº', v: x => x.id },
+    ...(comCli ? [{ id: 'cli', nome: 'Cliente', v: x => x.cliente }] : []),
+    { id: 'forn', nome: 'Fornecedor', v: x => x.fornecedor },
+    { id: 'emp', nome: 'Empresa', v: x => EMPRESAS[x.empresa] },
+    { id: 'prod', nome: 'Produto', v: x => x.mercadoria },
+    { id: 'cont', nome: 'Tipo cont.', v: x => x.tipo_container || x.modal },
+    { id: 'bl', nome: 'BL', v: x => x.bl },
+    { id: 'ag', nome: 'Agente de carga', v: x => x.logistica },
+    { id: 'agr', nome: 'Ref. agente', v: x => x.agente_ref },
+    { id: 'st', nome: 'Status', v: x => STATUS_EMB.findIndex(([k]) => k === statusEmb(x).k) },
+    { id: 'desp', nome: 'Despachante', v: x => x.despachante },
+    { id: 'despr', nome: 'Ref. despachante', v: x => x.despachante_ref || x.processo },
+    { id: 'frete', nome: 'Frete int. US$', cls: 'n', v: x => x.frete_usd },
+    { id: 'emb', nome: 'Embarque', v: x => x.cp_embarque_ef || x.cp_embarque_prev },
+    { id: 'eta', nome: 'ETA', v: x => x.cp_chegada_ef || x.cp_chegada_prev || x.previsao_chegada },
+    { id: 'cheg', nome: 'Chegada cliente / estoque', v: x => x.cp_estoque_ef || x.cp_estoque_prev },
+    { id: 'di', nome: 'DUIMP / DI', v: x => x.di },
+    { id: 'nf', nome: 'NF', v: x => x.nf_entrada },
+    { id: 'pag', nome: 'Pagamento carga', v: x => pagCarga(x).k },
+    { id: 'com', nome: 'Comissão', v: x => x.comissao_paga ? 2 : x.comissao_valor ? 1 : 0 },
+    { id: 'rfi', nome: 'RFI' },
+    { id: 'fat', nome: 'Fator', cls: 'n', v: x => fatorEmb(x) },
+  ];
+  const linhas = ordenar('emb', lista, cols, { col: 'id', dir: 'asc' });
+  const barras = (titulo, pares, cor) => {
+    const max = Math.max(1, ...pares.map(([, v]) => v));
+    return `<div class="card"><div class="topo"><h2>${titulo}</h2></div>${pares.length ? pares.map(([n, v]) => `<div class="barra-lin"><span class="barra-nome">${esc(n)}</span>
+      <span class="barra-trilho"><span class="barra" style="width:${Math.max(2, v / max * 100)}%;background:${cor}"></span></span><span class="barra-val">${v}</span></div>`).join('') : '<div class="vazio">Sem dados.</div>'}</div>`;
+  };
+  const contagem = campo => Object.entries(lista.reduce((o, p) => { const k = campo(p) || '—'; o[k] = (o[k] || 0) + 1; return o; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const sel = (id, rot, opts, val) => `<label class="filtro-emb"><span>${rot}</span><select class="sel" id="${id}"><option value="">Todos</option>${opts.map(([v, n]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>`;
+  const dataCp = (p, v) => `<span class="${podeEditar() ? 'data-clic' : ''}" ${podeEditar() ? `data-cp="${p.id}" title="Atualizar checkpoints"` : ''}>${v ? dm(v) : (podeEditar() ? '<span class="nota">informar</span>' : '—')}</span>`;
+  el.innerHTML = `<div class="filtros">
+    ${emps.length > 1 ? [[0, 'Todas'], ...emps.map(e => [e, EMPRESAS[e]])].map(([v, n]) => `<button class="chip" data-empe="${v}" aria-pressed="${f.empresa === v}">${n}</button>`).join('') + '<div class="sep"></div>' : ''}
+    <label class="chk-fluxo"><input type="checkbox" id="eAtivos" ${f.ativos ? 'checked' : ''}> Só em andamento</label>
+    <button class="btn" id="eLimpar" style="margin-left:auto">Redefinir filtros</button>
+  </div>
+  <div class="card"><div class="filtros-emb">
+    ${sel('eSt', 'Status do embarque', STATUS_EMB, f.status)}
+    ${opc(p => p.cliente).length ? sel('eCli', 'Cliente', opc(p => p.cliente).map(x => [x, x]), f.cliente) : ''}
+    ${sel('eForn', 'Fornecedor', opc(p => p.fornecedor).map(x => [x, x]), f.forn)}
+    ${sel('eAg', 'Agente de carga', opc(p => p.logistica).map(x => [x, x]), f.agente)}
+    ${sel('eDesp', 'Despachante', opc(p => p.despachante).map(x => [x, x]), f.desp)}
+    ${sel('ePag', 'Pagamento carga', [['pago', 'Pago'], ['pendente', 'Pendente / parcial'], ['sem', 'Sem informação']], f.pag)}
+  </div></div>
+  <div class="kpis">
+    ${kpi('Embarques', F0.format(lista.length), `${[...new Set(lista.map(p => p.tipo_container).filter(Boolean))].slice(0, 4).map(t => `${lista.filter(p => p.tipo_container === t).length}× ${esc(t)}`).join(' · ')}`)}
+    ${kpi('Entregues', F0.format(conta('entregue')), lista.length ? Math.round(conta('entregue') / lista.length * 100) + '% do total' : '')}
+    ${kpi('Em trânsito', F0.format(conta('transito')), lista.filter(p => statusEmb(p).k === 'transito').slice(0, 4).map(p => '#' + p.id).join(' · '))}
+    ${kpi('Em desembaraço', F0.format(conta('desembaraco')), conta('desembaraco') ? '' : 'nenhuma pendência')}
+    ${kpi('Aguardando embarque', F0.format(conta('aguardando')), '')}
+  </div>
+  <div class="card">
+    <div class="topo"><h2>Controle de embarques</h2><span class="nota">exibindo ${lista.length} de ${base.length} · clique na data para atualizar o checkpoint; na linha, abre o processo</span></div>
+    <div class="tabela-wrap"><table class="tab-emb">
+      <thead>${cabecalho('emb', cols, { col: 'id', dir: 'asc' })}</thead>
+      <tbody>${linhas.length ? linhas.map(p => { const st = statusEmb(p), pg = pagCarga(p); return `<tr class="clic" data-p="${p.id}">
+        <td>${p.id}</td>${comCli ? `<td><b>${esc(p.cliente || '—')}</b></td>` : ''}<td>${esc(p.fornecedor)}</td><td>${esc(EMPRESAS[p.empresa] || p.empresa)}</td>
+        <td>${esc(p.mercadoria || '—')}</td><td>${esc(p.tipo_container || p.modal || '—')}</td><td class="mono">${esc(p.bl || '—')}</td>
+        <td>${esc(p.logistica || '—')}</td><td class="mono">${esc(p.agente_ref || '—')}</td>
+        <td><span class="tag ${st.cls}">${st.nome}</span></td>
+        <td>${esc(p.despachante || '—')}</td><td class="mono">${esc(p.despachante_ref || p.processo || '—')}</td>
+        <td class="n">${p.frete_usd != null ? F2.format(p.frete_usd) : '—'}</td>
+        <td class="d">${dataCp(p, p.cp_embarque_ef || p.cp_embarque_prev)}</td>
+        <td class="d">${dataCp(p, p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada)}</td>
+        <td class="d">${dataCp(p, p.cp_estoque_ef || p.cp_estoque_prev)}</td>
+        <td class="mono">${esc(p.di || '—')}</td><td>${esc(p.nf_entrada || '—')}</td>
+        <td><span class="${pg.k === 'pago' ? 'verde' : pg.k === 'pendente' ? 'verm' : 'nota'}">${pg.txt}</span></td>
+        <td>${p.comissao_paga ? `<span class="verde">${p.comissao_paga_em ? dm(p.comissao_paga_em) : 'paga'}</span>` : p.comissao_valor ? `<span class="verm">${R0(p.comissao_valor)}</span>` : '<span class="nota">—</span>'}</td>
+        <td>${p.rfi_link ? (/^https?:/i.test(p.rfi_link) ? `<a href="${esc(p.rfi_link)}" target="_blank" rel="noopener" title="Abrir RFI">📄</a>` : `<span title="${esc(p.rfi_link)}">📄</span>`) : '—'}</td>
+        <td class="n">${FT(fatorEmb(p))}</td></tr>`; }).join('') : `<tr><td colspan="${cols.length}" class="vazio">Nenhum embarque com esses filtros.</td></tr>`}</tbody>
+    </table></div>
+  </div>
+  <div class="grade2">
+    ${barras('Distribuição por status', STATUS_EMB.map(([k, n]) => [n, conta(k)]).filter(([, v]) => v), '#2f8f5b')}
+    ${comCli ? barras('Embarques por cliente', contagem(p => p.cliente), '#2c6fbb') : barras('Embarques por fornecedor', contagem(p => p.fornecedor), '#e2621b')}
+    ${comCli ? barras('Embarques por fornecedor', contagem(p => p.fornecedor), '#e2621b') : ''}
+    ${barras('Participação dos agentes de carga', contagem(p => p.logistica), '#8a5cd1')}
+  </div>`;
+  ligarOrdenacao(el);
+  el.querySelectorAll('[data-empe]').forEach(b => b.onclick = () => { f.empresa = Number(b.dataset.empe); redesenhar(); });
+  const liga = (id, k) => { const x = el.querySelector('#' + id); if (x) x.onchange = () => { f[k] = x.value; redesenhar(); }; };
+  liga('eSt', 'status'); liga('eCli', 'cliente'); liga('eForn', 'forn'); liga('eAg', 'agente'); liga('eDesp', 'desp'); liga('ePag', 'pag');
+  $('#eAtivos').onchange = e => { f.ativos = e.target.checked; redesenhar(); };
+  $('#eLimpar').onclick = () => { est.filtroEmb = null; redesenhar(); };
+  el.querySelectorAll('tr[data-p]').forEach(tr => tr.onclick = ev => {
+    if (ev.target.closest('a')) return;
+    const cp = ev.target.closest('[data-cp]');
+    if (cp) return formCheckpoints(est.processos.find(x => x.id === Number(cp.dataset.cp)));
+    est.abertoId = Number(tr.dataset.p); abrir('processos');
+  });
+}
+
 // caixinha "No fluxo" de um pagamento em aberto (leva o valor ao Fluxo de caixa projetado do painel)
 function chkFluxo(c, ed) {
   if (c.pago) return '<span class="nota">pago</span>';
+  if (!temFluxo(c.empresa)) return '<span class="nota" title="Empresa sem vínculo com o fluxo de caixa da Feromax e Supply">sem fluxo</span>';
   return `<label class="chk-fluxo" title="${c.data_prevista ? 'Levar ao Fluxo de caixa projetado' : 'Informe a data prevista para levar ao fluxo'}"><input type="checkbox" data-fluxo="${c.id}" ${c.no_fluxo ? 'checked' : ''} ${ed && c.data_prevista ? '' : 'disabled'}> No fluxo</label>`;
 }
 function ligarFluxo(el) {
@@ -528,10 +677,12 @@ function renderProcessos(el) {
   const b = f.busca.trim().toLowerCase();
   const lista = est.processos.filter(p => emps.includes(p.empresa) && (!f.empresa || p.empresa === f.empresa)
     && (!f.status || p.status === f.status) && (!f.pais || paisDe(p) === f.pais)
-    && (!b || [p.fornecedor, p.pedido, p.mercadoria, p.processo, p.di, p.embarque].some(x => String(x || '').toLowerCase().includes(b))))
+    && (!b || [p.fornecedor, p.pedido, p.mercadoria, p.processo, p.di, p.embarque, p.cliente, p.bl, p.agente_ref, p.despachante_ref].some(x => String(x || '').toLowerCase().includes(b))))
     .sort((a, b) => (b.data_pedido || '') < (a.data_pedido || '') ? -1 : (b.data_pedido || '') > (a.data_pedido || '') ? 1 : b.id - a.id);
+  const comCli = lista.some(p => p.cliente);
   const colsP = [
     { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
+    ...(comCli ? [{ id: 'cli', nome: 'Cliente', v: x => x.p.cliente }] : []),
     { id: 'forn', nome: 'Fornecedor', v: x => x.p.fornecedor },
     { id: 'emp', nome: 'Empresa', v: x => EMPRESAS[x.p.empresa] },
     { id: 'merc', nome: 'Mercadoria', v: x => x.p.mercadoria },
@@ -556,7 +707,7 @@ function renderProcessos(el) {
     ${[['aberto', 'Em aberto'], ['fechado', 'Fechados'], ['', 'Todos']].map(([v, n]) => `<button class="chip" data-st="${v}" aria-pressed="${f.status === v}">${n}</button>`).join('')}
     <div class="sep"></div>
     <select class="sel" id="fPais"><option value="">Todos os países</option>${paises.map(x => `<option ${x === f.pais ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-    <input class="busca" id="fBusca" type="search" placeholder="Buscar fornecedor, pedido, mercadoria, DI…" value="${esc(f.busca)}">
+    <input class="busca" id="fBusca" type="search" placeholder="Buscar cliente, fornecedor, pedido, mercadoria, DI, BL…" value="${esc(f.busca)}">
     ${podeEditar() ? '<button class="btn-pri" id="btnNovo" style="margin-left:auto">+ Nova importação</button>' : ''}
   </div>
   <div class="card">
@@ -566,6 +717,7 @@ function renderProcessos(el) {
       <thead>${cabecalho('proc', colsP, { col: 'dped', dir: 'desc' })}</thead>
       <tbody>${linhas.length ? linhas.map(({ p, r, e }) => `<tr class="clic" data-p="${p.id}">
         <td>${esc(p.pedido || '—')}${p.embarque ? ` <span class="tag" title="Embarque conjunto ${esc(p.embarque)}: mesma DI, custos rateados">conjunto</span>` : ''}</td>
+        ${comCli ? `<td>${esc(p.cliente || '—')}</td>` : ''}
         <td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td>
         <td>${EMPRESAS[p.empresa] || p.empresa}</td>
         <td>${esc(p.mercadoria || '—')}</td><td>${esc(p.modal || '—')}</td>
@@ -603,7 +755,7 @@ function renderFicha(el, p) {
   }).join('');
   const tempoTotal = p.cp_producao_ef && p.cp_estoque_ef ? dias(p.cp_producao_ef, p.cp_estoque_ef) : null;
   const pags = pagamentosDe(p);
-  const abertosSemFluxo = pags.some(c => !c.pago && !c.no_fluxo && c.data_prevista);
+  const abertosSemFluxo = temFluxo(p.empresa) && pags.some(c => !c.pago && !c.no_fluxo && c.data_prevista);
   const estm = p.estimativa && p.estimativa.resultado ? p.estimativa : null;
   const temNumerario = pags.some(c => !ehCambio(c));
   const er = estm ? estm.resultado : {};
@@ -619,7 +771,7 @@ function renderFicha(el, p) {
 
   el.innerHTML = `<button class="btn voltar" id="btnVoltar">← Processos</button>
   <div class="ficha-tit">
-    <h2>${esc(p.fornecedor)} · pedido ${esc(p.pedido || '—')}</h2>
+    <h2>${p.cliente ? esc(p.cliente) + ' · ' : ''}${esc(p.fornecedor)} · pedido ${esc(p.pedido || '—')}</h2>
     <span class="tag ${e.cls}">${e.nome}</span>
     ${p.status === 'aberto' && r.conciliado ? '<span class="tag ok">tudo conciliado</span>' : ''}
     <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
@@ -636,11 +788,19 @@ function renderFicha(el, p) {
       ${campo('Mercadoria', p.mercadoria || '—')}
       ${campo('Modal', p.modal || '—')}
       ${campo('Data do pedido', dm(p.data_pedido))}
-      ${campo('Despachante', p.despachante || '—')}
-      ${campo('Logística', p.logistica || '—')}
+      ${p.cliente ? campo('Cliente', p.cliente) : ''}
+      ${campo('Despachante', (p.despachante || '—') + (p.despachante_ref ? ' · ref. ' + p.despachante_ref : ''))}
+      ${campo('Agente de carga', (p.logistica || '—') + (p.agente_ref ? ' · ref. ' + p.agente_ref : ''))}
       ${campo('Nº processo', p.processo || '—')}
       ${campo('Previsão de chegada', dm(p.previsao_chegada))}
+      ${p.tipo_container ? campo('Tipo de contêiner', p.tipo_container) : ''}
+      ${p.bl ? campo('BL / AWB', p.bl) : ''}
+      ${p.porto_origem || p.porto_destino ? campo('Origem → destino', (p.porto_origem || '—') + ' → ' + (p.porto_destino || '—')) : ''}
+      ${p.frete_usd != null ? campo('Frete internacional', U(p.frete_usd)) : ''}
+      ${p.nf_entrada ? campo('NF de entrada', p.nf_entrada) : ''}
+      ${p.cliente || p.comissao_valor || p.carga_paga || p.comissao_paga ? campo('Pagamento da carga', textoCarga(p)) + campo('Comissão', textoComissao(p)) : ''}
     </div>
+    ${p.rfi_link ? `<div class="nota" style="margin-top:8px">RFI: ${/^https?:/i.test(p.rfi_link) ? `<a href="${esc(p.rfi_link)}" target="_blank" rel="noopener">${esc(p.rfi_link)}</a>` : esc(p.rfi_link)}</div>` : ''}
     ${p.observacao ? `<div class="nota" style="margin-top:10px">${esc(p.observacao)}</div>` : ''}
     ${(() => { const g = doEmbarque(p).filter(x => x.id !== p.id); return p.embarque || ed ? `<div class="embarque-linha">
       <span class="nota">Embarque conjunto (mesma DI):</span>
@@ -736,7 +896,7 @@ function renderFicha(el, p) {
   };
   if ($('#btnGerarNum')) $('#btnGerarNum').onclick = () => formParcela(p, null, 'Numerário',
     { valor_previsto_brl: Math.round(estm.resultado.numerario * 100) / 100, data_prevista: p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada || null,
-      no_fluxo: !!(p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada), observacao: `${OBS_NUM_EST} (impostos + despesas + fretes).` });
+      no_fluxo: temFluxo(p.empresa) && !!(p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada), observacao: `${OBS_NUM_EST} (impostos + despesas + fretes).` });
   el.querySelectorAll('[data-parc]').forEach(b => b.onclick = () => { const c = est.cambios.find(x => x.id === Number(b.dataset.parc)); formParcela(p, c, c.tipo || 'Câmbio'); });
   if ($('#btnFechar')) $('#btnFechar').onclick = async () => {
     const pend = [];
@@ -925,13 +1085,23 @@ function novaCalc(p) {
     itens: itensIniciais(),
   };
 }
+// participantes da calculadora: processos já criados + fornecedores novos (viram processo ao salvar)
+function grupoCalc(c) {
+  const reais = (c.processos || []).map(id => est.processos.find(x => x.id === id)).filter(Boolean)
+    .map(x => ({ id: x.id, fornecedor: x.fornecedor, nome: nomeProc(x), pais: paisDe(x), p: x }));
+  const novos = (c.novos || []).map(n => ({ id: n.key, fornecedor: n.fornecedor, nome: `novo · ${n.fornecedor}`, pais: (est.fornecedores[n.fornecedor] || {}).pais || '', novo: true }));
+  return [...reais, ...novos];
+}
+const chaveProc = (c, v) => { const g = grupoCalc(c); const n = Number(v);
+  const x = g.find(y => y.id === v) || g.find(y => typeof y.id === 'number' && y.id === n) || g.find(y => String(y.id) === String(v)); return x ? x.id : (g[0] ? g[0].id : null); };
 function abrirCalculadora(p) { est.calc = novaCalc(p); est.abertoId = null; abrir('calculadora'); window.scrollTo(0, 0); }
 const numCalc = v => Number(paraNum(v)) || 0;
 function resultadoCalc() {
   const c = est.calc;
   const procs = c.processos || [];
-  const fornDe = id => { const p = est.processos.find(x => x.id === id); return p ? p.fornecedor : id; };
-  const itens = c.itens.filter(x => numCalc(x.qtd) && numCalc(x.fob)).map(x => { const proc = procs.includes(Number(x.proc)) ? Number(x.proc) : (procs[0] || null);
+  const g = grupoCalc(c);
+  const fornDe = id => { const y = g.find(z => z.id === id); return y ? y.fornecedor : id; };
+  const itens = c.itens.filter(x => numCalc(x.qtd) && numCalc(x.fob)).map(x => { const proc = g.length ? chaveProc(c, x.proc) : null;
     return { codigo: x.codigo, qtd: numCalc(x.qtd), fob: numCalc(x.fob), familia: x.familia, peso: numCalc(x.peso) || null, proc, forn: fornDe(proc) }; });
   const pr = { versao: 2, ...Object.fromEntries(PREM_CHAVES.map(k => [k, numCalc(c.premissas[k])])) };
   return { itens, pr, r: calcular3(itens, pr, est.aliquotas) };
@@ -943,7 +1113,8 @@ function renderCalculadora(el) {
   const familias = Object.keys(est.aliquotas).sort();
   const proc = est.processos.find(x => x.id === c.processo_id);
   if (!c.processos) c.processos = proc ? [proc.id] : [];
-  const grupo = c.processos.map(id => est.processos.find(x => x.id === id)).filter(Boolean);
+  if (!c.novos) c.novos = [];
+  const grupo = grupoCalc(c);
   const multi = grupo.length > 1;
   const opcoes = est.processos.filter(x => x.status === 'aberto' || x.id === c.processo_id)
     .sort((a, b) => String(b.pedido || '').localeCompare(String(a.pedido || ''), 'pt-BR', { numeric: true }));
@@ -956,12 +1127,14 @@ function renderCalculadora(el) {
     <span class="nota">Processo:</span>
     <select class="sel" id="cProc"><option value="">— simulação avulsa —</option>${opcoes.map(x => `<option value="${x.id}" ${x.id === c.processo_id ? 'selected' : ''}>${esc(x.pedido || 's/ pedido')} · ${esc(x.fornecedor)} · ${EMPRESAS[x.empresa] || ''}</option>`).join('')}</select>
     ${proc ? `<button class="btn" id="cVerProc">Abrir processo</button>` : ''}
-    ${proc && juntaveis.length ? `<select class="sel" id="cJuntar"><option value="">+ Juntar outro processo (mesma DI)…</option>${juntaveis.map(x => `<option value="${x.id}">${esc(nomeProc(x))}${paisDe(x) ? ' · ' + esc(paisDe(x)) : ''}</option>`).join('')}</select>` : ''}
+    ${proc && juntaveis.length ? `<select class="sel" id="cJuntar"><option value="">+ Juntar processo existente (mesma DI)…</option>${juntaveis.map(x => `<option value="${x.id}">${esc(nomeProc(x))}${paisDe(x) ? ' · ' + esc(paisDe(x)) : ''}</option>`).join('')}</select>` : ''}
+    <button class="btn" id="cNovoForn" title="Inclui um fornecedor que ainda não tem processo; ao salvar a estimativa o processo é criado já junto neste embarque">+ Fornecedor</button>
     <button class="btn" id="cLimpar" style="margin-left:auto">Limpar</button>
   </div>
-  ${multi ? `<div class="card embarque"><div class="topo"><h2>Embarque conjunto · ${grupo.length} processos numa DI</h2>
+  ${multi ? `<div class="card embarque"><div class="topo"><h2>Embarque conjunto · ${grupo.length} fornecedores numa DI</h2>
       <span class="nota">os custos da DI são rateados por processo/fornecedor como na planilha de validação da DI: impostos item a item, frete internacional e nacional por peso líquido (ou FOB), Siscomex e AFRMM pelo VMLD, armazenagem/SDAS/despachante/outras pela base do ICMS</span></div>
-    <div class="filtros" style="margin:0">${grupo.map(x => `<span class="chip" aria-pressed="true">${esc(nomeProc(x))}${paisDe(x) ? ` <span class="nota">${esc(paisDe(x))}</span>` : ''}${x.id !== c.processo_id ? ` <button class="btn btn-mini" data-tirar="${x.id}" title="Tirar do embarque">×</button>` : ''}</span>`).join('')}</div></div>` : ''}
+    <div class="filtros" style="margin:0">${grupo.map(x => `<span class="chip" aria-pressed="true">${esc(x.nome)}${x.pais ? ` <span class="nota">${esc(x.pais)}</span>` : ''}${x.id !== c.processo_id ? ` <button class="btn btn-mini" data-tirar="${esc(String(x.id))}" title="Tirar do embarque">×</button>` : ''}</span>`).join('')}</div>
+    ${c.novos.length ? '<div class="nota" style="margin-top:6px">"novo" = fornecedor ainda sem processo: o processo é criado ao salvar a estimativa, já junto neste embarque.</div>' : ''}</div>` : ''}
   ${!familias.length ? '<div class="card"><div class="vazio">Nenhuma alíquota cadastrada. Rode o SQL do módulo (imp_aliquotas) ou cadastre abaixo.</div></div>' : ''}
   <div class="card">
     <div class="topo"><h2>Premissas</h2><span class="nota">cálculo pelo método da planilha MATRIZ NEW – VALIDAÇÃO DI${est.cambioRef ? ` · câmbio do painel: ${TX(est.cambioRef)}` : ''}</span></div>
@@ -980,7 +1153,7 @@ function renderCalculadora(el) {
       <thead><tr>${multi ? '<th style="min-width:150px">Processo</th>' : ''}<th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th><th class="n" style="width:100px">Peso líq. unit. kg</th><th class="n">Peso total kg</th>
         <th class="n">FOB total</th><th class="n">Fator aéreo</th><th class="n">Fator marítimo</th><th class="n">Fator DHL</th><th class="n">Custo unit. ${CENARIOS[c.cenario]}</th><th></th></tr></thead>
       <tbody>${c.itens.map((x, i) => `<tr>
-        ${multi ? `<td><select class="ci" data-it="${i}" data-campo="proc">${grupo.map(g => `<option value="${g.id}" ${Number(x.proc) === g.id ? 'selected' : ''}>${esc(nomeProc(g))}</option>`).join('')}</select></td>` : ''}
+        ${multi ? `<td><select class="ci" data-it="${i}" data-campo="proc">${grupo.map(g => `<option value="${esc(String(g.id))}" ${String(chaveProc(c, x.proc)) === String(g.id) ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')}</select></td>` : ''}
         <td><input class="ci" data-it="${i}" data-campo="codigo" value="${esc(x.codigo)}">${tagProduto(x)}</td>
         <td><select class="ci" data-it="${i}" data-campo="familia"><option value="">— escolha —</option>${familias.map(f => `<option ${f === x.familia ? 'selected' : ''}>${esc(f)}</option>`).join('')}${x.familia && !familias.includes(x.familia) ? `<option selected>${esc(x.familia)}</option>` : ''}</select></td>
         <td><input class="ci n" data-it="${i}" data-campo="qtd" inputmode="decimal" value="${esc(x.qtd)}"></td>
@@ -997,9 +1170,9 @@ function renderCalculadora(el) {
     <div class="filtros" style="margin:0">
       ${Object.entries(CENARIOS).map(([k, n]) => `<button class="chip" data-cen="${k}" aria-pressed="${c.cenario === k}">${n}</button>`).join('')}
       <div class="sep"></div>
-      ${ed ? `<button class="btn-pri" id="cSalvar" ${proc ? '' : 'disabled title="Escolha o processo no topo"'}>Salvar como estimativa ${multi ? `dos ${grupo.length} processos (rateada)` : proc ? 'do pedido ' + esc(proc.pedido || '') : 'do processo'}</button>` : ''}
+      ${ed ? `<button class="btn-pri" id="cSalvar" ${proc || c.novos.length ? '' : 'disabled title="Escolha o processo no topo ou inclua o fornecedor"'}>Salvar como estimativa ${multi ? `dos ${grupo.length} fornecedores (rateada)` : proc ? 'do pedido ' + esc(proc.pedido || '') : c.novos.length ? '(cria o processo)' : 'do processo'}</button>` : ''}
       ${ed && proc ? `<button class="btn" id="cRealizado" title="Use com os valores reais da DI (dólar DI, frete, despesas): grava o rateio na nacionalização realizada de cada processo">Lançar como DI realizada${multi ? ' (rateio)' : ''}</button>` : ''}
-      <span class="nota">${proc ? (multi ? 'cada processo recebe a sua parte (estimativa, fator e numerário previsto)' : proc.estimativa ? `substitui a estimativa de ${dm(proc.estimativa.data)}` : 'o processo ainda não tem estimativa') : 'escolha o processo no topo para salvar'}</span>
+      <span class="nota">${c.novos.length ? 'fornecedor novo: o processo é criado ao salvar · ' : ''}${proc || c.novos.length ? (multi ? 'cada processo recebe a sua parte (estimativa, fator e numerário previsto)' : proc && proc.estimativa ? `substitui a estimativa de ${dm(proc.estimativa.data)}` : 'o processo ainda não tem estimativa') : 'escolha o processo no topo ou use "+ Fornecedor"'}</span>
     </div>
   </div>
   <div class="card">
@@ -1015,7 +1188,7 @@ function renderCalculadora(el) {
   </div>`;
 
   // eventos
-  $('#cProc').onchange = e => { const p = est.processos.find(x => x.id === Number(e.target.value)); est.calc = p ? novaCalc(p) : { ...c, processo_id: null, processos: [], itens: c.itens.map(i => ({ ...i, proc: null })) }; redesenhar(); };
+  $('#cProc').onchange = e => { const p = est.processos.find(x => x.id === Number(e.target.value)); est.calc = p ? novaCalc(p) : { ...c, processo_id: null, processos: [], novos: [], itens: c.itens.map(i => ({ ...i, proc: null })) }; redesenhar(); };
   if ($('#cVerProc')) $('#cVerProc').onclick = () => abrirProcesso(c.processo_id);
   if ($('#cJuntar')) $('#cJuntar').onchange = e => {
     const x = est.processos.find(y => y.id === Number(e.target.value)); if (!x) return;
@@ -1025,13 +1198,14 @@ function renderCalculadora(el) {
       const nc = novaCalc(g);
       c.itens = c.itens.filter(i => numCalc(i.fob) || numCalc(i.qtd) > 1 || i.codigo).concat(nc.itens.filter(i => Number(i.proc) === g.id).map(i => ({ ...i, proc: g.id })));
     }
-    c.itens.forEach(i => { if (!c.processos.includes(Number(i.proc))) i.proc = c.processo_id; });
+    c.itens.forEach(i => { if (!grupoCalc(c).some(g => String(g.id) === String(i.proc))) i.proc = c.processo_id; });
     redesenhar();
   };
+  if ($('#cNovoForn')) $('#cNovoForn').onclick = () => formNovoFornCalc(c);
   el.querySelectorAll('[data-tirar]').forEach(b => b.onclick = () => {
-    const id = Number(b.dataset.tirar);
-    c.processos = c.processos.filter(x => x !== id);
-    c.itens = c.itens.filter(i => Number(i.proc) !== id);
+    const id = chaveProc(c, b.dataset.tirar);
+    c.processos = c.processos.filter(x => x !== id); c.novos = c.novos.filter(x => x.key !== id);
+    c.itens = c.itens.filter(i => chaveProc(c, i.proc) !== id && String(i.proc) !== String(id));
     if (!c.itens.length) c.itens = [{ codigo: '', qtd: '1', fob: '', familia: '', peso: '', proc: c.processo_id }];
     redesenhar();
   });
@@ -1122,9 +1296,9 @@ function atualizarCalc() {
 
 // rateio da DI conjunta por processo (cenário marcado)
 function tabelaRateio(r, c) {
-  const ids = (c.processos || []).filter(id => r.porProc[id]);
-  if ((c.processos || []).length < 2) return '';
-  const g = ids.map(id => ({ p: est.processos.find(x => x.id === id), x: r.porProc[id][c.cenario], peso: r.porProc[id].peso }));
+  const gc = grupoCalc(c);
+  if (gc.length < 2) return '';
+  const g = gc.filter(y => r.porProc[y.id]).map(y => ({ nome: y.nome, x: r.porProc[y.id][c.cenario], peso: r.porProc[y.id].peso }));
   const tot = r[c.cenario];
   const desp = x => x.sdas_afrmm_siscomex + x.armazenagem + x.despachante_valor + x.outras_despesas;
   const L = [['FOB (US$)', x => U(x.fob_usd)], ['Frete internacional rateado (US$)', x => U(x.frete_usd || 0)], ['Câmbio (R$)', x => F2.format(x.cambio_brl)],
@@ -1133,11 +1307,11 @@ function tabelaRateio(r, c) {
     ['Outras despesas', x => F2.format(x.outras_despesas)], ['Frete internacional (R$)', x => F2.format(x.frete_brl)], ['Frete nacional', x => F2.format(x.frete_nacional)],
     ['<b>Numerário</b>', x => '<b>' + F2.format(x.numerario) + '</b>'], ['<b>Total importação</b>', x => '<b>' + F2.format(x.total) + '</b>'], ['<b>Fator</b>', x => '<b>' + FT(x.fator) + '</b>'],
     ['Fator 2 (sem créditos)', x => FT(x.fator2)]];
-  const semItens = (c.processos || []).filter(id => !r.porProc[id]).map(id => nomeProc(est.processos.find(x => x.id === id)));
+  const semItens = gc.filter(y => !r.porProc[y.id]).map(y => y.nome);
   return `<div class="topo" style="margin-top:16px"><h2>Rateio por processo · ${CENARIOS[c.cenario]}</h2><span class="nota">${g.some(y => !y.peso) ? 'frete rateado por FOB (falta peso em algum item)' : 'frete rateado por peso líquido'}</span></div>
     ${semItens.length ? `<div class="nota verm" style="margin-bottom:8px">Sem itens na calculadora: ${semItens.map(esc).join(', ')}</div>` : ''}
     <div class="tabela-wrap"><table>
-      <thead><tr><th></th>${g.map(y => `<th class="n">${esc(nomeProc(y.p))}</th>`).join('')}<th class="n">Total da DI</th></tr></thead>
+      <thead><tr><th></th>${g.map(y => `<th class="n">${esc(y.nome)}</th>`).join('')}<th class="n">Total da DI</th></tr></thead>
       <tbody>${g.some(y => y.peso) ? `<tr><td>Peso líquido (kg)</td>${g.map(y => `<td class="n">${nf(3).format(y.peso)}</td>`).join('')}<td class="n">${nf(3).format(g.reduce((s, y) => s + y.peso, 0))}</td></tr>` : ''}
         ${L.map(([n, f]) => `<tr><td>${n}</td>${g.map(y => `<td class="n">${f(y.x)}</td>`).join('')}<td class="n">${f({ ...tot, frete_usd: g.reduce((s, y) => s + (y.x.frete_usd || 0), 0) })}</td></tr>`).join('')}
         <tr><td>Despesas rateadas (sem impostos e fretes)</td>${g.map(y => `<td class="n">${F2.format(desp(y.x))}</td>`).join('')}<td class="n">${F2.format(desp(tot))}</td></tr>
@@ -1148,7 +1322,7 @@ function colarItens() {
   const m = abrirModal(`<h2>Colar itens da planilha</h2>
     <div class="nota" style="margin-bottom:8px">Copie do Excel as colunas <b>Código · Quantidade · FOB unitário · Família · Peso líquido unitário (kg)</b> (família e peso são opcionais: se o código estiver no cadastro de produtos, vêm de lá) e cole abaixo.</div>
     <textarea id="cTxt" rows="10" style="width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)"></textarea>
-    ${(est.calc.processos || []).length > 1 ? `<label class="chk-fluxo" style="margin-top:8px">Processo destes itens: <select class="sel" id="cColProc">${est.calc.processos.map(id => `<option value="${id}">${esc(nomeProc(est.processos.find(x => x.id === id)))}</option>`).join('')}</select></label>` : ''}
+    ${grupoCalc(est.calc).length > 1 ? `<label class="chk-fluxo" style="margin-top:8px">Fornecedor destes itens: <select class="sel" id="cColProc">${grupoCalc(est.calc).map(g => `<option value="${esc(String(g.id))}">${esc(g.nome)}</option>`).join('')}</select></label>` : ''}
     <label class="chk-fluxo" style="margin-top:8px"><input type="checkbox" id="cSubst" checked> Substituir os itens atuais${(est.calc.processos || []).length > 1 ? ' deste processo' : ''}</label>
     <div class="erro" id="cErr"></div>
     <div class="rodape"><button class="btn" data-fechar>Cancelar</button><button class="btn-pri" id="cOk">Incluir</button></div>`);
@@ -1156,7 +1330,7 @@ function colarItens() {
     const fams = Object.keys(est.aliquotas);
     const achaFam = t => { t = String(t || '').trim(); return fams.find(f => f.toLowerCase() === t.toLowerCase()) || t.toUpperCase(); };
     const linhas = m.querySelector('#cTxt').value.split(/\r?\n/).map(l => l.split(/\t|;/).map(x => x.trim())).filter(l => l.some(Boolean));
-    const novos = [], selP = m.querySelector('#cColProc'), procCol = selP ? Number(selP.value) : est.calc.processo_id;
+    const novos = [], selP = m.querySelector('#cColProc'), procCol = selP ? chaveProc(est.calc, selP.value) : (grupoCalc(est.calc)[0] || {}).id ?? null;
     for (const l of linhas) {
       if (l.length < 3) continue;
       if (isNaN(Number(paraNum(l[1]))) || isNaN(Number(paraNum(l[2])))) continue; // cabeçalho
@@ -1164,14 +1338,64 @@ function colarItens() {
     }
     if (!novos.length) return void (m.querySelector('#cErr').textContent = 'Nenhuma linha reconhecida (código, quantidade, FOB).');
     novos.forEach(completarDoCadastro);
-    const outros = est.calc.itens.filter(x => selP && Number(x.proc) !== procCol);           // itens dos outros processos ficam
+    const outros = est.calc.itens.filter(x => selP && chaveProc(est.calc, x.proc) !== procCol);           // itens dos outros processos ficam
     est.calc.itens = m.querySelector('#cSubst').checked ? outros.concat(novos) : est.calc.itens.filter(x => numCalc(x.fob)).concat(novos);
     fecharModal(m); redesenhar();
   };
 }
 
+// cria os processos dos fornecedores novos da calculadora (mesma empresa, já no mesmo embarque)
+async function criarNovosDaCalc(c) {
+  if (!c.novos || !c.novos.length) return true;
+  const base = est.processos.find(x => x.id === c.processo_id);
+  const { itens } = resultadoCalc();
+  const usados = c.novos.filter(n => itens.some(i => i.proc === n.key));
+  if (!usados.length) return alertaErro('Inclua itens para o fornecedor novo (coluna Fornecedor dos itens).'), false;
+  const resp = await new Promise(res => {
+    const { m } = form('Criar processo(s) do(s) fornecedor(es) novo(s)', [
+      ['', [...(base ? [] : [['empresa', 'Empresa', 'select', empresasVisiveis().map(e => [e, EMPRESAS[e]])], ['cliente', 'Cliente (se for importação para cliente)', 'text'],
+        ['modal', 'Modal', 'select', [['Marítimo', 'Marítimo'], ['Aéreo', 'Aéreo'], ['Courier', 'Courier (DHL, FedEx…)']]]]),
+        ...usados.map(n => ['ped_' + n.key, `Pedido · ${n.fornecedor} (opcional)`, 'text'])]],
+    ], {}, async v => res(v));
+    m.querySelector('[data-fechar]').addEventListener('click', () => res(null));
+  });
+  if (!resp) return false;
+  const empresa = base ? base.empresa : Number(resp.empresa);
+  const todosNomes = [...grupoCalc(c).filter(g => !g.novo || usados.includes(c.novos.find(n => n.key === g.id))).map(g => g.p ? (g.p.pedido || g.p.fornecedor) : (resp['ped_' + g.id] || g.fornecedor))];
+  const codigo = (base && base.embarque) || (todosNomes.length > 1 ? 'EMB-' + todosNomes.join('-').replace(/\s+/g, '').slice(0, 40) + '-' + hojeISO().slice(2).replace(/-/g, '') : null);
+  for (const n of usados) {
+    if (!est.fornecedores[n.fornecedor]) await gravarFornecedor({ nome: n.fornecedor, pais: null, condicao_pagamento: null });
+    const reg = { empresa, fornecedor: n.fornecedor, pedido: resp['ped_' + n.key] || null, status: 'aberto', embarque: codigo,
+      modal: base ? base.modal : resp.modal, cliente: base ? base.cliente : (resp.cliente || null), data_pedido: hojeISO(), atualizado_em: new Date().toISOString() };
+    const id = await inserirSemRecarregar('imp_processos', reg);
+    c.itens.forEach(i => { if (String(i.proc) === n.key) i.proc = id; });
+    c.processos.push(id);
+  }
+  // processos já existentes passam para o mesmo embarque
+  if (codigo) for (const id of c.processos) { const x = est.processos.find(y => y.id === id); if (x && x.embarque !== codigo) await gravar('imp_processos', { embarque: codigo }, x.id, x, true); }
+  c.novos = c.novos.filter(n => !usados.includes(n));
+  c.itens = c.itens.filter(i => typeof i.proc !== 'string' || !i.proc.startsWith('n'));
+  if (!est.demo) await recarregar();
+  if (!c.processo_id) c.processo_id = c.processos[0];
+  return true;
+}
+function formNovoFornCalc(c) {
+  const nomes = Object.keys(est.fornecedores).sort();
+  form('Incluir fornecedor na estimativa', [['', [['forn', 'Fornecedor (ainda sem processo)', 'lista', nomes]]]], {}, async v => {
+    if (!v.forn) throw new Error('Informe o fornecedor.');
+    const key = 'n' + Date.now().toString(36);
+    c.novos = [...(c.novos || []), { key, fornecedor: v.forn }];
+    // a primeira linha vazia vai para ele; senão, cria uma linha
+    const vazia = c.itens.find(i => !numCalc(i.fob) && !i.codigo);
+    if (vazia && grupoCalc(c).length === 1) vazia.proc = key; else c.itens.push({ codigo: '', qtd: '1', fob: '', familia: '', peso: '', proc: key });
+    redesenhar();
+  });
+}
+
 async function salvarEstimativa() {
-  const c = est.calc, p = est.processos.find(x => x.id === c.processo_id);
+  const c = est.calc;
+  if (!(await criarNovosDaCalc(c))) return;
+  const p = est.processos.find(x => x.id === c.processo_id);
   if (!p) return;
   const { itens, pr, r } = resultadoCalc();
   if (!itens.length) return alertaErro('Informe pelo menos um item com quantidade e FOB.');
@@ -1186,11 +1410,11 @@ async function salvarEstimativa() {
   const partes = grupo.map(g => ({ g, res: multi ? r.porProc[g.id][c.cenario] : res, dataNum: g.cp_numerario_prev || g.cp_chegada_prev || g.previsao_chegada }));
   const msg = multi
     ? `Embarque conjunto <b>${esc(codigo)}</b> · total da DI ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>Cada processo recebe a sua parte:<br>
-      ${partes.map(x => `• ${esc(nomeProc(x.g))}: fator <b>${FT(x.res.fator)}</b> · numerário ${R0(x.res.numerario)}${x.dataNum ? ` · fluxo em ${dm(x.dataNum)}` : ' · <b>sem data</b> para o fluxo'}`).join('<br>')}<br><br>
+      ${partes.map(x => `• ${esc(nomeProc(x.g))}: fator <b>${FT(x.res.fator)}</b> · numerário ${R0(x.res.numerario)}${!temFluxo(x.g.empresa) ? ' · sem fluxo de caixa (empresa só de importação)' : x.dataNum ? ` · fluxo em ${dm(x.dataNum)}` : ' · <b>sem data</b> para o fluxo'}`).join('<br>')}<br><br>
       Os pesos digitados vão para o cadastro de produtos como validados. Salvar?`
     : `Fator estimado <b>${FT(res.fator)}</b> · total ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>
     Os pesos digitados vão para o cadastro de produtos como validados.<br>
-    O numerário previsto ${partes[0].dataNum ? `entra no Fluxo de caixa projetado em <b>${dm(partes[0].dataNum)}</b> (data prevista do numerário/chegada)` : 'é criado, mas <b>sem data</b>: informe a previsão de chegada ou do numerário para ele entrar no fluxo'}.<br><br>Salvar no pedido ${esc(p.pedido || '')} · ${esc(p.fornecedor)}?`;
+    O numerário previsto ${!temFluxo(p.empresa) ? 'é criado como pagamento a fazer (esta empresa não tem vínculo com o fluxo de caixa)' : partes[0].dataNum ? `entra no Fluxo de caixa projetado em <b>${dm(partes[0].dataNum)}</b> (data prevista do numerário/chegada)` : 'é criado, mas <b>sem data</b>: informe a previsão de chegada ou do numerário para ele entrar no fluxo'}.<br><br>Salvar no pedido ${esc(p.pedido || '')} · ${esc(p.fornecedor)}?`;
   if (!await confirmar('Salvar estimativa', msg, 'Salvar')) return;
   const todos = comAliq(itens);
   for (const { g, res: rg } of partes) {
@@ -1208,7 +1432,9 @@ async function salvarEstimativa() {
 
 // lança o cálculo (com os valores reais da DI) como nacionalização realizada — no embarque conjunto, a parte de cada processo
 async function lancarRealizado() {
-  const c = est.calc, p = est.processos.find(x => x.id === c.processo_id);
+  const c = est.calc;
+  if (c.novos && c.novos.length) return alertaErro('Salve primeiro a estimativa para criar os processos dos fornecedores novos.');
+  const p = est.processos.find(x => x.id === c.processo_id);
   if (!p) return;
   const { itens, pr, r } = resultadoCalc();
   if (!itens.length) return alertaErro('Informe pelo menos um item com quantidade e FOB.');
@@ -1241,10 +1467,10 @@ async function numerarioDaEstimativa(p, valor) {
   const data = p.cp_numerario_prev || p.cp_chegada_prev || p.previsao_chegada || null;
   const ja = pagamentosDe(p).find(c => !ehCambio(c) && !c.pago && String(c.observacao || '').startsWith(OBS_NUM_EST));
   const obs = `${OBS_NUM_EST} (impostos + despesas + fretes) de ${dm(hojeISO())}.`;
-  if (ja) await gravar('imp_cambios', { valor_previsto_brl: valor, observacao: obs, data_prevista: ja.data_prevista || data, no_fluxo: !!(ja.data_prevista || data) }, ja.id, ja, true);
+  if (ja) await gravar('imp_cambios', { valor_previsto_brl: valor, observacao: obs, data_prevista: ja.data_prevista || data, no_fluxo: temFluxo(p.empresa) && !!(ja.data_prevista || data) }, ja.id, ja, true);
   else if (!pagamentosDe(p).some(c => !ehCambio(c) && c.pago))
     await inserirSemRecarregar('imp_cambios', { processo_id: p.id, empresa: p.empresa, tipo: 'Numerário', valor_previsto_brl: valor, data_prevista: data,
-      no_fluxo: !!data, ordem: pagamentosDe(p).length + 1, observacao: obs + (data ? '' : ' Sem data prevista: informe a data para entrar no fluxo.') });
+      no_fluxo: temFluxo(p.empresa) && !!data, ordem: pagamentosDe(p).length + 1, observacao: obs + (data ? '' : ' Sem data prevista: informe a data para entrar no fluxo.') });
 }
 
 
@@ -1442,27 +1668,60 @@ function formDados(p) {
   const forn = est.fornecedores[p.fornecedor] || {};
   const nomesForn = Object.keys(est.fornecedores).sort();
   const paises = [...new Set(Object.values(est.fornecedores).map(f => f.pais).filter(Boolean))].sort();
-  form(novo ? 'Nova importação' : 'Editar dados do processo', [
+  const lista = campo => [...new Set(est.processos.map(x => x[campo]).filter(Boolean))].sort();
+  const clientes = lista('cliente');
+  const gestor = podeFechar();
+  const { m } = form(novo ? 'Nova importação' : 'Editar dados do processo', [
     ['', [
       ['empresa', 'Empresa', 'select', empresasVisiveis().map(e => [e, EMPRESAS[e]])],
+      ['cliente', 'Cliente (quando importamos para um cliente)', 'lista', clientes],
       ['fornecedor', 'Fornecedor', 'lista', nomesForn],
       ['pedido', 'Pedido', 'text'], ['data_pedido', 'Data do pedido', 'date'],
-      ['mercadoria', 'Mercadoria', 'text'], ['modal', 'Modal', 'select', [['', '—'], ['Marítimo', 'Marítimo'], ['Aéreo', 'Aéreo']]],
-      ['despachante', 'Despachante', 'text'], ['logistica', 'Logística', 'text'], ['processo', 'Nº processo (despachante)', 'text'],
+      ['mercadoria', 'Mercadoria / produto', 'text'], ['modal', 'Modal', 'select', [['', '—'], ['Marítimo', 'Marítimo'], ['Aéreo', 'Aéreo'], ['Courier', 'Courier (DHL, FedEx…)']]],
       ['previsao_chegada', 'Previsão de chegada', 'date'], ['fob_usd', 'FOB total da invoice (US$)', 'num'], ['fator_estimado', 'Fator estimado (ou use a calculadora)', 'num'],
       ['observacao', 'Observação', 'area'],
     ]],
+    ['Embarque', [
+      ['tipo_container', 'Tipo de contêiner', 'lista', ['20 dry', '40 dry', '40 NOR', '40HQ', 'LCL', ...lista('tipo_container')].filter((x, i, a) => a.indexOf(x) === i)],
+      ['bl', 'BL / AWB', 'text'], ['porto_origem', 'Origem', 'lista', lista('porto_origem')], ['porto_destino', 'Destino', 'lista', lista('porto_destino')],
+      ['logistica', 'Agente de carga', 'lista', lista('logistica')], ['agente_ref', 'Referência do agente', 'text'],
+      ['despachante', 'Despachante', 'lista', lista('despachante')], ['despachante_ref', 'Referência do despachante', 'text'], ['processo', 'Nº processo (despachante)', 'text'],
+      ['frete_usd', 'Frete internacional (US$)', 'num'], ['nf_entrada', 'NF de entrada', 'text'], ['rfi_link', 'RFI · relatório final (link ou caminho do PDF)', 'text'],
+    ]],
+    ['Assessoria (importação para cliente)', [['comissao_valor', 'Comissão (R$)', 'num'],
+      ...(gestor ? [['carga_paga', 'Carga paga', 'chk'], ['carga_paga_em', 'Pagamento da carga em', 'date'], ['comissao_paga', 'Comissão paga', 'chk'], ['comissao_paga_em', 'Comissão paga em', 'date']] : [])]],
     ['Fornecedor', [['_pais', 'País', 'lista', paises], ['_cond', 'Condição de pagamento', 'text']]],
+    ...(novo ? [['Mais fornecedores no mesmo embarque (mesma DI)', [['_outros', 'Um fornecedor por linha — cria um processo para cada um, já juntos neste embarque', 'area']]]] : []),
   ], { ...p, _pais: forn.pais, _cond: forn.condicao_pagamento }, async v => {
     if (!v.fornecedor) throw new Error('Informe o fornecedor.');
     v.empresa = Number(v.empresa);
-    const { _pais, _cond, ...reg } = v;
+    if (v.carga_paga_em) v.carga_paga = true;
+    if (v.comissao_paga_em) v.comissao_paga = true;
+    const { _pais, _cond, _outros, ...reg } = v;
     const f = est.fornecedores[v.fornecedor];
     if (!f || f.pais !== _pais || f.condicao_pagamento !== _cond)
       await gravarFornecedor({ nome: v.fornecedor, pais: _pais, condicao_pagamento: _cond });
-    if (novo) { reg.status = 'aberto'; const id = await inserir('imp_processos', reg); est.abertoId = id; abrir('processos'); }
+    if (novo) {
+      reg.status = 'aberto';
+      const outros = String(_outros || '').split(/\n|;/).map(x => x.trim()).filter(x => x && x !== v.fornecedor);
+      if (outros.length) reg.embarque = 'EMB-' + [v.pedido || v.fornecedor, ...outros].join('-').replace(/\s+/g, '').slice(0, 40) + '-' + hojeISO().slice(2).replace(/-/g, '');
+      const id = await inserir('imp_processos', reg);
+      for (const o of outros) {
+        if (!est.fornecedores[o]) await gravarFornecedor({ nome: o, pais: _pais || null, condicao_pagamento: null });
+        await inserirSemRecarregar('imp_processos', { ...reg, fornecedor: o, pedido: null, fob_usd: null, fator_estimado: null, atualizado_em: new Date().toISOString() });
+      }
+      if (outros.length && !est.demo) await recarregar();
+      est.abertoId = id; abrir('processos');
+    }
     else await gravar('imp_processos', reg, p.id, p);
-  }).m.querySelector('[name=fornecedor]').addEventListener('change', e => {
+  });
+  // cliente só aparece para empresas que importam para clientes (ou se já estiver preenchido)
+  const fmD = m.querySelector('#fm'), lblCli = fmD.elements.cliente.closest('label');
+  const grupoAss = [...m.querySelectorAll('.grupo-tit')].find(x => x.textContent.startsWith('Assessoria'));
+  const verCliente = () => { const on = temClientes(Number(fmD.elements.empresa.value)) || !!fmD.elements.cliente.value;
+    lblCli.style.display = on ? '' : 'none'; if (grupoAss) { grupoAss.style.display = on ? '' : 'none'; grupoAss.nextElementSibling.style.display = on ? '' : 'none'; } };
+  fmD.elements.empresa.addEventListener('change', verCliente); verCliente();
+  m.querySelector('[name=fornecedor]').addEventListener('change', e => {
     const f = est.fornecedores[e.target.value]; const fm = e.target.form;
     if (f) { fm.elements._pais.value = f.pais || ''; fm.elements._cond.value = f.condicao_pagamento || ''; }
   });
@@ -1534,6 +1793,7 @@ function formParcela(p, c, tipo, preset) {
     ['', [['observacao', 'Observação', 'area']]],
   ];
   // colaborador (sem gestor): gera e ajusta parcelas, mas não registra pagamento (contrato e corretora ele pode informar)
+  if (!temFluxo(p.empresa)) gruposT.forEach(g => { g[1] = g[1].filter(([k]) => k !== 'no_fluxo'); });
   const grupos = gestor ? gruposT : gruposT.map(([t, cs]) => [t === 'Fechamento do câmbio' ? 'Câmbio (o pagamento é registrado pelo gestor)' : t,
     cs.filter(([k]) => !['pago', 'conciliado', 'data_fechamento', 'cambio_realizado', 'valor_brl', 'tarifa'].includes(k))]).filter(([, cs]) => cs.length);
   const { m } = form(novo ? (cam ? 'Nova parcela de câmbio' : 'Novo numerário / pagamento') : (cam ? 'Parcela de câmbio' : 'Numerário / pagamento'), grupos, c, async v => {
@@ -1644,6 +1904,7 @@ async function recarregar() {
   ]);
   est.processos = procs.map(numerico); est.cambios = cambios.map(numerico); est.creditos = creditos.map(numerico);
   est.fornecedores = Object.fromEntries(forns.map(f => [f.nome, f]));
+  try { const { data: pe } = await sb.from('parametros').select('valor').eq('chave', 'imp_empresas').maybeSingle(); if (pe) aplicarEmpresas(pe.valor); } catch (_) {}
   // cadastro de produtos (peso unitário e medidas)
   try { const pr = await buscarTodos(() => sb.from('imp_produtos').select('*').order('codigo')); est.produtos = Object.fromEntries(pr.map(x => [chaveProd(x.codigo), numerico(x)])); } catch (_) { est.produtos = {}; }
   // alíquotas por família de produto (calculadora aduaneira)
