@@ -2418,7 +2418,8 @@ function formImportacao(i) {
 }
 
 // ======================= usuários (administrador) =======================
-const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['dre', 'DRE e resultados'], ['vendas', 'Performance de vendas'], ['importacoes', 'Importações']];
+const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['dre', 'DRE e resultados'], ['vendas', 'Performance de vendas'], ['importacoes', 'Importações'],
+  ['imp_gestor', 'Importações: fechar processo e marcar pago']];
 function renderUsuarios(el) {
   const emps = Object.entries(est.empresasTodas);
   el.innerHTML = `
@@ -2431,7 +2432,8 @@ function renderUsuarios(el) {
       <h2 style="margin:0">Usuários e permissões</h2>
       <button class="btn-pri" id="btnNovoUsuario">+ Novo usuário</button>
     </div>
-    <div class="nota">Áreas: o que a pessoa vê · Empresas: de quais empresas · Pode digitar: cadastrar importações e câmbio · Admin: vê tudo e gerencia usuários</div>
+    <div class="nota">Áreas: o que a pessoa vê · Empresas: de quais empresas · Pode digitar: cadastrar importações e câmbio · Admin: vê tudo e gerencia usuários<br>
+      Colaborador só de importações: marque <b>Importações</b> + <b>Pode digitar</b>, sem "fechar processo e marcar pago" — ele cria processos, estimativas, parcelas e checkpoints, mas não fecha o processo nem registra pagamento.</div>
     <div class="tabela-wrap"><table class="tab-usuarios">
       <thead><tr><th>Usuário</th><th>Ativo</th><th>Áreas</th><th>Empresas</th><th>Pode digitar</th><th>Admin</th><th></th></tr></thead>
       <tbody>${est.usuarios.map(u => `<tr data-u="${esc(u.id)}">
