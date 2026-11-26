@@ -588,6 +588,9 @@ async function carregarConfig() {
   const { data: par } = await sb.from('parametros').select('chave,valor');
   const cam = (par || []).find(p => p.chave === 'cambio');
   if (cam) est.cambio = cam.valor;
+  // empresas só de importação (Smarthub, Fortify…): aparecem na tela de usuários, nunca no fluxo de caixa
+  const ie = (par || []).find(p => p.chave === 'imp_empresas');
+  est.impEmpresas = ie && ie.valor ? ie.valor : {};
 }
 
 function iniciarDemo() {
@@ -784,7 +787,8 @@ async function lerImpFluxo() {
     const ids = [...new Set(parc.map(c => c.processo_id))];
     const procs = ids.length ? await buscarTodos(() => sb.from('imp_processos').select('id,empresa,fornecedor,pedido,cambio_di,estimativa,status').in('id', ids)) : [];
     const pm = new Map(procs.map(x => [x.id, x]));
-    est.impFluxo = parc.filter(c => c.data_prevista && pm.has(c.processo_id) && pm.get(c.processo_id).status !== 'fechado').map(c => ({ ...c, processo: pm.get(c.processo_id) }));
+    // só empresas do ERP (Feromax, Supply) entram no fluxo; Smarthub/Fortify ficam fora
+    est.impFluxo = parc.filter(c => c.data_prevista && est.empresasTodas[c.empresa] && pm.has(c.processo_id) && pm.get(c.processo_id).status !== 'fechado').map(c => ({ ...c, processo: pm.get(c.processo_id) }));
   } catch (_) { est.impFluxo = []; }
 }
 // valor em R$ de um pagamento do módulo no fluxo: câmbio = US$ × câmbio do painel (PTAX ou manual, card "Importações no fluxo")
@@ -2420,8 +2424,13 @@ function formImportacao(i) {
 // ======================= usuários (administrador) =======================
 const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['dre', 'DRE e resultados'], ['vendas', 'Performance de vendas'], ['importacoes', 'Importações'],
   ['imp_gestor', 'Importações: fechar processo e marcar pago']];
+// empresas para dar acesso: as do ERP + as só de importação (sem vínculo com o fluxo de caixa)
+function empresasUsuarios() {
+  const so = Object.entries(est.impEmpresas || {}).filter(([k]) => !est.empresasTodas[k]).map(([k, v]) => [k, ((v && v.nome) || 'Empresa ' + k) + ' (só importações)']);
+  return [...Object.entries(est.empresasTodas), ...so];
+}
 function renderUsuarios(el) {
-  const emps = Object.entries(est.empresasTodas);
+  const emps = empresasUsuarios();
   el.innerHTML = `
   <div class="info">
     Clique em <b>+ Novo usuário</b> para criar um acesso: o login é criado na hora e você recebe uma <b>senha provisória</b> para repassar. A pessoa troca depois no botão "Trocar senha".
@@ -2433,7 +2442,8 @@ function renderUsuarios(el) {
       <button class="btn-pri" id="btnNovoUsuario">+ Novo usuário</button>
     </div>
     <div class="nota">Áreas: o que a pessoa vê · Empresas: de quais empresas · Pode digitar: cadastrar importações e câmbio · Admin: vê tudo e gerencia usuários<br>
-      Colaborador só de importações: marque <b>Importações</b> + <b>Pode digitar</b>, sem "fechar processo e marcar pago" — ele cria processos, estimativas, parcelas e checkpoints, mas não fecha o processo nem registra pagamento.</div>
+      Colaborador só de importações: marque <b>Importações</b> + <b>Pode digitar</b>, sem "fechar processo e marcar pago" — ele cria processos, estimativas, parcelas e checkpoints, mas não fecha o processo nem registra pagamento.
+      Empresas "(só importações)", como Smarthub e Fortify, não têm vínculo com o fluxo de caixa: marque só elas para quem cuida apenas dessas importações.</div>
     <div class="tabela-wrap"><table class="tab-usuarios">
       <thead><tr><th>Usuário</th><th>Ativo</th><th>Áreas</th><th>Empresas</th><th>Pode digitar</th><th>Admin</th><th></th></tr></thead>
       <tbody>${est.usuarios.map(u => `<tr data-u="${esc(u.id)}">
@@ -2478,7 +2488,7 @@ async function formNovoUsuario(painelEl) {
     abrirModal(`<h3>Novo usuário</h3><p class="sub">No modo demonstração não é possível criar usuários.</p><div class="modal-acoes"><button class="btn-pri" id="nFechar">Fechar</button></div>`);
     $('#nFechar').onclick = fecharModal; return;
   }
-  const emps = Object.entries(est.empresasTodas);
+  const emps = empresasUsuarios();
   abrirModal(`
     <h3>Novo usuário</h3>
     <div class="nota">Cria o login e aplica as permissões. A senha provisória aparece para você repassar.</div>
