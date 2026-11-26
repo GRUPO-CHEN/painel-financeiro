@@ -985,7 +985,7 @@ function calcularAduaneiro(itens, pr, aliq) {
   fe.frete_nacional = n(pr.frete_nacional); fe.frete_brl = freteBRL;
   fe.adicoes = adicoes; fe.rateio_frete = porPeso ? 'peso' : 'fob';
   // ---- DHL / courier (planilha de cálculo aduaneiro)
-  dh.frete_brl = fu * di * 1.06; dh.outras_despesas = n(pr.dhl_despesas);
+  dh.frete_brl = fu * di; dh.outras_despesas = n(pr.dhl_despesas);   // frete DHL sem acréscimo: o valor é informado manualmente em cada estimativa
   // DHL (remessa expressa): valor aduaneiro = (FOB + frete rateado) × dólar DI; II = 60% do valor aduaneiro;
   // ICMS "por dentro" sobre valor aduaneiro + II: (VA + II) ÷ (1 − ICMS) × ICMS  — confere com a cobrança DHL 6516931
   //   (a DHL trunca os centavos em cada valor: frete 1.181,3967 → 1.181,39)
