@@ -191,6 +191,9 @@ td.cen-sel, th.cen-sel { background: color-mix(in srgb, var(--acento, #8a5cd1) 9
 .barra-trilho { background: color-mix(in srgb, currentColor 7%, transparent); border-radius: 4px; height: 14px; overflow: hidden; }
 .barra { display: block; height: 100%; border-radius: 4px; }
 .barra-val { text-align: right; font-variant-numeric: tabular-nums; }
+.tabela-wrap.rolagem { max-height: calc(100vh - 110px); overflow: auto; overscroll-behavior: contain; }
+.rolagem thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: inset 0 -1px 0 var(--line); }
+.rolagem tfoot td { position: sticky; bottom: 0; z-index: 1; background: var(--surface); box-shadow: inset 0 1px 0 var(--line); }
 </style>
 </head>
 <body>
@@ -254,6 +257,18 @@ let EMPRESAS = { 1: 'Feromax', 2: 'Supply' };
 let EMP_CFG = { 1: { nome: 'Feromax', fluxo: true }, 2: { nome: 'Supply', fluxo: true } };
 const temFluxo = e => { const c = EMP_CFG[e]; return c ? c.fluxo !== false : Number(e) < 100; };   // vai para o Fluxo de caixa projetado?
 const temClientes = e => !!(EMP_CFG[e] && EMP_CFG[e].clientes);                                  // importa para clientes (assessoria)
+// base de cadastros (fornecedores, produtos, alíquotas): Feromax e Supply = "grupo"; Smarthub e Fortify têm a sua
+const baseDe = e => (EMP_CFG[e] && EMP_CFG[e].base) || 'grupo';
+const NOME_BASE = b => b === 'grupo' ? empresasVisiveis().filter(e => baseDe(e) === 'grupo').map(e => EMPRESAS[e]).join(' · ') || 'Feromax · Supply'
+  : (Object.entries(EMP_CFG).find(([, v]) => v.base === b) || [, { nome: b }])[1].nome;
+const basesVisiveis = () => [...new Set(empresasVisiveis().map(baseDe))];
+function usarBase(b) {
+  b = b || 'grupo';
+  const pb = est.porBase || (est.porBase = {});
+  const x = pb[b] || (pb[b] = { forn: {}, aliq: {}, prod: {} });
+  est.base = b; est.fornecedores = x.forn; est.aliquotas = x.aliq; est.produtos = x.prod;
+  return b;
+}
 function aplicarEmpresas(cfg) {
   if (!cfg || typeof cfg !== 'object') return;
   EMP_CFG = Object.fromEntries(Object.entries(cfg).map(([k, v]) => [Number(k), typeof v === 'string' ? { nome: v } : v]));
@@ -309,7 +324,7 @@ function ligarOrdenacao(el) {
 }
 const totalNac = p => NAC.reduce((s, [k]) => s + nz(p[k]), 0);
 const temNac = p => !!p.data_di || NAC.some(([k]) => p[k] != null && p[k] !== 0);
-// taxa usada para parcelas ainda não pagas: câmbio da DI; sem DI, a taxa prevista da parcela; depois a da estimativa; por fim o câmbio do painel
+// taxa usada para parcelas ainda não pagas: câmbio da DUIMP; sem DUIMP, a taxa prevista da parcela; depois a da estimativa; por fim o câmbio do painel
 const taxaAberta = (p, c) => nz(p.cambio_di) || nz(c.taxa_di) || nz(p.estimativa && p.estimativa.premissas && p.estimativa.premissas.dolar_cambio) || nz(est.cambioRef) || null;
 
 function resumo(p) {
@@ -357,12 +372,37 @@ function proximoCheckpoint(p) {
   return null;
 }
 
-const paisDe = p => (est.fornecedores[p.fornecedor] || {}).pais || '';
+const fornDe = p => (((est.porBase || {})[baseDe(p.empresa)] || {}).forn || {})[p.fornecedor] || {};
+const paisDe = p => fornDe(p).pais || '';
 const podeEditar = () => !!est.perfil && (est.perfil.admin || (est.perfil.editor && (est.perfil.areas || []).includes('importacoes')));
 // gestor de importações: fecha/reabre processo, marca pago/conciliado e usa créditos (admin, ou quem tem a área "imp_gestor")
 const podeFechar = () => !!est.perfil && (est.perfil.admin || (podeEditar() && (est.perfil.areas || []).includes('imp_gestor')));
 const empresasVisiveis = () => est.perfil && !est.perfil.admin && Array.isArray(est.perfil.empresas)
   ? est.perfil.empresas.filter(e => EMPRESAS[e]) : Object.keys(EMPRESAS).map(Number);
+// empresas selecionadas no filtro (vale para todas as sub-abas); padrão: Feromax + Supply (as do fluxo de caixa)
+function empresasFiltro() {
+  const vis = empresasVisiveis();
+  if (!est.empSel) { try { est.empSel = JSON.parse(localStorage.getItem('imp-empresas') || 'null'); } catch (_) {} }
+  let sel = (est.empSel || []).filter(e => vis.includes(e));
+  if (!sel.length) { const fl = vis.filter(e => temFluxo(e)); sel = fl.length ? fl : vis.slice(0, 1); }
+  return sel;
+}
+const comClientes = () => empresasFiltro().some(temClientes);
+function chipsEmpresas() {
+  const vis = empresasVisiveis(); if (vis.length < 2) return '';
+  const sel = empresasFiltro();
+  return `${vis.map(e => `<button class="chip" data-empsel="${e}" aria-pressed="${sel.includes(e)}" title="Clique: só esta · Ctrl+clique: junta ou tira">${esc(EMPRESAS[e])}</button>`).join('')}
+    <span class="nota" style="align-self:center">Ctrl+clique para escolher mais de uma</span><div class="sep"></div>`;
+}
+function ligarChipsEmpresas(el) {
+  el.querySelectorAll('[data-empsel]').forEach(b => b.onclick = ev => {
+    const e = Number(b.dataset.empsel); let sel = empresasFiltro();
+    if (ev.ctrlKey || ev.metaKey || ev.shiftKey) { sel = sel.includes(e) ? sel.filter(x => x !== e) : [...sel, e]; if (!sel.length) sel = [e]; }
+    else sel = [e];
+    est.empSel = sel; try { localStorage.setItem('imp-empresas', JSON.stringify(sel)); } catch (_) {}
+    redesenhar();
+  });
+}
 
 // ======================= SUB-ABAS =======================
 const SUBABAS = [
@@ -398,10 +438,9 @@ function abrirProcesso(id) { est.abertoId = id; abrir('processos'); window.scrol
 // ======================= Visão geral =======================
 function renderGeral(el) {
   const hoje = hojeISO(), ate30 = somaDias(hoje, 30);
-  const emps = empresasVisiveis();
-  const fe = est.filtro.empresa;
+  const emps = empresasFiltro(), cli = comClientes();
   const ed = podeEditar();
-  const procs = est.processos.filter(p => emps.includes(p.empresa) && (!fe || p.empresa === fe));
+  const procs = est.processos.filter(p => emps.includes(p.empresa));
   const abertos = procs.filter(p => p.status === 'aberto');
   const parcelas = [];
   for (const p of abertos) for (const c of pagamentosDe(p)) if (!c.pago) parcelas.push({ p, c, taxa: ehCambio(c) ? taxaAberta(p, c) : null, brl: previstoBRL(p, c) });
@@ -412,7 +451,7 @@ function renderGeral(el) {
   const atrasadas = parcelas.filter(x => x.c.data_prevista && x.c.data_prevista < hoje);
   const semData = parcelas.filter(x => !x.c.data_prevista);
   const noFluxo = parcelas.filter(x => x.c.no_fluxo);
-  const creditos = est.creditos.filter(c => emps.includes(c.empresa) && (!fe || c.empresa === fe) && !c.utilizado);
+  const creditos = est.creditos.filter(c => emps.includes(c.empresa) && !c.utilizado);
   const totCred = creditos.reduce((s, c) => s + nz(c.valor_usd), 0);
   const caminho = abertos.filter(p => !temNac(p)).map(p => ({ p, prox: proximoCheckpoint(p), cheg: p.cp_chegada_ef || p.cp_chegada_prev || p.previsao_chegada, e: etapa(p) }));
   const aFechar = abertos.filter(p => temNac(p)).map(p => ({ p, r: resumo(p) }));
@@ -420,6 +459,7 @@ function renderGeral(el) {
   const colsPag = [
     { id: 'data', nome: 'Data prevista', v: x => x.c.data_prevista },
     { id: 'tipo', nome: 'Tipo', v: x => x.c.tipo || 'Câmbio' },
+    ...(cli ? [{ id: 'cli', nome: 'Cliente', v: x => x.p.cliente }] : []),
     { id: 'forn', nome: 'Fornecedor', v: x => x.p.fornecedor },
     { id: 'emp', nome: 'Empresa', v: x => EMPRESAS[x.p.empresa] },
     { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
@@ -430,13 +470,15 @@ function renderGeral(el) {
     { id: 'fluxo', nome: 'No fluxo', v: x => x.c.no_fluxo ? 1 : 0 },
   ];
   const colsCam = [
+    ...(cli ? [{ id: 'cli', nome: 'Cliente', v: x => x.p.cliente }] : []),
     { id: 'forn', nome: 'Fornecedor', v: x => x.p.fornecedor }, { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
     { id: 'etapa', nome: 'Etapa', v: x => x.e.nome }, { id: 'prox', nome: 'Próximo passo', v: x => x.prox && x.prox.prev },
     { id: 'cheg', nome: 'Chegada', v: x => x.cheg },
   ];
   const colsFec = [
+    ...(cli ? [{ id: 'cli', nome: 'Cliente', v: x => x.p.cliente }] : []),
     { id: 'forn', nome: 'Fornecedor', v: x => x.p.fornecedor }, { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
-    { id: 'di', nome: 'DI', v: x => x.p.data_di }, { id: 'ab', nome: 'Câmbio aberto', cls: 'n', v: x => x.r.abertoUSD },
+    { id: 'di', nome: 'DUIMP', v: x => x.p.data_di }, { id: 'ab', nome: 'Câmbio aberto', cls: 'n', v: x => x.r.abertoUSD },
     { id: 'fat', nome: 'Fator pré', cls: 'n', v: x => x.r.fator },
   ];
   const lPag = ordenar('gPag', parcelas, colsPag, { col: 'data', dir: 'asc' });
@@ -446,7 +488,7 @@ function renderGeral(el) {
   el.innerHTML = `${filtroEmpresa()}
   <div class="kpis">
     ${kpi('Processos em aberto', F0.format(abertos.length), `${caminho.length} a caminho · ${aFechar.length} nacionalizados`)}
-    ${kpi('Câmbio a pagar', U0(totUSD), `≈ ${R0(camb.reduce((s, x) => s + nz(x.brl), 0))} pela taxa da DI / prevista`)}
+    ${kpi('Câmbio a pagar', U0(totUSD), `≈ ${R0(camb.reduce((s, x) => s + nz(x.brl), 0))} pela taxa da DUIMP / prevista`)}
     ${kpi('Câmbio próximos 30 dias', U0(p30.reduce((s, x) => s + nz(x.c.valor_usd), 0)), `${p30.length} parcela(s)` + (atrasadas.length ? ` · <span class="verm">${atrasadas.length} com data vencida</span>` : ''))}
     ${kpi('Numerários previstos', R0(nums.reduce((s, x) => s + nz(x.brl), 0)), `${nums.length} lançamento(s)`)}
     ${kpi('No fluxo de caixa', R0(noFluxo.reduce((s, x) => s + nz(x.brl), 0)), `${noFluxo.length} de ${parcelas.length} pagamentos em aberto`)}
@@ -454,17 +496,18 @@ function renderGeral(el) {
   </div>
   <div class="card">
     <div class="topo"><h2>Pagamentos a fazer</h2><span class="nota">câmbios e numerários em aberto · marque "No fluxo" para levar ao Fluxo de caixa projetado</span></div>
-    <div class="tabela-wrap"><table>
+    <div class="tabela-wrap rolagem"><table>
       <thead>${cabecalho('gPag', colsPag, { col: 'data', dir: 'asc' })}</thead>
       <tbody>${lPag.length ? lPag.map(({ p, c, taxa, brl }) => `<tr class="clic" data-p="${p.id}">
         <td class="d ${c.data_prevista && c.data_prevista < hoje ? 'verm' : ''}"><span class="${ed ? 'data-clic' : ''}" ${ed ? `data-dparc="${c.id}" title="Alterar a data prevista"` : ''}>${c.data_prevista ? dm(c.data_prevista) : '<span class="tag aviso">sem data</span>'}</span></td>
         <td>${esc(c.tipo || 'Câmbio')}</td>
+        ${cli ? `<td><b>${esc(p.cliente || '—')}</b></td>` : ''}
         <td>${esc(p.fornecedor)}${c.observacao ? `<div class="nota">${esc(c.observacao)}</div>` : ''}</td><td>${EMPRESAS[p.empresa] || p.empresa}</td><td>${esc(p.pedido || '—')}</td>
         <td><span class="tag ${etapa(p).cls}">${etapa(p).nome}</span></td>
         <td class="n">${ehCambio(c) ? F2.format(nz(c.valor_usd)) : '—'}</td><td class="n">${TX(taxa)}</td><td class="n">${brl ? F2.format(brl) : '—'}</td>
         <td>${chkFluxo(c, ed)}</td></tr>`).join('')
-        : '<tr><td colspan="10" class="vazio">Nenhum pagamento em aberto.</td></tr>'}</tbody>
-      ${parcelas.length ? `<tfoot><tr><td colspan="6">Total${semData.length ? ` <span class="nota">(${semData.length} sem data prevista)</span>` : ''}</td><td class="n">${F2.format(totUSD)}</td><td></td><td class="n">${F2.format(totBRL)}</td><td></td></tr></tfoot>` : ''}
+        : `<tr><td colspan="${colsPag.length}" class="vazio">Nenhum pagamento em aberto.</td></tr>`}</tbody>
+      ${parcelas.length ? `<tfoot><tr><td colspan="${cli ? 7 : 6}">Total${semData.length ? ` <span class="nota">(${semData.length} sem data prevista)</span>` : ''}</td><td class="n">${F2.format(totUSD)}</td><td></td><td class="n">${F2.format(totBRL)}</td><td></td></tr></tfoot>` : ''}
     </table></div>
   </div>
   <div class="grade2">
@@ -473,7 +516,7 @@ function renderGeral(el) {
       <div class="tabela-wrap"><table>
         <thead>${cabecalho('gCam', colsCam, { col: 'cheg', dir: 'asc' })}</thead>
         <tbody>${lCam.length ? lCam.map(({ p, prox, cheg, e }) => `<tr class="clic" data-p="${p.id}">
-          <td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td><td>${esc(p.pedido || '—')}</td>
+          ${cli ? `<td><b>${esc(p.cliente || '—')}</b></td>` : ''}<td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td><td>${esc(p.pedido || '—')}</td>
           <td><span class="tag ${e.cls}">${e.nome}</span></td>
           <td>${prox ? `<span class="${ed ? 'data-clic' : ''}" ${ed ? `data-cp="${p.id}" title="Atualizar checkpoints"` : ''}>${esc(prox.nome)} <span class="${prox.atraso ? 'verm' : 'nota'}">${prox.prev ? dm(prox.prev) : 'sem data'}${prox.atraso ? ' · atrasado' : ''}</span></span>` : '—'}</td>
           <td class="d"><span class="${ed ? 'data-clic' : ''}" ${ed ? `data-cp="${p.id}" title="Atualizar checkpoints"` : ''}>${cheg ? dm(cheg) : (ed ? '<span class="nota">informar</span>' : '—')}</span></td></tr>`).join('') : '<tr><td colspan="5" class="vazio">Nada a caminho.</td></tr>'}</tbody>
@@ -484,7 +527,7 @@ function renderGeral(el) {
       <div class="tabela-wrap"><table>
         <thead>${cabecalho('gFec', colsFec, { col: 'di', dir: 'asc' })}</thead>
         <tbody>${lFec.length ? lFec.map(({ p, r }) => `<tr class="clic" data-p="${p.id}">
-          <td>${esc(p.fornecedor)}</td><td>${esc(p.pedido || '—')}</td><td class="d"><span class="${ed ? 'data-clic' : ''}" ${ed ? `data-cp="${p.id}" title="Atualizar checkpoints"` : ''}>${dm(p.data_di)}</span></td>
+          ${cli ? `<td><b>${esc(p.cliente || '—')}</b></td>` : ''}<td>${esc(p.fornecedor)}</td><td>${esc(p.pedido || '—')}</td><td class="d"><span class="${ed ? 'data-clic' : ''}" ${ed ? `data-cp="${p.id}" title="Atualizar checkpoints"` : ''}>${dm(p.data_di)}</span></td>
           <td class="n">${r.abertoUSD ? U(r.abertoUSD) : '<span class="verde">quitado</span>'}</td><td class="n">${FT(r.fator)}</td></tr>`).join('')
           : '<tr><td colspan="5" class="vazio">Nenhum.</td></tr>'}</tbody>
       </table></div>
@@ -537,15 +580,15 @@ function textoComissao(p) {
 const fatorEmb = p => { const r = resumo(p); return r.tipoFator && r.tipoFator !== 'estimado' && r.fator ? r.fator : (p.fator_planilha != null ? Number(p.fator_planilha) : null); };
 
 function renderEmbarques(el) {
-  const f = est.filtroEmb || (est.filtroEmb = { empresa: 0, status: '', cliente: '', forn: '', agente: '', desp: '', pag: '', ativos: false });
-  const emps = empresasVisiveis();
-  const base = est.processos.filter(p => emps.includes(p.empresa) && (!f.empresa || p.empresa === f.empresa));
+  const f = est.filtroEmb || (est.filtroEmb = { status: '', cliente: '', forn: '', agente: '', desp: '', pag: '', ativos: false });
+  const emps = empresasFiltro();
+  const base = est.processos.filter(p => emps.includes(p.empresa));
   const opc = campo => [...new Set(base.map(campo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
   const lista = base.filter(p => (!f.status || statusEmb(p).k === f.status) && (!f.cliente || p.cliente === f.cliente) && (!f.forn || p.fornecedor === f.forn)
     && (!f.agente || p.logistica === f.agente) && (!f.desp || p.despachante === f.desp) && (!f.pag || pagCarga(p).k === f.pag)
     && (!f.ativos || statusEmb(p).k !== 'entregue' || p.status === 'aberto'));
   const conta = k => lista.filter(p => statusEmb(p).k === k).length;
-  const comCli = lista.some(p => p.cliente);
+  const comCli = comClientes();
   const cols = [
     { id: 'id', nome: 'Nº', v: x => x.id },
     ...(comCli ? [{ id: 'cli', nome: 'Cliente', v: x => x.cliente }] : []),
@@ -563,10 +606,10 @@ function renderEmbarques(el) {
     { id: 'emb', nome: 'Embarque', v: x => x.cp_embarque_ef || x.cp_embarque_prev },
     { id: 'eta', nome: 'ETA', v: x => x.cp_chegada_ef || x.cp_chegada_prev || x.previsao_chegada },
     { id: 'cheg', nome: 'Chegada cliente / estoque', v: x => x.cp_estoque_ef || x.cp_estoque_prev },
-    { id: 'di', nome: 'DUIMP / DI', v: x => x.di },
+    { id: 'di', nome: 'DUIMP', v: x => x.di },
     { id: 'nf', nome: 'NF', v: x => x.nf_entrada },
     { id: 'pag', nome: 'Pagamento carga', v: x => pagCarga(x).k },
-    { id: 'com', nome: 'Comissão', v: x => x.comissao_paga ? 2 : x.comissao_valor ? 1 : 0 },
+    ...(comCli ? [{ id: 'com', nome: 'Comissão', v: x => x.comissao_paga ? 2 : x.comissao_valor ? 1 : 0 }] : []),
     { id: 'rfi', nome: 'RFI' },
     { id: 'fat', nome: 'Fator', cls: 'n', v: x => fatorEmb(x) },
   ];
@@ -580,13 +623,13 @@ function renderEmbarques(el) {
   const sel = (id, rot, opts, val) => `<label class="filtro-emb"><span>${rot}</span><select class="sel" id="${id}"><option value="">Todos</option>${opts.map(([v, n]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>`;
   const dataCp = (p, v) => `<span class="${podeEditar() ? 'data-clic' : ''}" ${podeEditar() ? `data-cp="${p.id}" title="Atualizar checkpoints"` : ''}>${v ? dm(v) : (podeEditar() ? '<span class="nota">informar</span>' : '—')}</span>`;
   el.innerHTML = `<div class="filtros">
-    ${emps.length > 1 ? [[0, 'Todas'], ...emps.map(e => [e, EMPRESAS[e]])].map(([v, n]) => `<button class="chip" data-empe="${v}" aria-pressed="${f.empresa === v}">${n}</button>`).join('') + '<div class="sep"></div>' : ''}
+    ${chipsEmpresas()}
     <label class="chk-fluxo"><input type="checkbox" id="eAtivos" ${f.ativos ? 'checked' : ''}> Só em andamento</label>
     <button class="btn" id="eLimpar" style="margin-left:auto">Redefinir filtros</button>
   </div>
   <div class="card"><div class="filtros-emb">
     ${sel('eSt', 'Status do embarque', STATUS_EMB, f.status)}
-    ${opc(p => p.cliente).length ? sel('eCli', 'Cliente', opc(p => p.cliente).map(x => [x, x]), f.cliente) : ''}
+    ${comCli ? sel('eCli', 'Cliente', opc(p => p.cliente).map(x => [x, x]), f.cliente) : ''}
     ${sel('eForn', 'Fornecedor', opc(p => p.fornecedor).map(x => [x, x]), f.forn)}
     ${sel('eAg', 'Agente de carga', opc(p => p.logistica).map(x => [x, x]), f.agente)}
     ${sel('eDesp', 'Despachante', opc(p => p.despachante).map(x => [x, x]), f.desp)}
@@ -601,7 +644,7 @@ function renderEmbarques(el) {
   </div>
   <div class="card">
     <div class="topo"><h2>Controle de embarques</h2><span class="nota">exibindo ${lista.length} de ${base.length} · clique na data para atualizar o checkpoint; na linha, abre o processo</span></div>
-    <div class="tabela-wrap"><table class="tab-emb">
+    <div class="tabela-wrap rolagem"><table class="tab-emb">
       <thead>${cabecalho('emb', cols, { col: 'id', dir: 'asc' })}</thead>
       <tbody>${linhas.length ? linhas.map(p => { const st = statusEmb(p), pg = pagCarga(p); return `<tr class="clic" data-p="${p.id}">
         <td>${p.id}</td>${comCli ? `<td><b>${esc(p.cliente || '—')}</b></td>` : ''}<td>${esc(p.fornecedor)}</td><td>${esc(EMPRESAS[p.empresa] || p.empresa)}</td>
@@ -615,7 +658,7 @@ function renderEmbarques(el) {
         <td class="d">${dataCp(p, p.cp_estoque_ef || p.cp_estoque_prev)}</td>
         <td class="mono">${esc(p.di || '—')}</td><td>${esc(p.nf_entrada || '—')}</td>
         <td><span class="${pg.k === 'pago' ? 'verde' : pg.k === 'pendente' ? 'verm' : 'nota'}">${pg.txt}</span></td>
-        <td>${p.comissao_paga ? `<span class="verde">${p.comissao_paga_em ? dm(p.comissao_paga_em) : 'paga'}</span>` : p.comissao_valor ? `<span class="verm">${R0(p.comissao_valor)}</span>` : '<span class="nota">—</span>'}</td>
+        ${comCli ? `<td>${!temClientes(p.empresa) ? '<span class="nota">—</span>' : p.comissao_paga ? `<span class="verde">${p.comissao_paga_em ? dm(p.comissao_paga_em) : 'paga'}</span>` : p.comissao_valor ? `<span class="verm">${R0(p.comissao_valor)}</span>` : '<span class="nota">—</span>'}</td>` : ''}
         <td>${p.rfi_link ? (/^https?:/i.test(p.rfi_link) ? `<a href="${esc(p.rfi_link)}" target="_blank" rel="noopener" title="Abrir RFI">📄</a>` : `<span title="${esc(p.rfi_link)}">📄</span>`) : '—'}</td>
         <td class="n">${FT(fatorEmb(p))}</td></tr>`; }).join('') : `<tr><td colspan="${cols.length}" class="vazio">Nenhum embarque com esses filtros.</td></tr>`}</tbody>
     </table></div>
@@ -627,7 +670,7 @@ function renderEmbarques(el) {
     ${barras('Participação dos agentes de carga', contagem(p => p.logistica), '#8a5cd1')}
   </div>`;
   ligarOrdenacao(el);
-  el.querySelectorAll('[data-empe]').forEach(b => b.onclick = () => { f.empresa = Number(b.dataset.empe); redesenhar(); });
+  ligarChipsEmpresas(el);
   const liga = (id, k) => { const x = el.querySelector('#' + id); if (x) x.onchange = () => { f[k] = x.value; redesenhar(); }; };
   liga('eSt', 'status'); liga('eCli', 'cliente'); liga('eForn', 'forn'); liga('eAg', 'agente'); liga('eDesp', 'desp'); liga('ePag', 'pag');
   $('#eAtivos').onchange = e => { f.ativos = e.target.checked; redesenhar(); };
@@ -655,15 +698,8 @@ function ligarFluxo(el) {
 }
 
 function kpi(rot, val, det) { return `<div class="kpi"><div class="rot">${rot}</div><div class="val">${val}</div><div class="det">${det || ''}</div></div>`; }
-function filtroEmpresa() {
-  const emps = empresasVisiveis();
-  if (emps.length < 2) return '';
-  return `<div class="filtros">${[[0, 'Todas'], ...emps.map(e => [e, EMPRESAS[e]])].map(([v, n]) =>
-    `<button class="chip" data-emp="${v}" aria-pressed="${est.filtro.empresa === v}">${n}</button>`).join('')}</div>`;
-}
-function ligarFiltroEmpresa(el) {
-  el.querySelectorAll('[data-emp]').forEach(b => b.onclick = () => { est.filtro.empresa = Number(b.dataset.emp); redesenhar(); });
-}
+function filtroEmpresa() { const h = chipsEmpresas(); return h ? `<div class="filtros">${h}</div>` : ''; }
+function ligarFiltroEmpresa(el) { ligarChipsEmpresas(el); }
 
 // ======================= Processos (lista) =======================
 function renderProcessos(el) {
@@ -672,14 +708,14 @@ function renderProcessos(el) {
     if (p) return renderFicha(el, p);
     est.abertoId = null;
   }
-  const f = est.filtro, emps = empresasVisiveis();
-  const paises = [...new Set(est.processos.map(paisDe).filter(Boolean))].sort();
+  const f = est.filtro, emps = empresasFiltro();
+  const paises = [...new Set(est.processos.filter(p => emps.includes(p.empresa)).map(paisDe).filter(Boolean))].sort();
   const b = f.busca.trim().toLowerCase();
-  const lista = est.processos.filter(p => emps.includes(p.empresa) && (!f.empresa || p.empresa === f.empresa)
+  const lista = est.processos.filter(p => emps.includes(p.empresa)
     && (!f.status || p.status === f.status) && (!f.pais || paisDe(p) === f.pais)
     && (!b || [p.fornecedor, p.pedido, p.mercadoria, p.processo, p.di, p.embarque, p.cliente, p.bl, p.agente_ref, p.despachante_ref].some(x => String(x || '').toLowerCase().includes(b))))
     .sort((a, b) => (b.data_pedido || '') < (a.data_pedido || '') ? -1 : (b.data_pedido || '') > (a.data_pedido || '') ? 1 : b.id - a.id);
-  const comCli = lista.some(p => p.cliente);
+  const comCli = comClientes();
   const colsP = [
     { id: 'ped', nome: 'Pedido', v: x => x.p.pedido },
     ...(comCli ? [{ id: 'cli', nome: 'Cliente', v: x => x.p.cliente }] : []),
@@ -703,20 +739,20 @@ function renderProcessos(el) {
   const fobComFator = comFator.reduce((s, x) => s + x.r.fob, 0);
 
   el.innerHTML = `<div class="filtros">
-    ${emps.length > 1 ? [[0, 'Todas'], ...emps.map(e => [e, EMPRESAS[e]])].map(([v, n]) => `<button class="chip" data-emp="${v}" aria-pressed="${f.empresa === v}">${n}</button>`).join('') + '<div class="sep"></div>' : ''}
+    ${chipsEmpresas()}
     ${[['aberto', 'Em aberto'], ['fechado', 'Fechados'], ['', 'Todos']].map(([v, n]) => `<button class="chip" data-st="${v}" aria-pressed="${f.status === v}">${n}</button>`).join('')}
     <div class="sep"></div>
     <select class="sel" id="fPais"><option value="">Todos os países</option>${paises.map(x => `<option ${x === f.pais ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-    <input class="busca" id="fBusca" type="search" placeholder="Buscar cliente, fornecedor, pedido, mercadoria, DI, BL…" value="${esc(f.busca)}">
+    <input class="busca" id="fBusca" type="search" placeholder="Buscar cliente, fornecedor, pedido, mercadoria, DUIMP, BL…" value="${esc(f.busca)}">
     ${podeEditar() ? '<button class="btn-pri" id="btnNovo" style="margin-left:auto">+ Nova importação</button>' : ''}
   </div>
   <div class="card">
     <div class="topo"><h2>${lista.length} processo(s)</h2>
       <span class="nota">FOB ${U0(fobTot)}${fobComFator ? ` · fator médio ponderado ${FT(totTot / fobComFator)}` : ''} · clique no título da coluna para ordenar</span></div>
-    <div class="tabela-wrap"><table>
+    <div class="tabela-wrap rolagem"><table>
       <thead>${cabecalho('proc', colsP, { col: 'dped', dir: 'desc' })}</thead>
       <tbody>${linhas.length ? linhas.map(({ p, r, e }) => `<tr class="clic" data-p="${p.id}">
-        <td>${esc(p.pedido || '—')}${p.embarque ? ` <span class="tag" title="Embarque conjunto ${esc(p.embarque)}: mesma DI, custos rateados">conjunto</span>` : ''}</td>
+        <td>${esc(p.pedido || '—')}${p.embarque ? ` <span class="tag" title="Embarque conjunto ${esc(p.embarque)}: mesma DUIMP, custos rateados">conjunto</span>` : ''}</td>
         ${comCli ? `<td>${esc(p.cliente || '—')}</td>` : ''}
         <td>${esc(p.fornecedor)} <span class="nota">${esc(paisDe(p))}</span></td>
         <td>${EMPRESAS[p.empresa] || p.empresa}</td>
@@ -733,7 +769,7 @@ function renderProcessos(el) {
     </table></div>
   </div>`;
   ligarOrdenacao(el);
-  el.querySelectorAll('[data-emp]').forEach(b => b.onclick = () => { f.empresa = Number(b.dataset.emp); redesenhar(); });
+  ligarChipsEmpresas(el);
   el.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { f.status = b.dataset.st; redesenhar(); });
   $('#fPais').onchange = e => { f.pais = e.target.value; redesenhar(); };
   const busca = $('#fBusca');
@@ -744,6 +780,7 @@ function renderProcessos(el) {
 
 // ======================= Ficha do processo =======================
 function renderFicha(el, p) {
+  usarBase(baseDe(p.empresa));
   const r = resumo(p), e = etapa(p), forn = est.fornecedores[p.fornecedor] || {};
   const ed = podeEditar(), hoje = hojeISO();
   const linhaCp = CPS.map(([k, nome]) => {
@@ -788,7 +825,7 @@ function renderFicha(el, p) {
       ${campo('Mercadoria', p.mercadoria || '—')}
       ${campo('Modal', p.modal || '—')}
       ${campo('Data do pedido', dm(p.data_pedido))}
-      ${p.cliente ? campo('Cliente', p.cliente) : ''}
+      ${temClientes(p.empresa) ? campo('Cliente', p.cliente || '—') : ''}
       ${campo('Despachante', (p.despachante || '—') + (p.despachante_ref ? ' · ref. ' + p.despachante_ref : ''))}
       ${campo('Agente de carga', (p.logistica || '—') + (p.agente_ref ? ' · ref. ' + p.agente_ref : ''))}
       ${campo('Nº processo', p.processo || '—')}
@@ -798,23 +835,35 @@ function renderFicha(el, p) {
       ${p.porto_origem || p.porto_destino ? campo('Origem → destino', (p.porto_origem || '—') + ' → ' + (p.porto_destino || '—')) : ''}
       ${p.frete_usd != null ? campo('Frete internacional', U(p.frete_usd)) : ''}
       ${p.nf_entrada ? campo('NF de entrada', p.nf_entrada) : ''}
-      ${p.cliente || p.comissao_valor || p.carga_paga || p.comissao_paga ? campo('Pagamento da carga', textoCarga(p)) + campo('Comissão', textoComissao(p)) : ''}
     </div>
     ${p.rfi_link ? `<div class="nota" style="margin-top:8px">RFI: ${/^https?:/i.test(p.rfi_link) ? `<a href="${esc(p.rfi_link)}" target="_blank" rel="noopener">${esc(p.rfi_link)}</a>` : esc(p.rfi_link)}</div>` : ''}
     ${p.observacao ? `<div class="nota" style="margin-top:10px">${esc(p.observacao)}</div>` : ''}
     ${(() => { const g = doEmbarque(p).filter(x => x.id !== p.id); return p.embarque || ed ? `<div class="embarque-linha">
-      <span class="nota">Embarque conjunto (mesma DI):</span>
-      ${g.length ? `<b>${esc(p.embarque)}</b> · com ${g.map(x => `<a href="#" data-irp="${x.id}">${esc(nomeProc(x))}</a>`).join(', ')}` : '<span class="nota">não — DI só deste processo</span>'}
+      <span class="nota">Embarque conjunto (mesma DUIMP):</span>
+      ${g.length ? `<b>${esc(p.embarque)}</b> · com ${g.map(x => `<a href="#" data-irp="${x.id}">${esc(nomeProc(x))}</a>`).join(', ')}` : '<span class="nota">não — DUIMP só deste processo</span>'}
       ${ed && p.status === 'aberto' ? `<button class="btn btn-mini" id="btnJuntar">${g.length ? 'Incluir outro' : 'Juntar com outro processo'}</button>${p.embarque ? '<button class="btn btn-mini" id="btnSeparar">Separar deste embarque</button>' : ''}` : ''}
     </div>` : ''; })()}
   </div>
+
+  ${temClientes(p.empresa) ? `<div class="card">
+    <div class="topo"><h2>Assessoria · comissão e pagamento da carga</h2><span class="nota">cliente ${esc(p.cliente || '—')}</span></div>
+    <div class="fator-box">
+      ${kpi('Comissão', p.comissao_valor ? R(p.comissao_valor) : '—', p.comissao_paga ? `<span class="verde">recebida${p.comissao_paga_em ? ' em ' + dm(p.comissao_paga_em) : ''}</span>` : p.comissao_valor ? '<span class="verm">a receber</span>' : 'informe o valor')}
+      ${kpi('Pagamento da carga', pagCarga(p).k === 'pago' ? 'pago' : pagCarga(p).txt, p.carga_paga ? (p.carga_paga_em ? 'em ' + dm(p.carga_paga_em) : 'marcado como pago') : (cambiosDe(p).length ? 'pelas parcelas de câmbio' : ''))}
+    </div>
+    ${ed ? `<div class="filtros" style="margin:10px 0 0">
+      <button class="btn btn-mini" id="btnComValor">${p.comissao_valor ? 'Alterar valor da comissão' : 'Informar comissão'}</button>
+      ${podeFechar() ? (p.comissao_paga ? '<button class="btn btn-mini" id="btnComDesf">Desfazer comissão recebida</button>' : '<button class="btn-pri btn-mini" id="btnComPaga">Registrar comissão recebida</button>')
+        + (p.carga_paga ? '<button class="btn btn-mini" id="btnCargaDesf">Desfazer carga paga</button>' : '<button class="btn btn-mini" id="btnCargaPaga">Marcar carga paga</button>') : '<span class="nota">o recebimento da comissão e o pagamento da carga são marcados pelo gestor</span>'}
+    </div>` : ''}
+  </div>` : ''}
 
   <div class="card">
     <div class="topo"><h2>Fator de importação</h2><span class="nota">(câmbios R$ + nacionalização R$) ÷ FOB US$</span></div>
     <div class="fator-box">
       ${kpi('FOB', U(r.fob))}
       ${kpi('Câmbios', R0(r.pagoBRL + r.abertoBRL), !r.cs.length ? 'sem parcelas' : r.abertoUSD ? `${R0(r.pagoBRL)} pago + ${R0(r.abertoBRL)} em aberto (taxa ref.)` : 'tudo pago')}
-      ${kpi('Nacionalização', R0(r.nac), p.nac_conciliada ? '<span class="verde">conciliada</span>' : (temNac(p) ? '<span class="verm">a conciliar</span>' : 'aguardando DI'))}
+      ${kpi('Nacionalização', R0(r.nac), p.nac_conciliada ? '<span class="verde">conciliada</span>' : (temNac(p) ? '<span class="verm">a conciliar</span>' : 'aguardando DUIMP'))}
       ${kpi('Total', R0(r.total))}
       ${kpi('Fator ' + (r.tipoFator && r.tipoFator !== 'estimado' ? r.tipoFator : 'realizado'), r.tipoFator && r.tipoFator !== 'estimado' ? FT(r.fator) : '—', r.variacao ? `variação cambial ${R0(r.variacao)}` : '')}
       ${kpi('Fator estimado', p.fator_estimado != null ? FT(Number(p.fator_estimado)) : '—', p.fator_estimado != null && r.tipoFator && r.tipoFator !== 'estimado' ? `diferença ${(r.fator - p.fator_estimado >= 0 ? '+' : '') + FT(r.fator - p.fator_estimado)}` : 'calculadora aduaneira')}
@@ -833,7 +882,7 @@ function renderFicha(el, p) {
       <div class="acoes">${ed ? `${abertosSemFluxo ? '<button class="btn btn-mini" id="btnTudoFluxo">Levar em aberto ao fluxo</button>' : ''}<button class="btn btn-mini" id="btnParc">+ Câmbio</button><button class="btn btn-mini" id="btnNum">+ Numerário / outro</button>` : ''}</div></div>
     <div class="tabela-wrap"><table>
       <thead><tr><th>#</th><th>Tipo</th><th>Prevista</th><th class="n">Valor</th><th>Pagamento</th><th class="n">Taxa</th><th class="n">Tarifa US$</th><th class="n">R$ pago</th>
-        <th class="n">Variação x DI</th><th>Corretora</th><th>Contrato</th><th>Situação</th><th>Fluxo</th>${ed ? '<th></th>' : ''}</tr></thead>
+        <th class="n">Variação x DUIMP</th><th>Corretora</th><th>Contrato</th><th>Situação</th><th>Fluxo</th>${ed ? '<th></th>' : ''}</tr></thead>
       <tbody>${pags.length ? pags.map((c, i) => {
         const cam = ehCambio(c);
         const vari = cam && c.pago && nz(p.cambio_di) ? nz(c.valor_brl) - nz(c.valor_usd) * nz(p.cambio_di) : null;
@@ -857,11 +906,11 @@ function renderFicha(el, p) {
     <div class="topo"><h2>Nacionalização · estimado × realizado</h2>
       ${p.nac_conciliada ? '<span class="tag ok">conciliada</span>' : (temNac(p) ? '<span class="tag aviso">a conciliar</span>' : '')}
       ${estm ? `<span class="nota">estimativa de ${dm(estm.data)} · cenário ${CENARIOS[cenarioV2(estm.cenario, p)]}</span>` : ''}
-      <div class="acoes">${ed ? `<button class="btn btn-mini" id="btnCalc">${estm ? 'Abrir estimativa na calculadora' : 'Fazer estimativa'}</button>${estm && !temNumerario ? '<button class="btn btn-mini" id="btnGerarNum">Gerar numerário previsto</button>' : ''}<button class="btn btn-mini" id="btnNac">Lançar / validar DI</button>` : ''}</div></div>
+      <div class="acoes">${ed ? `<button class="btn btn-mini" id="btnCalc">${estm ? 'Abrir estimativa na calculadora' : 'Fazer estimativa'}</button>${estm && !temNumerario ? '<button class="btn btn-mini" id="btnGerarNum">Gerar numerário previsto</button>' : ''}<button class="btn btn-mini" id="btnNac">Lançar / validar DUIMP</button>` : ''}</div></div>
     <div class="campos" style="margin-bottom:10px">
-      ${campo('DI / AWB', p.di || '—')}${campo('Data DI', dm(p.data_di))}${campo('Protocolo', p.protocolo_di || '—')}
-      ${campo('Câmbio DI', TX(p.cambio_di))}${campo('Frete internacional US$', p.frete_usd != null ? F2.format(p.frete_usd) : '—')}
-      ${estm ? campo('Dólar DI estimado', TX(estm.premissas.dolar_di)) + campo('Dólar câmbio estimado', TX(estm.premissas.dolar_cambio)) : ''}
+      ${campo('DUIMP / AWB', p.di || '—')}${campo('Data DUIMP', dm(p.data_di))}${campo('Protocolo', p.protocolo_di || '—')}
+      ${campo('Câmbio DUIMP', TX(p.cambio_di))}${campo('Frete internacional US$', p.frete_usd != null ? F2.format(p.frete_usd) : '—')}
+      ${estm ? campo('Dólar DUIMP estimado', TX(estm.premissas.dolar_di)) + campo('Dólar câmbio estimado', TX(estm.premissas.dolar_cambio)) : ''}
     </div>
     <div class="tabela-wrap"><table>
       <thead><tr><th></th><th class="n">Estimado</th><th class="n">Realizado</th><th class="n">Diferença</th><th class="n">%</th></tr></thead>
@@ -883,6 +932,14 @@ function renderFicha(el, p) {
   };
   $('#btnEditar').onclick = () => formDados(p);
   $('#btnCp').onclick = () => formCheckpoints(p);
+  if ($('#btnComValor')) $('#btnComValor').onclick = () => form('Comissão do processo', [['', [['comissao_valor', 'Valor da comissão (R$)', 'num']]]], p,
+    v => gravar('imp_processos', { comissao_valor: v.comissao_valor }, p.id, p));
+  if ($('#btnComPaga')) $('#btnComPaga').onclick = () => form('Comissão recebida', [['', [['comissao_valor', 'Valor recebido (R$)', 'num'], ['comissao_paga_em', 'Data do recebimento', 'date']]]],
+    { ...p, comissao_paga_em: hojeISO() }, v => { if (!v.comissao_paga_em) throw new Error('Informe a data.'); return gravar('imp_processos', { comissao_valor: v.comissao_valor ?? p.comissao_valor, comissao_paga: true, comissao_paga_em: v.comissao_paga_em }, p.id, p); });
+  if ($('#btnComDesf')) $('#btnComDesf').onclick = async () => { if (await confirmar('Desfazer', 'Voltar a comissão para "a receber"?', 'Desfazer')) await gravar('imp_processos', { comissao_paga: false, comissao_paga_em: null }, p.id, p); };
+  if ($('#btnCargaPaga')) $('#btnCargaPaga').onclick = () => form('Pagamento da carga', [['', [['carga_paga_em', 'Data do pagamento', 'date']]]],
+    { carga_paga_em: hojeISO() }, v => gravar('imp_processos', { carga_paga: true, carga_paga_em: v.carga_paga_em }, p.id, p));
+  if ($('#btnCargaDesf')) $('#btnCargaDesf').onclick = async () => { if (await confirmar('Desfazer', 'Voltar o pagamento da carga para pendente?', 'Desfazer')) await gravar('imp_processos', { carga_paga: false, carga_paga_em: null }, p.id, p); };
   $('#btnParc').onclick = () => formParcela(p, null, 'Câmbio');
   $('#btnNum').onclick = () => formParcela(p, null, 'Numerário');
   $('#btnNac').onclick = () => formNacionalizacao(p);
@@ -925,7 +982,7 @@ function campo(r, v) { return `<div class="c"><div class="r">${r}</div><div clas
 // ======================= Calculadora aduaneira =======================
 // motor da calculadora aduaneira — método da planilha MATRIZ NEW - VALIDAÇÃO DI (cenário próprio)
 // e da MATRIZ - CÁLCULO ADUANEIRO (cenário DHL / courier)
-// adições da DI: uma por fornecedor + família/NCM (2 fornecedores com a mesma alíquota = 2 adições) — regra da planilha de validação da DI
+// adições da DUIMP: uma por fornecedor + família/NCM (2 fornecedores com a mesma alíquota = 2 adições) — regra da planilha de validação da DUIMP
 function contarAdicoes(itens) { return new Set(itens.map(x => String(x.forn ?? x.proc ?? '') + '|' + (x.familia || '?'))).size; }
 function taxaSiscomex(n) {
   n = Math.max(0, Math.round(n || 0));
@@ -938,18 +995,18 @@ function calcularAduaneiro(itens, pr, aliq) {
   const linhas = itens.map(it => ({ ...it, fobT: n(it.qtd) * n(it.fob), pesoT: n(it.qtd) * n(it.peso), a: aliq[it.familia] || null }));   // peso = peso líquido UNITÁRIO (kg)
   const sumF = linhas.reduce((s, x) => s + x.fobT, 0);
   const sumP = linhas.reduce((s, x) => s + x.pesoT, 0);
-  const porPeso = sumP > 0 && linhas.every(x => x.pesoT > 0);          // frete rateado por peso líquido (como na DI)
+  const porPeso = sumP > 0 && linhas.every(x => x.pesoT > 0);          // frete rateado por peso líquido (como na DUIMP)
   const parteFrete = x => porPeso ? x.pesoT / sumP : (sumF ? x.fobT / sumF : 0);
   const di = n(pr.dolar_di), dc = n(pr.dolar_cambio) || di, fu = n(pr.frete_usd), acr = n(pr.outros_acresc);
   const vmld = sumF + fu;
-  // adição = fornecedor (processo) + NCM/família, como na planilha de validação da DI
+  // adição = fornecedor (processo) + NCM/família, como na planilha de validação da DUIMP
   const adicoes = n(pr.adicoes) || contarAdicoes(linhas.filter(x => x.fobT));
   const sisc = taxaSiscomex(adicoes);
   const freteBRL = fu * di + n(pr.frete_desp);
   const base0 = () => ({ fob_usd: sumF, cambio_brl: sumF * dc, frete_brl: 0, ii: 0, ipi: 0, pis: 0, cofins: 0, icms: 0, siscomex: 0, afrmm: 0, sdas: 0,
     sdas_afrmm_siscomex: 0, armazenagem: 0, despachante_valor: 0, outras_despesas: 0, frete_nacional: 0 });
   const fe = base0(), dh = base0();
-  // ---- próprio (método DI)
+  // ---- próprio (método DUIMP)
   const it = linhas.map(x => {
     const a = x.a || {};
     const freteU = fu * parteFrete(x), acrU = sumF ? acr * x.fobT / sumF : 0;
@@ -986,7 +1043,7 @@ function calcularAduaneiro(itens, pr, aliq) {
   fe.adicoes = adicoes; fe.rateio_frete = porPeso ? 'peso' : 'fob';
   // ---- DHL / courier (planilha de cálculo aduaneiro)
   dh.frete_brl = fu * di; dh.outras_despesas = n(pr.dhl_despesas);   // frete DHL sem acréscimo: o valor é informado manualmente em cada estimativa
-  // DHL (remessa expressa): valor aduaneiro = (FOB + frete rateado) × dólar DI; II = 60% do valor aduaneiro;
+  // DHL (remessa expressa): valor aduaneiro = (FOB + frete rateado) × dólar DUIMP; II = 60% do valor aduaneiro;
   // ICMS "por dentro" sobre valor aduaneiro + II: (VA + II) ÷ (1 − ICMS) × ICMS  — confere com a cobrança DHL 6516931
   //   (a DHL trunca os centavos em cada valor: frete 1.181,3967 → 1.181,39)
   const tr2 = v => Math.floor(v * 100 + 1e-7) / 100;
@@ -1012,7 +1069,7 @@ function calcularAduaneiro(itens, pr, aliq) {
     r.dif_cambial = fob * (dc - di);
     return r;
   };
-  // rateio por processo (embarque conjunto: vários fornecedores numa DI) — soma das partes de cada item, como a planilha de validação da DI
+  // rateio por processo (embarque conjunto: vários fornecedores numa DUIMP) — soma das partes de cada item, como a planilha de validação da DUIMP
   const porProc = {};
   for (const x of linhas) {
     const k = x.proc || 0;
@@ -1025,7 +1082,7 @@ function calcularAduaneiro(itens, pr, aliq) {
 }
 
 // premissas: gerais + uma coluna por cenário (aéreo e marítimo repetem as despesas; DHL só frete e despesas DHL)
-const PREM_GERAL = [['dolar_di', 'Dólar DI estimado'], ['dolar_cambio', 'Dólar câmbio estimado'], ['outros_acresc', 'Outros acréscimos (US$)'], ['adicoes', 'Nº de adições (automático)']];
+const PREM_GERAL = [['dolar_di', 'Dólar DUIMP estimado'], ['dolar_cambio', 'Dólar câmbio estimado'], ['outros_acresc', 'Outros acréscimos (US$)'], ['adicoes', 'Nº de adições (automático)']];
 const PREM_LIN = [ // [chave, nome, cenários: a = aéreo, m = marítimo, d = DHL]
   ['frete_usd', 'Frete internacional (US$)', 'amd'], ['frete_desp', 'Despesas do frete internacional (R$)', 'am'], ['afrmm', 'AFRMM (R$) · aprox. 8% do frete', 'm'],
   ['sdas', 'SDAS (R$)', 'am'], ['armazenagem', 'Armazenagem (R$)', 'am'], ['despachante', 'Despachante (R$)', 'am'], ['frete_nacional', 'Frete nacional (R$)', 'am'],
@@ -1046,7 +1103,7 @@ function premissasV2(pr, p) {
   return o;
 }
 const cenarioV2 = (cen, p) => !cen || cen === 'feromax' ? cenarioDoModal(p) : cen;
-// calcula os 3 cenários com o mesmo motor (método da DI)
+// calcula os 3 cenários com o mesmo motor (método da DUIMP)
 function calcular3(itens, P, aliq) {
   const g = { dolar_di: P.dolar_di, dolar_cambio: P.dolar_cambio, outros_acresc: P.outros_acresc, adicoes: P.adicoes };
   const modal = x => ({ ...g, frete_usd: P[x + '_frete_usd'], frete_desp: P[x + '_frete_desp'], afrmm: P[x + '_afrmm'], sdas: P[x + '_sdas'], armazenagem: P[x + '_armazenagem'],
@@ -1059,7 +1116,7 @@ function calcular3(itens, P, aliq) {
   return { itens: itensR, aereo: rA.feromax, maritimo: rM.feromax, dhl: rD.dhl, porProc, semAliq: rA.semAliq, adicoes: rA.feromax.adicoes, rateio_frete: rA.feromax.rateio_frete };
 }
 
-// processos do mesmo embarque (uma DI para vários fornecedores/pedidos)
+// processos do mesmo embarque (uma DUIMP para vários fornecedores/pedidos)
 const doEmbarque = p => p && p.embarque ? est.processos.filter(x => x.embarque === p.embarque).sort((a, b) => a.id - b.id) : (p ? [p] : []);
 const nomeProc = p => p ? `${p.pedido || 's/ pedido'} · ${p.fornecedor}` : '—';
 function novaCalc(p) {
@@ -1098,6 +1155,7 @@ function abrirCalculadora(p) { est.calc = novaCalc(p); est.abertoId = null; abri
 const numCalc = v => Number(paraNum(v)) || 0;
 function resultadoCalc() {
   const c = est.calc;
+  usarBase(baseCalc(c));
   const procs = c.processos || [];
   const g = grupoCalc(c);
   const fornDe = id => { const y = g.find(z => z.id === id); return y ? y.fornecedor : id; };
@@ -1107,32 +1165,36 @@ function resultadoCalc() {
   return { itens, pr, r: calcular3(itens, pr, est.aliquotas) };
 }
 
+const baseCalc = c => { const pr = est.processos.find(x => x.id === c.processo_id); return pr ? baseDe(pr.empresa) : (c.base || baseDe(empresasFiltro()[0])); };
 function renderCalculadora(el) {
   if (!est.calc) est.calc = novaCalc(null);
   const c = est.calc, ed = podeEditar();
+  usarBase(baseCalc(c));
   const familias = Object.keys(est.aliquotas).sort();
   const proc = est.processos.find(x => x.id === c.processo_id);
   if (!c.processos) c.processos = proc ? [proc.id] : [];
   if (!c.novos) c.novos = [];
   const grupo = grupoCalc(c);
   const multi = grupo.length > 1;
-  const opcoes = est.processos.filter(x => x.status === 'aberto' || x.id === c.processo_id)
+  const opcoes = est.processos.filter(x => (x.status === 'aberto' || x.id === c.processo_id) && empresasFiltro().includes(x.empresa))
     .sort((a, b) => String(b.pedido || '').localeCompare(String(a.pedido || ''), 'pt-BR', { numeric: true }));
-  // para juntar: processos em aberto da mesma empresa (uma DI = um importador); mesmo país primeiro
+  // para juntar: processos em aberto da mesma empresa (uma DUIMP = um importador); mesmo país primeiro
   const paisP = proc ? paisDe(proc) : '';
   const juntaveis = proc ? est.processos.filter(x => x.status === 'aberto' && x.empresa === proc.empresa && !c.processos.includes(x.id))
     .sort((a, b) => (paisDe(b) === paisP) - (paisDe(a) === paisP) || String(b.pedido || '').localeCompare(String(a.pedido || ''), 'pt-BR', { numeric: true })) : [];
   el.innerHTML = `
+  ${filtroEmpresa()}
   <div class="filtros">
     <span class="nota">Processo:</span>
+    ${!proc && basesVisiveis().length > 1 ? `<select class="sel" id="cBase" title="Cadastros (alíquotas, produtos, fornecedores) usados na simulação">${basesVisiveis().map(b => `<option value="${b}" ${b === est.base ? 'selected' : ''}>${esc(NOME_BASE(b))}</option>`).join('')}</select>` : ''}
     <select class="sel" id="cProc"><option value="">— simulação avulsa —</option>${opcoes.map(x => `<option value="${x.id}" ${x.id === c.processo_id ? 'selected' : ''}>${esc(x.pedido || 's/ pedido')} · ${esc(x.fornecedor)} · ${EMPRESAS[x.empresa] || ''}</option>`).join('')}</select>
     ${proc ? `<button class="btn" id="cVerProc">Abrir processo</button>` : ''}
-    ${proc && juntaveis.length ? `<select class="sel" id="cJuntar"><option value="">+ Juntar processo existente (mesma DI)…</option>${juntaveis.map(x => `<option value="${x.id}">${esc(nomeProc(x))}${paisDe(x) ? ' · ' + esc(paisDe(x)) : ''}</option>`).join('')}</select>` : ''}
+    ${proc && juntaveis.length ? `<select class="sel" id="cJuntar"><option value="">+ Juntar processo existente (mesma DUIMP)…</option>${juntaveis.map(x => `<option value="${x.id}">${esc(nomeProc(x))}${paisDe(x) ? ' · ' + esc(paisDe(x)) : ''}</option>`).join('')}</select>` : ''}
     <button class="btn" id="cNovoForn" title="Inclui um fornecedor que ainda não tem processo; ao salvar a estimativa o processo é criado já junto neste embarque">+ Fornecedor</button>
     <button class="btn" id="cLimpar" style="margin-left:auto">Limpar</button>
   </div>
-  ${multi ? `<div class="card embarque"><div class="topo"><h2>Embarque conjunto · ${grupo.length} fornecedores numa DI</h2>
-      <span class="nota">os custos da DI são rateados por processo/fornecedor como na planilha de validação da DI: impostos item a item, frete internacional e nacional por peso líquido (ou FOB), Siscomex e AFRMM pelo VMLD, armazenagem/SDAS/despachante/outras pela base do ICMS</span></div>
+  ${multi ? `<div class="card embarque"><div class="topo"><h2>Embarque conjunto · ${grupo.length} fornecedores numa DUIMP</h2>
+      <span class="nota">os custos da DUIMP são rateados por processo/fornecedor como na planilha de validação da DUIMP: impostos item a item, frete internacional e nacional por peso líquido (ou FOB), Siscomex e AFRMM pelo VMLD, armazenagem/SDAS/despachante/outras pela base do ICMS</span></div>
     <div class="filtros" style="margin:0">${grupo.map(x => `<span class="chip" aria-pressed="true">${esc(x.nome)}${x.pais ? ` <span class="nota">${esc(x.pais)}</span>` : ''}${x.id !== c.processo_id ? ` <button class="btn btn-mini" data-tirar="${esc(String(x.id))}" title="Tirar do embarque">×</button>` : ''}</span>`).join('')}</div>
     ${c.novos.length ? '<div class="nota" style="margin-top:6px">"novo" = fornecedor ainda sem processo: o processo é criado ao salvar a estimativa, já junto neste embarque.</div>' : ''}</div>` : ''}
   ${!familias.length ? '<div class="card"><div class="vazio">Nenhuma alíquota cadastrada. Rode o SQL do módulo (imp_aliquotas) ou cadastre abaixo.</div></div>' : ''}
@@ -1147,7 +1209,7 @@ function renderCalculadora(el) {
     <div class="nota" style="margin-top:6px">Aéreo e marítimo têm as mesmas despesas para comparar; o DHL (courier) só tem frete e despesas DHL. Marque embaixo o cenário que vai para a estimativa.</div>
   </div>
   <div class="card">
-    <div class="topo"><h2>Itens da invoice</h2><span class="nota">cada fornecedor + família = uma adição (NCM) · peso líquido UNITÁRIO: com o peso de todos os itens, o frete é rateado por peso, como na DI · o código busca família e peso no cadastro de produtos</span>
+    <div class="topo"><h2>Itens da invoice</h2><span class="nota">cada fornecedor + família = uma adição (NCM) · peso líquido UNITÁRIO: com o peso de todos os itens, o frete é rateado por peso, como na DUIMP · o código busca família e peso no cadastro de produtos</span>
       <div class="acoes">${ed ? '<button class="btn btn-mini" id="cGravarPesos">Gravar pesos no cadastro</button>' : ''}<button class="btn btn-mini" id="cColar">Colar da planilha</button><button class="btn btn-mini" id="cItem">+ Item</button></div></div>
     <div class="tabela-wrap"><table>
       <thead><tr>${multi ? '<th style="min-width:150px">Processo</th>' : ''}<th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th><th class="n" style="width:100px">Peso líq. unit. kg</th><th class="n">Peso total kg</th>
@@ -1171,13 +1233,13 @@ function renderCalculadora(el) {
       ${Object.entries(CENARIOS).map(([k, n]) => `<button class="chip" data-cen="${k}" aria-pressed="${c.cenario === k}">${n}</button>`).join('')}
       <div class="sep"></div>
       ${ed ? `<button class="btn-pri" id="cSalvar" ${proc || c.novos.length ? '' : 'disabled title="Escolha o processo no topo ou inclua o fornecedor"'}>Salvar como estimativa ${multi ? `dos ${grupo.length} fornecedores (rateada)` : proc ? 'do pedido ' + esc(proc.pedido || '') : c.novos.length ? '(cria o processo)' : 'do processo'}</button>` : ''}
-      ${ed && proc ? `<button class="btn" id="cRealizado" title="Use com os valores reais da DI (dólar DI, frete, despesas): grava o rateio na nacionalização realizada de cada processo">Lançar como DI realizada${multi ? ' (rateio)' : ''}</button>` : ''}
+      ${ed && proc ? `<button class="btn" id="cRealizado" title="Use com os valores reais da DUIMP (dólar DUIMP, frete, despesas): grava o rateio na nacionalização realizada de cada processo">Lançar como DUIMP realizada${multi ? ' (rateio)' : ''}</button>` : ''}
       <span class="nota">${c.novos.length ? 'fornecedor novo: o processo é criado ao salvar · ' : ''}${proc || c.novos.length ? (multi ? 'cada processo recebe a sua parte (estimativa, fator e numerário previsto)' : proc && proc.estimativa ? `substitui a estimativa de ${dm(proc.estimativa.data)}` : 'o processo ainda não tem estimativa') : 'escolha o processo no topo ou use "+ Fornecedor"'}</span>
     </div>
   </div>
   <div class="card">
     <details class="aliq" id="cAliq" ${est.calcAliqAberto ? 'open' : ''}><summary>Alíquotas por família de produto</summary>
-      <div class="nota" style="margin:6px 0 10px">Usadas no cálculo de cada item. Valores em %.</div>
+      <div class="nota" style="margin:6px 0 10px">Cadastro de ${esc(NOME_BASE(est.base))} · usadas no cálculo de cada item. Valores em %.</div>
       <div class="tabela-wrap"><table>
         <thead><tr><th>Família</th>${ALQ.map(([, n]) => `<th class="n">${n}</th>`).join('')}</tr></thead>
         <tbody>${familias.map(f => `<tr><td>${esc(f)}</td>${ALQ.map(([k]) => `<td class="n">${ed ? `<input class="ci n" style="width:76px" data-aq="${esc(f)}" data-ak="${k}" value="${est.aliquotas[f][k] != null ? nf(2).format(est.aliquotas[f][k] * 100) : ''}">` : (est.aliquotas[f][k] != null ? nf(2).format(est.aliquotas[f][k] * 100) : '—')}</td>`).join('')}</tr>`).join('')}
@@ -1188,6 +1250,7 @@ function renderCalculadora(el) {
   </div>`;
 
   // eventos
+  ligarChipsEmpresas(el);
   $('#cProc').onchange = e => { const p = est.processos.find(x => x.id === Number(e.target.value)); est.calc = p ? novaCalc(p) : { ...c, processo_id: null, processos: [], novos: [], itens: c.itens.map(i => ({ ...i, proc: null })) }; redesenhar(); };
   if ($('#cVerProc')) $('#cVerProc').onclick = () => abrirProcesso(c.processo_id);
   if ($('#cJuntar')) $('#cJuntar').onchange = e => {
@@ -1202,6 +1265,7 @@ function renderCalculadora(el) {
     redesenhar();
   };
   if ($('#cNovoForn')) $('#cNovoForn').onclick = () => formNovoFornCalc(c);
+  if ($('#cBase')) $('#cBase').onchange = e => { c.base = e.target.value; c.novos = []; redesenhar(); };
   el.querySelectorAll('[data-tirar]').forEach(b => b.onclick = () => {
     const id = chaveProc(c, b.dataset.tirar);
     c.processos = c.processos.filter(x => x !== id); c.novos = c.novos.filter(x => x.key !== id);
@@ -1274,7 +1338,7 @@ function atualizarCalc() {
       <tbody>
         ${L('Valor total da invoice (FOB)', 'fob_usd', { u: true })}
         ${L('Câmbio (FOB × dólar câmbio)', 'cambio_brl')}
-        ${L('Diferença cambial (câmbio − DI)', 'dif_cambial')}
+        ${L('Diferença cambial (câmbio − DUIMP)', 'dif_cambial')}
         ${L('II', 'ii')}${L('PIS', 'pis')}${L('COFINS', 'cofins')}${L('IPI', 'ipi')}${L('ICMS', 'icms')}
         ${L('Impostos total', 'impostos', { forte: true })}
         ${L(`Taxa Siscomex (${r.adicoes} adição(ões))`, 'siscomex')}
@@ -1294,7 +1358,7 @@ function atualizarCalc() {
       </tbody></table></div>${tabelaRateio(r, c)}`;
 }
 
-// rateio da DI conjunta por processo (cenário marcado)
+// rateio da DUIMP conjunta por processo (cenário marcado)
 function tabelaRateio(r, c) {
   const gc = grupoCalc(c);
   if (gc.length < 2) return '';
@@ -1311,7 +1375,7 @@ function tabelaRateio(r, c) {
   return `<div class="topo" style="margin-top:16px"><h2>Rateio por processo · ${CENARIOS[c.cenario]}</h2><span class="nota">${g.some(y => !y.peso) ? 'frete rateado por FOB (falta peso em algum item)' : 'frete rateado por peso líquido'}</span></div>
     ${semItens.length ? `<div class="nota verm" style="margin-bottom:8px">Sem itens na calculadora: ${semItens.map(esc).join(', ')}</div>` : ''}
     <div class="tabela-wrap"><table>
-      <thead><tr><th></th>${g.map(y => `<th class="n">${esc(y.nome)}</th>`).join('')}<th class="n">Total da DI</th></tr></thead>
+      <thead><tr><th></th>${g.map(y => `<th class="n">${esc(y.nome)}</th>`).join('')}<th class="n">Total da DUIMP</th></tr></thead>
       <tbody>${g.some(y => y.peso) ? `<tr><td>Peso líquido (kg)</td>${g.map(y => `<td class="n">${nf(3).format(y.peso)}</td>`).join('')}<td class="n">${nf(3).format(g.reduce((s, y) => s + y.peso, 0))}</td></tr>` : ''}
         ${L.map(([n, f]) => `<tr><td>${n}</td>${g.map(y => `<td class="n">${f(y.x)}</td>`).join('')}<td class="n">${f({ ...tot, frete_usd: g.reduce((s, y) => s + (y.x.frete_usd || 0), 0) })}</td></tr>`).join('')}
         <tr><td>Despesas rateadas (sem impostos e fretes)</td>${g.map(y => `<td class="n">${F2.format(desp(y.x))}</td>`).join('')}<td class="n">${F2.format(desp(tot))}</td></tr>
@@ -1353,7 +1417,7 @@ async function criarNovosDaCalc(c) {
   if (!usados.length) return alertaErro('Inclua itens para o fornecedor novo (coluna Fornecedor dos itens).'), false;
   const resp = await new Promise(res => {
     const { m } = form('Criar processo(s) do(s) fornecedor(es) novo(s)', [
-      ['', [...(base ? [] : [['empresa', 'Empresa', 'select', empresasVisiveis().map(e => [e, EMPRESAS[e]])], ['cliente', 'Cliente (se for importação para cliente)', 'text'],
+      ['', [...(base ? [] : [['empresa', 'Empresa', 'select', empresasVisiveis().filter(e => baseDe(e) === est.base).map(e => [e, EMPRESAS[e]])], ['cliente', 'Cliente (se for importação para cliente)', 'text'],
         ['modal', 'Modal', 'select', [['Marítimo', 'Marítimo'], ['Aéreo', 'Aéreo'], ['Courier', 'Courier (DHL, FedEx…)']]]]),
         ...usados.map(n => ['ped_' + n.key, `Pedido · ${n.fornecedor} (opcional)`, 'text'])]],
     ], {}, async v => res(v));
@@ -1361,6 +1425,7 @@ async function criarNovosDaCalc(c) {
   });
   if (!resp) return false;
   const empresa = base ? base.empresa : Number(resp.empresa);
+  if (!base && baseDe(empresa) !== est.base) return alertaErro(`A simulação usa os cadastros de ${NOME_BASE(est.base)}; escolha uma empresa desses cadastros.`), false;
   const todosNomes = [...grupoCalc(c).filter(g => !g.novo || usados.includes(c.novos.find(n => n.key === g.id))).map(g => g.p ? (g.p.pedido || g.p.fornecedor) : (resp['ped_' + g.id] || g.fornecedor))];
   const codigo = (base && base.embarque) || (todosNomes.length > 1 ? 'EMB-' + todosNomes.join('-').replace(/\s+/g, '').slice(0, 40) + '-' + hojeISO().slice(2).replace(/-/g, '') : null);
   for (const n of usados) {
@@ -1399,7 +1464,7 @@ async function salvarEstimativa() {
   if (!p) return;
   const { itens, pr, r } = resultadoCalc();
   if (!itens.length) return alertaErro('Informe pelo menos um item com quantidade e FOB.');
-  if (!pr.dolar_di) return alertaErro('Informe o dólar DI estimado.');
+  if (!pr.dolar_di) return alertaErro('Informe o dólar DUIMP estimado.');
   const res = r[c.cenario];
   const grupo = (c.processos && c.processos.length ? c.processos : [p.id]).map(id => est.processos.find(x => x.id === id)).filter(Boolean);
   const multi = grupo.length > 1;
@@ -1409,7 +1474,7 @@ async function salvarEstimativa() {
   const codigo = multi ? (grupo.find(g => g.embarque) || {}).embarque || 'EMB-' + grupo.map(g => g.pedido || g.id).join('-') : null;
   const partes = grupo.map(g => ({ g, res: multi ? r.porProc[g.id][c.cenario] : res, dataNum: g.cp_numerario_prev || g.cp_chegada_prev || g.previsao_chegada }));
   const msg = multi
-    ? `Embarque conjunto <b>${esc(codigo)}</b> · total da DI ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>Cada processo recebe a sua parte:<br>
+    ? `Embarque conjunto <b>${esc(codigo)}</b> · total da DUIMP ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>Cada processo recebe a sua parte:<br>
       ${partes.map(x => `• ${esc(nomeProc(x.g))}: fator <b>${FT(x.res.fator)}</b> · numerário ${R0(x.res.numerario)}${!temFluxo(x.g.empresa) ? ' · sem fluxo de caixa (empresa só de importação)' : x.dataNum ? ` · fluxo em ${dm(x.dataNum)}` : ' · <b>sem data</b> para o fluxo'}`).join('<br>')}<br><br>
       Os pesos digitados vão para o cadastro de produtos como validados. Salvar?`
     : `Fator estimado <b>${FT(res.fator)}</b> · total ${R0(res.total)} · numerário ${R0(res.numerario)} (${CENARIOS[c.cenario]}).<br><br>
@@ -1430,7 +1495,7 @@ async function salvarEstimativa() {
   est.abertoId = p.id; abrir('processos'); await depoisDeGravar();
 }
 
-// lança o cálculo (com os valores reais da DI) como nacionalização realizada — no embarque conjunto, a parte de cada processo
+// lança o cálculo (com os valores reais da DUIMP) como nacionalização realizada — no embarque conjunto, a parte de cada processo
 async function lancarRealizado() {
   const c = est.calc;
   if (c.novos && c.novos.length) return alertaErro('Salve primeiro a estimativa para criar os processos dos fornecedores novos.');
@@ -1438,17 +1503,17 @@ async function lancarRealizado() {
   if (!p) return;
   const { itens, pr, r } = resultadoCalc();
   if (!itens.length) return alertaErro('Informe pelo menos um item com quantidade e FOB.');
-  if (!pr.dolar_di) return alertaErro('Informe o dólar da DI.');
+  if (!pr.dolar_di) return alertaErro('Informe o dólar da DUIMP.');
   const grupo = (c.processos && c.processos.length ? c.processos : [p.id]).map(id => est.processos.find(x => x.id === id)).filter(Boolean);
   const multi = grupo.length > 1;
   if (multi) { const sem = grupo.filter(g => !r.porProc[g.id]); if (sem.length) return alertaErro(`Sem itens na calculadora para: ${sem.map(nomeProc).join(', ')}.`); }
   const partes = grupo.map(g => ({ g, x: multi ? r.porProc[g.id][c.cenario] : r[c.cenario] }));
   const jaTem = partes.filter(y => temNac(y.g));
-  const msg = `Grava na <b>nacionalização realizada</b> (II, IPI, PIS, COFINS, ICMS, despesas e fretes${multi ? ', rateados por processo' : ''}), com câmbio DI ${TX(pr.dolar_di)} — ${CENARIOS[c.cenario]}:<br><br>
+  const msg = `Grava na <b>nacionalização realizada</b> (II, IPI, PIS, COFINS, ICMS, despesas e fretes${multi ? ', rateados por processo' : ''}), com câmbio DUIMP ${TX(pr.dolar_di)} — ${CENARIOS[c.cenario]}:<br><br>
     ${partes.map(y => `• ${esc(nomeProc(y.g))}: nacionalização ${R0(y.x.numerario)}`).join('<br>')}<br><br>
     ${jaTem.length ? `<span class="verm">Substitui os valores já lançados em: ${jaTem.map(y => esc(nomeProc(y.g))).join(', ')}.</span><br><br>` : ''}
-    Use só com os valores reais da DI. Depois confira em "Lançar / validar DI" e marque como conciliado. Continuar?`;
-  if (!await confirmar('Lançar como DI realizada', msg, 'Lançar')) return;
+    Use só com os valores reais da DUIMP. Depois confira em "Lançar / validar DUIMP" e marque como conciliado. Continuar?`;
+  if (!await confirmar('Lançar como DUIMP realizada', msg, 'Lançar')) return;
   const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
   for (const { g, x } of partes) {
     const reg = { cambio_di: pr.dolar_di, frete_usd: r2(x.frete_usd), nac_conciliada: false };
@@ -1513,10 +1578,14 @@ async function gravarPesosDosItens(itens, origem, silencioso) {
 const CAMPOS_PROD = [['codigo', 'Código', 'text'], ['descricao', 'Descrição', 'text'], ['familia', 'Família (alíquota)', 'lista'], ['fornecedor', 'Fornecedor', 'lista'],
   ['peso_liq_kg', 'Peso líquido unitário (kg)', 'num'], ['peso_bruto_kg', 'Peso bruto unitário (kg)', 'num'],
   ['comprimento_cm', 'Comprimento (cm)', 'num'], ['largura_cm', 'Largura (cm)', 'num'], ['altura_cm', 'Altura (cm)', 'num'],
-  ['unidades_caixa', 'Unidades por caixa', 'num'], ['fonte', 'Fonte (packing list, DI, site…)', 'text'], ['link', 'Link da fonte', 'text'],
+  ['unidades_caixa', 'Unidades por caixa', 'num'], ['fonte', 'Fonte (packing list, DUIMP, site…)', 'text'], ['link', 'Link da fonte', 'text'],
   ['validado', 'Peso e medidas validados', 'chk'], ['observacao', 'Observação', 'area']];
 
 function renderProdutos(el) {
+  const bs = basesVisiveis();
+  const bsel = [...new Set(empresasFiltro().map(baseDe))];
+  usarBase(bsel.includes(est.baseProd) ? est.baseProd : (bsel[0] || bs[0]));
+  est.baseProd = est.base;
   const ed = podeEditar(), f = est.filtroProd;
   const todos = Object.values(est.produtos);
   const b = f.busca.trim().toLowerCase();
@@ -1534,14 +1603,16 @@ function renderProdutos(el) {
   const aConf = todos.filter(x => !x.validado).length;
   const med = x => x.comprimento_cm ? [x.comprimento_cm, x.largura_cm, x.altura_cm].map(v => v != null ? nf(1).format(v) : '?').join(' × ') : '—';
   el.innerHTML = `<div class="filtros">
+    ${chipsEmpresas()}
+    ${bsel.length > 1 ? bsel.map(x => `<button class="chip" data-basep="${x}" aria-pressed="${x === est.base}">Cadastro ${esc(NOME_BASE(x))}</button>`).join('') + '<div class="sep"></div>' : ''}
     ${[['', 'Todos'], ['ok', 'Validados'], ['conf', 'A confirmar']].map(([v, n]) => `<button class="chip" data-stp="${v}" aria-pressed="${f.status === v}">${n}${v === 'conf' && aConf ? ` (${aConf})` : ''}</button>`).join('')}
     <div class="sep"></div>
     <input class="busca" id="pBusca" type="search" placeholder="Buscar código, descrição, família, fornecedor…" value="${esc(f.busca)}">
     ${ed ? '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn" id="pColar">Colar lista</button><button class="btn-pri" id="pNovo">+ Produto</button></span>' : ''}
   </div>
   <div class="card">
-    <div class="topo"><h2>${todos.length} produto(s) no cadastro</h2><span class="nota">peso líquido UNITÁRIO · usado pela calculadora para ratear o frete por peso, como na DI · "a confirmar" = sugestão ainda não conferida</span></div>
-    <div class="tabela-wrap"><table>
+    <div class="topo"><h2>${todos.length} produto(s) no cadastro · ${esc(NOME_BASE(est.base))}</h2><span class="nota">peso líquido UNITÁRIO · usado pela calculadora para ratear o frete por peso, como na DUIMP · "a confirmar" = sugestão ainda não conferida</span></div>
+    <div class="tabela-wrap rolagem"><table>
       <thead>${cabecalho('prod', cols, { col: 'cod', dir: 'asc' })}</thead>
       <tbody>${lista.length ? lista.map(x => `<tr>
         <td><b>${esc(x.codigo)}</b></td><td>${esc(x.descricao || '—')}</td><td>${esc(x.familia || '—')}</td><td>${esc(x.fornecedor || '—')}</td>
@@ -1556,6 +1627,8 @@ function renderProdutos(el) {
   </div>`;
   ligarOrdenacao(el);
   el.querySelectorAll('[data-stp]').forEach(bt => bt.onclick = () => { f.status = bt.dataset.stp; redesenhar(); });
+  ligarChipsEmpresas(el);
+  el.querySelectorAll('[data-basep]').forEach(bt => bt.onclick = () => { est.baseProd = bt.dataset.basep; redesenhar(); });
   const bu = $('#pBusca');
   bu.oninput = () => { f.busca = bu.value; clearTimeout(bu._t); bu._t = setTimeout(() => { redesenhar(); const i = $('#pBusca'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
   if (!ed) return;
@@ -1582,7 +1655,7 @@ function formProduto(x) {
     }, novo ? '' : '<div style="margin-top:12px"><button type="button" class="btn btn-mini btn-perigo" id="btnExclProd">Excluir produto</button></div>').m.querySelectorAll('#btnExclProd').forEach(bt => bt.onclick = async () => {
       if (!await confirmar('Excluir produto', `Excluir <b>${esc(x.codigo)}</b> do cadastro?`, 'Excluir')) return;
       if (est.demo) delete est.produtos[chaveProd(x.codigo)];
-      else { const { error } = await sb.from('imp_produtos').delete().eq('codigo', x.codigo); if (error) return alertaErro(error.message); delete est.produtos[chaveProd(x.codigo)]; }
+      else { const { error } = await sb.from('imp_produtos').delete().eq('base', est.base).eq('codigo', x.codigo); if (error) return alertaErro(error.message); delete est.produtos[chaveProd(x.codigo)]; }
       document.querySelectorAll('.modal-fundo').forEach(m => m.remove()); redesenhar();
     });
 }
@@ -1664,7 +1737,8 @@ function confirmar(tit, msg, ok = 'Confirmar') {
 }
 
 function formDados(p) {
-  const novo = !p; p = p || { empresa: est.filtro.empresa || empresasVisiveis()[0], status: 'aberto' };
+  const novo = !p; p = p || { empresa: empresasFiltro()[0] || empresasVisiveis()[0], status: 'aberto' };
+  usarBase(baseDe(p.empresa));
   const forn = est.fornecedores[p.fornecedor] || {};
   const nomesForn = Object.keys(est.fornecedores).sort();
   const paises = [...new Set(Object.values(est.fornecedores).map(f => f.pais).filter(Boolean))].sort();
@@ -1688,26 +1762,24 @@ function formDados(p) {
       ['despachante', 'Despachante', 'lista', lista('despachante')], ['despachante_ref', 'Referência do despachante', 'text'], ['processo', 'Nº processo (despachante)', 'text'],
       ['frete_usd', 'Frete internacional (US$)', 'num'], ['nf_entrada', 'NF de entrada', 'text'], ['rfi_link', 'RFI · relatório final (link ou caminho do PDF)', 'text'],
     ]],
-    ['Assessoria (importação para cliente)', [['comissao_valor', 'Comissão (R$)', 'num'],
-      ...(gestor ? [['carga_paga', 'Carga paga', 'chk'], ['carga_paga_em', 'Pagamento da carga em', 'date'], ['comissao_paga', 'Comissão paga', 'chk'], ['comissao_paga_em', 'Comissão paga em', 'date']] : [])]],
+    ['Assessoria (importação para cliente)', [['comissao_valor', 'Comissão (R$) · o recebimento é marcado na ficha do processo', 'num']]],
     ['Fornecedor', [['_pais', 'País', 'lista', paises], ['_cond', 'Condição de pagamento', 'text']]],
-    ...(novo ? [['Mais fornecedores no mesmo embarque (mesma DI)', [['_outros', 'Um fornecedor por linha — cria um processo para cada um, já juntos neste embarque', 'area']]]] : []),
+    ...(novo ? [['Mais fornecedores no mesmo embarque (mesma DUIMP)', [['_outros', 'Um fornecedor por linha — cria um processo para cada um, já juntos neste embarque', 'area']]]] : []),
   ], { ...p, _pais: forn.pais, _cond: forn.condicao_pagamento }, async v => {
     if (!v.fornecedor) throw new Error('Informe o fornecedor.');
     v.empresa = Number(v.empresa);
-    if (v.carga_paga_em) v.carga_paga = true;
-    if (v.comissao_paga_em) v.comissao_paga = true;
     const { _pais, _cond, _outros, ...reg } = v;
-    const f = est.fornecedores[v.fornecedor];
+    if (!temClientes(v.empresa)) { reg.cliente = null; delete reg.comissao_valor; }
+    const bv = baseDe(v.empresa), f = ((est.porBase[bv] || {}).forn || {})[v.fornecedor];
     if (!f || f.pais !== _pais || f.condicao_pagamento !== _cond)
-      await gravarFornecedor({ nome: v.fornecedor, pais: _pais, condicao_pagamento: _cond });
+      await gravarFornecedor({ nome: v.fornecedor, pais: _pais, condicao_pagamento: _cond }, bv);
     if (novo) {
       reg.status = 'aberto';
       const outros = String(_outros || '').split(/\n|;/).map(x => x.trim()).filter(x => x && x !== v.fornecedor);
       if (outros.length) reg.embarque = 'EMB-' + [v.pedido || v.fornecedor, ...outros].join('-').replace(/\s+/g, '').slice(0, 40) + '-' + hojeISO().slice(2).replace(/-/g, '');
       const id = await inserir('imp_processos', reg);
       for (const o of outros) {
-        if (!est.fornecedores[o]) await gravarFornecedor({ nome: o, pais: _pais || null, condicao_pagamento: null });
+        if (!((est.porBase[bv] || {}).forn || {})[o]) await gravarFornecedor({ nome: o, pais: _pais || null, condicao_pagamento: null }, bv);
         await inserirSemRecarregar('imp_processos', { ...reg, fornecedor: o, pedido: null, fob_usd: null, fator_estimado: null, atualizado_em: new Date().toISOString() });
       }
       if (outros.length && !est.demo) await recarregar();
@@ -1718,7 +1790,7 @@ function formDados(p) {
   // cliente só aparece para empresas que importam para clientes (ou se já estiver preenchido)
   const fmD = m.querySelector('#fm'), lblCli = fmD.elements.cliente.closest('label');
   const grupoAss = [...m.querySelectorAll('.grupo-tit')].find(x => x.textContent.startsWith('Assessoria'));
-  const verCliente = () => { const on = temClientes(Number(fmD.elements.empresa.value)) || !!fmD.elements.cliente.value;
+  const verCliente = () => { const on = temClientes(Number(fmD.elements.empresa.value));
     lblCli.style.display = on ? '' : 'none'; if (grupoAss) { grupoAss.style.display = on ? '' : 'none'; grupoAss.nextElementSibling.style.display = on ? '' : 'none'; } };
   fmD.elements.empresa.addEventListener('change', verCliente); verCliente();
   m.querySelector('[name=fornecedor]').addEventListener('change', e => {
@@ -1727,13 +1799,13 @@ function formDados(p) {
   });
 }
 
-// junta processos numa mesma DI (embarque conjunto) — mesma empresa; sugere os do mesmo país
+// junta processos numa mesma DUIMP (embarque conjunto) — mesma empresa; sugere os do mesmo país
 function formJuntar(p) {
   const pais = paisDe(p), ja = doEmbarque(p).map(x => x.id);
   const cand = est.processos.filter(x => x.status === 'aberto' && x.empresa === p.empresa && !ja.includes(x.id))
     .sort((a, b) => (paisDe(b) === pais) - (paisDe(a) === pais) || String(b.pedido || '').localeCompare(String(a.pedido || ''), 'pt-BR', { numeric: true }));
-  const m = abrirModal(`<h2>Juntar processos na mesma DI</h2>
-    <div class="nota" style="margin-bottom:10px">Os processos marcados vêm no mesmo embarque que ${esc(nomeProc(p))} e rateiam os custos da importação (impostos item a item, fretes por peso, despesas pela base do ICMS — como na planilha de validação da DI). Só processos em aberto da ${EMPRESAS[p.empresa] || 'mesma empresa'}${pais ? `; os de ${esc(pais)} aparecem primeiro` : ''}.</div>
+  const m = abrirModal(`<h2>Juntar processos na mesma DUIMP</h2>
+    <div class="nota" style="margin-bottom:10px">Os processos marcados vêm no mesmo embarque que ${esc(nomeProc(p))} e rateiam os custos da importação (impostos item a item, fretes por peso, despesas pela base do ICMS — como na planilha de validação da DUIMP). Só processos em aberto da ${EMPRESAS[p.empresa] || 'mesma empresa'}${pais ? `; os de ${esc(pais)} aparecem primeiro` : ''}.</div>
     ${cand.length ? `<div class="lista-juntar">${cand.map(x => `<label class="chk-fluxo"><input type="checkbox" value="${x.id}"> ${esc(nomeProc(x))} <span class="nota">${esc(paisDe(x) || '')}${x.fob_usd ? ' · FOB ' + U(x.fob_usd) : ''}${x.embarque ? ' · já em ' + esc(x.embarque) : ''}</span></label>`).join('')}</div>` : '<div class="vazio">Nenhum outro processo em aberto da mesma empresa.</div>'}
     <div class="erro" id="jErr"></div>
     <div class="rodape"><button class="btn" data-fechar>Cancelar</button>${cand.length ? '<button class="btn-pri" id="jOk">Juntar e abrir na calculadora</button>' : ''}</div>`);
@@ -1757,9 +1829,9 @@ function formCheckpoints(p) {
 }
 
 function formNacionalizacao(p) {
-  const { m } = form('Nacionalização / validação da DI', [
-    ['DI', [['di', 'DI / AWB', 'text'], ['data_di', 'Data DI', 'date'], ['protocolo_di', 'Protocolo', 'text'],
-      ['cambio_di', 'Câmbio DI', 'num'], ['frete_usd', 'Frete internacional US$', 'num']]],
+  const { m } = form('Nacionalização / validação da DUIMP', [
+    ['DUIMP', [['di', 'DUIMP / AWB', 'text'], ['data_di', 'Data DUIMP', 'date'], ['protocolo_di', 'Protocolo', 'text'],
+      ['cambio_di', 'Câmbio DUIMP', 'num'], ['frete_usd', 'Frete internacional US$', 'num']]],
     ['Valores em R$', NAC.map(([k, n]) => [k, n, 'num'])],
     ['', [['nac_conciliada', 'Valores conferidos e conciliados', 'chk']]],
   ], p, v => gravar('imp_processos', v, p.id, p), '<div class="nota" style="margin-top:10px" id="nacTot"></div>');
@@ -1857,26 +1929,32 @@ async function excluir(tabela, id) {
   if (error) throw new Error(error.message);
   await recarregar();
 }
-async function gravarFornecedor(f) {
-  if (est.demo) { est.fornecedores[f.nome] = f; return; }
-  const { error } = await sb.from('imp_fornecedores').upsert(f);
+async function gravarFornecedor(f, base = est.base) {
+  f = { ...f, base };
+  const x = (est.porBase[base] || (est.porBase[base] = { forn: {}, aliq: {}, prod: {} })).forn;
+  if (est.demo) { x[f.nome] = f; return; }
+  const { error } = await sb.from('imp_fornecedores').upsert(f, { onConflict: 'base,nome' });
   if (error) throw new Error(error.message);
+  x[f.nome] = f;
 }
 const mapa = { imp_processos: 'processos', imp_cambios: 'cambios', imp_creditos: 'creditos' };
 async function gravarProdutos(lista) {
   if (!lista.length) return;
   const agora = new Date().toISOString();
-  lista = lista.map(x => ({ ...x, atualizado_em: agora }));
+  const base = est.base;
+  lista = lista.map(x => ({ ...x, base, atualizado_em: agora }));
   if (est.demo) { for (const x of lista) est.produtos[chaveProd(x.codigo)] = { ...(est.produtos[chaveProd(x.codigo)] || {}), ...x }; return; }
-  const { error } = await sb.from('imp_produtos').upsert(lista, { onConflict: 'codigo' });
+  const { error } = await sb.from('imp_produtos').upsert(lista, { onConflict: 'base,codigo' });
   if (error) { alertaErro(error.message); throw new Error(error.message); }
-  const pr = await buscarTodos(() => sb.from('imp_produtos').select('*').order('codigo'));
-  est.produtos = Object.fromEntries(pr.map(x => [chaveProd(x.codigo), numerico(x)]));
+  const pr = await buscarTodos(() => sb.from('imp_produtos').select('*').eq('base', base).order('codigo'));
+  const alvo = est.porBase[base].prod; for (const k of Object.keys(alvo)) delete alvo[k];
+  for (const x of pr) alvo[chaveProd(x.codigo)] = numerico(x);
 }
 function alertaInfo(msg) { abrirModal(`<div>${msg}</div><div class="rodape"><button class="btn-pri" data-fechar>OK</button></div>`); }
 async function gravarAliquotas(lista) {
+  lista = lista.map(a => ({ ...a, base: est.base }));
   if (est.demo) { for (const a of lista) est.aliquotas[a.familia] = a; return; }
-  const { error } = await sb.from('imp_aliquotas').upsert(lista);
+  const { error } = await sb.from('imp_aliquotas').upsert(lista, { onConflict: 'base,familia' });
   if (error) throw new Error(error.message);
   await recarregar();
 }
@@ -1903,12 +1981,14 @@ async function recarregar() {
     buscarTodos(() => sb.from('imp_fornecedores').select('*').order('nome')),
   ]);
   est.processos = procs.map(numerico); est.cambios = cambios.map(numerico); est.creditos = creditos.map(numerico);
-  est.fornecedores = Object.fromEntries(forns.map(f => [f.nome, f]));
   try { const { data: pe } = await sb.from('parametros').select('valor').eq('chave', 'imp_empresas').maybeSingle(); if (pe) aplicarEmpresas(pe.valor); } catch (_) {}
-  // cadastro de produtos (peso unitário e medidas)
-  try { const pr = await buscarTodos(() => sb.from('imp_produtos').select('*').order('codigo')); est.produtos = Object.fromEntries(pr.map(x => [chaveProd(x.codigo), numerico(x)])); } catch (_) { est.produtos = {}; }
-  // alíquotas por família de produto (calculadora aduaneira)
-  try { const al = await buscarTodos(() => sb.from('imp_aliquotas').select('*').order('familia')); est.aliquotas = Object.fromEntries(al.map(a => [a.familia, numerico(a)])); } catch (_) { est.aliquotas = {}; }
+  // cadastros por base (cada usuário só recebe as bases das suas empresas)
+  est.porBase = {};
+  const pb = b => est.porBase[b || 'grupo'] || (est.porBase[b || 'grupo'] = { forn: {}, aliq: {}, prod: {} });
+  for (const f of forns) pb(f.base).forn[f.nome] = f;
+  try { const pr = await buscarTodos(() => sb.from('imp_produtos').select('*').order('codigo')); for (const x of pr) pb(x.base).prod[chaveProd(x.codigo)] = numerico(x); } catch (_) {}
+  try { const al = await buscarTodos(() => sb.from('imp_aliquotas').select('*').order('familia')); for (const a of al) pb(a.base).aliq[a.familia] = numerico(a); } catch (_) {}
+  usarBase(est.base || baseDe(empresasFiltro()[0]));
   // câmbio de referência do painel (PTAX ou manual) para a calculadora
   if (est.cambioRef == null) try {
     const [{ data: par }, { data: cfg }] = await Promise.all([sb.from('parametros').select('chave,valor').eq('chave', 'cambio').maybeSingle(), sb.from('config_painel').select('valor').eq('chave', 'ptax').maybeSingle()]);
@@ -1927,6 +2007,7 @@ async function iniciar() {
     est.demo = true;
     est.perfil = { nome: 'Demonstração', ativo: true, admin: true };
     Object.assign(est, window.IMP_DEMO);
+    est.porBase = { grupo: { forn: est.fornecedores || {}, aliq: est.aliquotas || {}, prod: est.produtos || {} } }; usarBase('grupo');
     $('#usuario').textContent = 'Demonstração'; $('#btnSair').hidden = true;
     return mostrarApp();
   }
