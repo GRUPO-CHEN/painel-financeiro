@@ -280,6 +280,7 @@ const est = {
   filtro: { empresa: 0, status: 'aberto', busca: '', pais: '' },
   abertoId: null, ord: {}, aliquotas: {}, cambioRef: null,
   calc: null, produtos: {}, filtroProd: { busca: '', status: '' },
+  precifPorBase: {},   // precificação (só quem tem a área "precificacao"): { base: { tipos: {familia: linha}, cfg } }
 };
 
 // ======================= regras do processo =======================
@@ -1137,7 +1138,8 @@ function calcular3(itens, P, aliq) {
     despachante: P[x + '_despachante'], frete_nacional: P[x + '_frete_nacional'], outras: P[x + '_outras'], dhl_despesas: P.d_despesas });
   const rA = calcularAduaneiro(itens, modal('a'), aliq), rM = calcularAduaneiro(itens, modal('m'), aliq);
   const rD = calcularAduaneiro(itens, { ...g, frete_usd: P.d_frete_usd, dhl_despesas: P.d_despesas }, aliq);
-  const itensR = rA.itens.map((x, i) => ({ ...x, fatorA: x.fatorF, fatorM: rM.itens[i].fatorF, fatorD: rD.itens[i].fatorD, custoUnA: x.custoUnF, custoUnM: rM.itens[i].custoUnF, custoUnD: rD.itens[i].custoUnD }));
+  const itensR = rA.itens.map((x, i) => ({ ...x, fatorA: x.fatorF, fatorM: rM.itens[i].fatorF, fatorD: rD.itens[i].fatorD, custoUnA: x.custoUnF, custoUnM: rM.itens[i].custoUnF, custoUnD: rD.itens[i].custoUnD,
+    credA: x.pF.ipi + x.pF.icms, credM: rM.itens[i].pF.ipi + rM.itens[i].pF.icms, credD: rD.itens[i].pD.icms }));   // créditos (IPI + ICMS) do item, para a precificação
   const porProc = {};
   for (const k of Object.keys(rA.porProc)) porProc[k] = { aereo: rA.porProc[k].feromax, maritimo: rM.porProc[k].feromax, dhl: rD.porProc[k].dhl, peso: rA.porProc[k].peso };
   return { itens: itensR, aereo: rA.feromax, maritimo: rM.feromax, dhl: rD.dhl, porProc, semAliq: rA.semAliq, adicoes: rA.feromax.adicoes, rateio_frete: rA.feromax.rateio_frete };
@@ -1195,7 +1197,7 @@ function resultadoCalc() {
 const baseCalc = c => { const pr = est.processos.find(x => x.id === c.processo_id); return pr ? baseDe(pr.empresa) : (c.base || baseDe(empresasFiltro()[0])); };
 function renderCalculadora(el) {
   if (!est.calc) est.calc = novaCalc(null);
-  const c = est.calc, ed = podeEditar();
+  const c = est.calc, ed = podeEditar(), pp = podePrecificar();
   usarBase(baseCalc(c));
   const familias = Object.keys(est.aliquotas).sort();
   const proc = est.processos.find(x => x.id === c.processo_id);
@@ -1240,7 +1242,7 @@ function renderCalculadora(el) {
       <div class="acoes">${ed ? '<button class="btn btn-mini" id="cGravarPesos">Gravar pesos no cadastro</button>' : ''}<button class="btn btn-mini" id="cColar">Colar da planilha</button><button class="btn btn-mini" id="cItem">+ Item</button></div></div>
     <div class="tabela-wrap"><table>
       <thead><tr>${multi ? '<th style="min-width:150px">Processo</th>' : ''}<th style="min-width:110px">Código</th><th style="min-width:190px">Família / alíquota</th><th class="n" style="width:80px">Qtd</th><th class="n" style="width:110px">FOB unit. US$</th><th class="n" style="width:100px">Peso líq. unit. kg</th><th class="n">Peso total kg</th>
-        <th class="n">FOB total</th><th class="n">Fator aéreo</th><th class="n">Fator marítimo</th><th class="n">Fator DHL</th><th class="n">Custo unit. ${CENARIOS[c.cenario]}</th><th></th></tr></thead>
+        <th class="n">FOB total</th><th class="n">Fator aéreo</th><th class="n">Fator marítimo</th><th class="n">Fator DHL</th><th class="n">Custo unit. ${CENARIOS[c.cenario]}</th>${pp ? '<th class="n" style="width:96px" title="Vazio = desconto do tipo de produto (cadastro da precificação)">Desc. negociado %</th>' : ''}<th></th></tr></thead>
       <tbody>${c.itens.map((x, i) => `<tr>
         ${multi ? `<td><select class="ci" data-it="${i}" data-campo="proc">${grupo.map(g => `<option value="${esc(String(g.id))}" ${String(chaveProc(c, x.proc)) === String(g.id) ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')}</select></td>` : ''}
         <td><input class="ci" data-it="${i}" data-campo="codigo" value="${esc(x.codigo)}">${tagProduto(x)}</td>
@@ -1249,11 +1251,13 @@ function renderCalculadora(el) {
         <td><input class="ci n" data-it="${i}" data-campo="fob" inputmode="decimal" value="${esc(x.fob)}"></td>
         <td><input class="ci n" data-it="${i}" data-campo="peso" inputmode="decimal" value="${esc(x.peso || '')}" placeholder="opcional"></td><td class="n" id="cPesoT${i}"></td>
         <td class="n" id="cFob${i}"></td><td class="n" id="cFtA${i}"></td><td class="n" id="cFtM${i}"></td><td class="n" id="cFtD${i}"></td><td class="n" id="cCu${i}"></td>
+        ${pp ? `<td class="n"><input class="ci n" data-it="${i}" data-campo="desc_neg" inputmode="decimal" value="${esc(x.desc_neg || '')}" placeholder="do tipo"></td>` : ''}
         <td class="n">${c.itens.length > 1 ? `<button class="btn btn-mini btn-perigo" data-rm="${i}" title="Remover">×</button>` : ''}</td></tr>`).join('')}</tbody>
-      <tfoot><tr>${multi ? '<td></td>' : ''}<td colspan="2">Total</td><td class="n" id="cQtdT"></td><td></td><td></td><td class="n" id="cPesoTT"></td><td class="n" id="cFobT"></td><td colspan="5"></td></tr></tfoot>
+      <tfoot><tr>${multi ? '<td></td>' : ''}<td colspan="2">Total</td><td class="n" id="cQtdT"></td><td></td><td></td><td class="n" id="cPesoTT"></td><td class="n" id="cFobT"></td><td colspan="${pp ? 6 : 5}"></td></tr></tfoot>
     </table></div>
   </div>
   <div class="card" id="cResultado"></div>
+  ${pp ? cardPrecif(c) : ''}
   <div class="card">
     <div class="topo"><h2>Salvar estimativa</h2></div>
     <div class="filtros" style="margin:0">
@@ -1325,6 +1329,7 @@ function renderCalculadora(el) {
     if (lista.some(o => ALQ.some(([k]) => o[k] != null && (isNaN(o[k]) || o[k] < 0 || o[k] >= 1)))) return void ($('#aqMsg').textContent = 'Verifique os valores (0 a 99,99%).');
     try { await gravarAliquotas(lista); est.calcAliqAberto = true; redesenhar(); } catch (e) { $('#aqMsg').textContent = e.message; }
   };
+  if (pp) ligarPrecif(el);
   atualizarCalc();
 }
 
@@ -1383,6 +1388,7 @@ function atualizarCalc() {
         ${L('Custo real (sem créditos)', 'custo_real')}
         ${L('Fator 2 (sem créditos)', 'fator2', { f: true })}
       </tbody></table></div>${tabelaRateio(r, c)}`;
+  if (podePrecificar()) atualizarPrecif(r);
 }
 
 // rateio da DUIMP conjunta por processo (cenário marcado)
@@ -1407,6 +1413,246 @@ function tabelaRateio(r, c) {
         ${L.map(([n, f]) => `<tr><td>${n}</td>${g.map(y => `<td class="n">${f(y.x)}</td>`).join('')}<td class="n">${f({ ...tot, frete_usd: g.reduce((s, y) => s + (y.x.frete_usd || 0), 0) })}</td></tr>`).join('')}
         <tr><td>Despesas rateadas (sem impostos e fretes)</td>${g.map(y => `<td class="n">${F2.format(desp(y.x))}</td>`).join('')}<td class="n">${F2.format(desp(tot))}</td></tr>
       </tbody></table></div>`;
+}
+
+// ======================= Precificação (só área "precificacao": Rodrigo e os donos) =======================
+// Preço de tabela = (custo − créditos) ÷ (1 − margem − impostos de saída − comissão) ÷ (1 − desconto)
+// impostos de saída: empresa no regime "tabela" soma IPI + ICMS + PIS + COFINS + IRPJ/CSLL do tipo de produto;
+// no regime "simples", uma alíquota só sobre a venda. Créditos (IPI + ICMS da importação) só para quem aproveita.
+// Valores (alíquotas, descontos, comissão, empresas) ficam só no banco (imp_precif_tipos / imp_precif_config), nunca aqui.
+const podePrecificar = () => !!est.perfil && est.perfil.ativo !== false && (est.perfil.admin || (est.perfil.areas || []).includes('precificacao'));
+const podeEditarPrecif = () => podePrecificar() && !!(est.perfil.admin || est.perfil.editor);
+const PRECIF_PADRAO = { comissao: 0, margens: [0.5, 0.45, 0.4, 0.3, 0.2, 0.1, 0], padrao: { pis_saida: 0, cofins_saida: 0, irpj_csll: 0 }, empresas: [] };
+const precifDaBase = () => (est.precifPorBase || {})[est.base] || { tipos: {}, cfg: null };
+const cfgPrecif = () => ({ ...PRECIF_PADRAO, ...(precifDaBase().cfg || {}) });
+const PC2 = v => v == null || isNaN(v) ? '—' : nf(2).format(v * 100) + '%';
+const PCD = v => v == null || isNaN(v) ? '—' : new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(v * 100) + '%';   // desconto com até 3 casas
+const temValor = v => v != null && String(v).trim() !== '';
+function saidaTipo(familia) {
+  const t = precifDaBase().tipos[familia] || null, a = est.aliquotas[familia] || {}, pd = cfgPrecif().padrao || {};
+  const v = (x, alt) => temValor(x) ? Number(x) : nz(alt);
+  const ipi = v(t && t.ipi_saida, a.ipi), icms = v(t && t.icms_saida, a.icms), pis = v(t && t.pis_saida, pd.pis_saida),
+    cofins = v(t && t.cofins_saida, pd.cofins_saida), irpj = v(t && t.irpj_csll, pd.irpj_csll);
+  const ds = [t && t.desconto1, t && t.desconto2, t && t.desconto3].map(nz);
+  return { ipi, icms, pis, cofins, irpj, total: ipi + icms + pis + cofins + irpj, descontos: ds, desconto: 1 - ds.reduce((s, x) => s * (1 - x), 1),
+    cadastrado: !!t, semDesconto: ds.every(x => !x) };
+}
+const impostosSaida = (emp, familia) => emp.regime === 'simples' ? nz(emp.aliquota) : saidaTipo(familia).total;
+function precoTabela(custo, cred, imp, credito, margem, comissao, desconto) {
+  const den = 1 - margem - imp - comissao;
+  return den > 0 && desconto < 1 ? (custo - (credito ? cred : 0)) / den / (1 - desconto) : null;
+}
+const margemDoPreco = (preco, custo, cred, imp, credito, comissao, desconto) =>
+  preco > 0 && desconto < 1 ? 1 - imp - comissao - (custo - (credito ? cred : 0)) / (preco * (1 - desconto)) : null;
+function provaReal(preco, custo, cred, imp, credito, comissao, desconto) {
+  if (preco == null) return null;
+  const desc = preco * desconto, venda = preco - desc, im = venda * imp, com = venda * comissao, m1 = venda - custo - im - com, cr = credito ? cred : 0;
+  return { preco, desc, venda, cmv: custo, imp: im, com, m1, m1p: venda ? m1 / venda : null, cred: cr, m2: m1 + cr, m2p: venda ? (m1 + cr) / venda : null };
+}
+const lerMargens = t => { const l = String(t || '').split(/[;\s]+/).filter(Boolean).map(x => numCalc(x) / 100).filter(x => x < 1).slice(0, 7); return l.length ? l : cfgPrecif().margens; };
+function precPadrao() {
+  const cfg = cfgPrecif();
+  return { comissao: nf(2).format(cfg.comissao * 100), margens: cfg.margens.map(m => nf(0).format(m * 100)).join('; '), item: 0, emp: 0, preco: '' };
+}
+// linhas da precificação: um item por linha da calculadora (com qtd e FOB), custo do cenário marcado
+function linhasPrecif(r) {
+  const c = est.calc, pc = c.prec || (c.prec = precPadrao()), cfg = cfgPrecif(), emps = cfg.empresas || [];
+  const sfx = { aereo: 'A', maritimo: 'M', dhl: 'D' }[c.cenario] || 'A';
+  const com = numCalc(pc.comissao) / 100, margens = lerMargens(pc.margens), rows = [];
+  let k = 0;
+  c.itens.forEach((x, i) => {
+    if (!(numCalc(x.qtd) && numCalc(x.fob))) return;
+    const it = r.itens[k++], q = numCalc(x.qtd);
+    const custo = it['custoUn' + sfx], cred = nz(it['cred' + sfx]) / q, st = saidaTipo(x.familia);
+    const neg = temValor(x.desc_neg) ? numCalc(x.desc_neg) / 100 : null, desconto = neg != null ? neg : st.desconto;
+    rows.push({ i, nome: x.codigo || 'Item ' + (rows.length + 1), familia: x.familia, qtd: q, fob: numCalc(x.fob), custo, cred, st, neg, desconto, temAliq: !!it.a,
+      porEmp: emps.map(e => { const imp = impostosSaida(e, x.familia), credito = !!e.credito;
+        return { e, imp, credito, precos: margens.map(m => precoTabela(custo, cred, imp, credito, m, com, desconto)) }; }) });
+  });
+  return { rows, margens, com, emps };
+}
+function cardPrecif(c) {
+  if (!c.prec) c.prec = precPadrao();
+  const pc = c.prec, emps = cfgPrecif().empresas || [];
+  return `<div class="card" id="cPrecCard">
+    <div class="topo"><h2>Precificação</h2><span class="nota">só para quem tem a área “Precificação” · custo do cenário marcado: <b id="cPrecCen"></b></span>
+      <div class="acoes"><button class="btn btn-mini" id="cExcel" title="Baixa um Excel com fórmulas: estimativa dos 3 cenários + precificação das empresas">Baixar Excel (estimativa + precificação)</button></div></div>
+    ${emps.length ? '' : '<div class="nota verm" style="margin-bottom:8px">Nenhuma empresa configurada para a precificação destes cadastros: configure em “Impostos de saída, descontos e empresas”, abaixo.</div>'}
+    <div class="calc-grade">
+      <label><span>Comissão (%)</span><input data-pc="comissao" inputmode="decimal" value="${esc(pc.comissao)}"></label>
+      <label style="grid-column:span 2"><span>Margens (%) · separe por ;</span><input data-pc="margens" value="${esc(pc.margens)}"></label>
+      <label><span>Preço informado (R$) · que margem sobra?</span><input data-pc="preco" inputmode="decimal" value="${esc(pc.preco)}" placeholder="opcional"></label>
+    </div>
+    <div id="cPrecTab" style="margin-top:12px"></div>
+    <div id="cPrecProva" style="margin-top:14px"></div>
+    ${editorPrecif()}
+  </div>`;
+}
+function atualizarPrecif(r) {
+  const box = document.getElementById('cPrecTab'); if (!box) return;
+  const c = est.calc, pc = c.prec, { rows, margens, com, emps } = linhasPrecif(r);
+  const cenEl = document.getElementById('cPrecCen'); if (cenEl) cenEl.textContent = CENARIOS[c.cenario];
+  if (!rows.length || !emps.length) { box.innerHTML = rows.length ? '' : '<div class="nota">Informe os itens (quantidade, FOB e tipo de produto) para precificar.</div>'; $('#cPrecProva').innerHTML = ''; return; }
+  const dois = emps.length === 2;
+  const avisos = [];
+  for (const x of rows) {
+    if (!x.temAliq) avisos.push(`${esc(x.nome)}: sem tipo de produto/alíquota (custo sem impostos de importação).`);
+    else if (!x.st.cadastrado) avisos.push(`${esc(x.familia)}: impostos de saída não cadastrados (usando IPI e ICMS da importação e PIS, COFINS e IRPJ/CSLL padrão).`);
+    if (x.neg == null && x.st.semDesconto) avisos.push(`${esc(x.familia || x.nome)}: sem desconto cadastrado (preço sem desconto). Informe um desconto negociado no item ou cadastre o do tipo.`);
+  }
+  box.innerHTML = `<div class="tabela-wrap"><table>
+    <thead><tr><th>Item</th><th>Empresa</th><th class="n">Custo unit.</th><th class="n">Créditos unit.</th><th class="n">Imp. saída</th><th class="n">Desconto</th>
+      ${margens.map(m => `<th class="n">Margem ${nf(0).format(m * 100)}%</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(x => {
+      const min = margens.map((_, j) => Math.min(...x.porEmp.map(p => p.precos[j] ?? Infinity)));
+      const linhas = x.porEmp.map((p, n) => `<tr>${n === 0 ? `<td rowspan="${x.porEmp.length + (dois ? 1 : 0)}" style="vertical-align:top"><b>${esc(x.nome)}</b><div class="nota">${esc(x.familia || 'sem tipo')} · ${F0.format(x.qtd)} un. · FOB ${U(x.fob)}</div></td>` : ''}
+        <td>${esc(p.e.nome)}${p.e.regime === 'simples' ? ' <span class="nota">Simples</span>' : ''}</td><td class="n">${F2.format(x.custo)}</td>
+        <td class="n">${p.credito ? F2.format(x.cred) : '<span class="nota">não usa</span>'}</td><td class="n">${PC2(p.imp)}</td>
+        <td class="n">${PCD(x.desconto)}${x.neg != null ? ' <span class="tag azul">negociado</span>' : ''}</td>
+        ${p.precos.map((v, j) => `<td class="n${dois && v != null && v === min[j] ? ' verde' : ''}"${dois && v === min[j] ? ' style="font-weight:650"' : ''}>${v == null ? '<span class="nota">—</span>' : F2.format(v)}</td>`).join('')}</tr>`).join('');
+      const dif = dois ? `<tr><td class="nota">${esc(x.porEmp[1].e.nome)} − ${esc(x.porEmp[0].e.nome)}</td><td colspan="4"></td>${margens.map((_, j) => {
+        const a = x.porEmp[0].precos[j], b = x.porEmp[1].precos[j]; const d = a && b ? b / a - 1 : null;
+        return `<td class="n nota">${d == null ? '—' : (d > 0 ? '+' : '') + nf(1).format(d * 100) + '%'}</td>`; }).join('')}</tr>` : '';
+      return linhas + dif; }).join('')}</tbody></table></div>
+    <div class="nota" style="margin-top:6px">Em verde, a empresa com o menor preço de tabela para a mesma margem. Margem = margem 2 (já com os créditos de IPI + ICMS para quem aproveita).</div>
+    ${avisos.length ? `<div class="nota verm" style="margin-top:4px">${[...new Set(avisos)].join('<br>')}</div>` : ''}`;
+  // prova real do item escolhido
+  const it = Math.min(pc.item || 0, rows.length - 1), em = Math.min(pc.emp || 0, emps.length - 1), x = rows[it], p = x.porEmp[em];
+  const preco = numCalc(pc.preco) || null;
+  const cols = margens.map((m, j) => ({ tit: `Margem ${nf(0).format(m * 100)}%`, pr: provaReal(p.precos[j], x.custo, x.cred, p.imp, p.credito, com, x.desconto) }));
+  if (preco) cols.push({ tit: 'Preço informado', pr: provaReal(preco, x.custo, x.cred, p.imp, p.credito, com, x.desconto), inf: true });
+  const L2 = (rot, k, pct, forte) => `<tr${forte ? ' style="font-weight:650"' : ''}><td>${rot}</td>${cols.map(cl => `<td class="n">${!cl.pr ? '—' : pct ? PC2(cl.pr[k]) : F2.format(cl.pr[k])}</td>`).join('')}</tr>`;
+  const compInf = preco ? x.porEmp.map(q => ({ nome: q.e.nome, m: margemDoPreco(preco, x.custo, x.cred, q.imp, q.credito, com, x.desconto) })) : [];
+  const melhor = compInf.length > 1 ? compInf.reduce((a, b) => (b.m > a.m ? b : a)) : null;
+  $('#cPrecProva').innerHTML = `<div class="filtros" style="margin-bottom:6px"><b style="font-size:13.5px">Prova real</b>
+      <select class="sel" id="cPrItem">${rows.map((y, j) => `<option value="${j}" ${j === it ? 'selected' : ''}>${esc(y.nome)}</option>`).join('')}</select>
+      <select class="sel" id="cPrEmp">${emps.map((e, j) => `<option value="${j}" ${j === em ? 'selected' : ''}>pela ${esc(e.nome)}</option>`).join('')}</select>
+      <span class="nota">custo ${R(x.custo)} · impostos de saída ${PC2(p.imp)} · comissão ${PC2(com)} · desconto ${PCD(x.desconto)}${p.credito ? ` · créditos ${R(x.cred)}` : ' · sem crédito'}</span></div>
+    ${compInf.length ? `<div style="margin-bottom:8px;font-size:13px">Com <b>${R(preco)}</b> de tabela: ${compInf.map(q => `${esc(q.nome)} <b>${PC2(q.m)}</b>`).join(' · ')}${melhor ? ` → melhor margem pela <b>${esc(melhor.nome)}</b>` : ''}</div>` : ''}
+    <div class="tabela-wrap"><table><thead><tr><th></th>${cols.map(cl => `<th class="n">${cl.tit}</th>`).join('')}</tr></thead><tbody>
+      ${L2('Preço de tabela', 'preco', false, true)}${L2('(−) Desconto', 'desc')}${L2('(=) Venda', 'venda', false, true)}${L2('(−) CMV (custo unitário)', 'cmv')}
+      ${L2('(−) Impostos de saída', 'imp')}${L2('(−) Comissão', 'com')}${L2('(=) Margem 1', 'm1', false, true)}${L2('Margem 1, %', 'm1p', true)}
+      ${L2('(+) Créditos (IPI + ICMS)', 'cred')}${L2('(=) Margem 2', 'm2', false, true)}${L2('Margem 2, %', 'm2p', true, true)}</tbody></table></div>`;
+  $('#cPrItem').onchange = e => { pc.item = Number(e.target.value); atualizarPrecif(r); };
+  $('#cPrEmp').onchange = e => { pc.emp = Number(e.target.value); atualizarPrecif(r); };
+}
+// cadastro: impostos de saída e desconto por tipo de produto + empresas, comissão e margens padrão
+function editorPrecif() {
+  const ed = podeEditarPrecif(), cfg = cfgPrecif(), pt = precifDaBase().tipos, pd = cfg.padrao || {};
+  const familias = Object.keys(est.aliquotas).sort();
+  const pv = v => temValor(v) ? nf(2).format(Number(v) * 100) : '';
+  const cel = (f, k, ph) => `<td class="n">${ed ? `<input class="ci n" style="width:70px" data-pf="${esc(f)}" data-pk="${k}" value="${pv(pt[f] && pt[f][k])}" placeholder="${esc(ph)}">` : (temValor(pt[f] && pt[f][k]) ? pv(pt[f][k]) : `<span class="nota">${esc(ph)}</span>`)}</td>`;
+  const emps = cfg.empresas || [];
+  return `<details class="aliq" id="cPrecEd" ${est.precEdAberto ? 'open' : ''} style="margin-top:16px"><summary>Impostos de saída, descontos e empresas</summary>
+    <div class="nota" style="margin:6px 0 10px">Cadastro de ${esc(NOME_BASE(est.base))} · valores em %. IPI e ICMS vazios = iguais aos da importação; PIS, COFINS e IRPJ/CSLL vazios = padrão. Desconto em cascata: 1 − (1 − d1)(1 − d2)(1 − d3). Alguns itens variam na negociação: use o “Desc. negociado” do item.</div>
+    <div class="tabela-wrap"><table><thead><tr><th>Tipo de produto</th><th class="n">IPI</th><th class="n">ICMS</th><th class="n">PIS</th><th class="n">COFINS</th><th class="n">IRPJ/CSLL</th><th class="n">Total saída</th>
+      <th class="n">Desc. 1</th><th class="n">Desc. 2</th><th class="n">Desc. 3</th><th class="n">Desconto</th></tr></thead><tbody>
+      ${familias.map(f => { const s = saidaTipo(f), a = est.aliquotas[f] || {}; return `<tr><td>${esc(f)}${pt[f] ? '' : ' <span class="tag aviso">novo</span>'}</td>
+        ${cel(f, 'ipi_saida', pv(a.ipi) || '0')}${cel(f, 'icms_saida', pv(a.icms) || '0')}${cel(f, 'pis_saida', pv(pd.pis_saida))}${cel(f, 'cofins_saida', pv(pd.cofins_saida))}${cel(f, 'irpj_csll', pv(pd.irpj_csll))}
+        <td class="n">${PC2(s.total)}</td>${cel(f, 'desconto1', '')}${cel(f, 'desconto2', '')}${cel(f, 'desconto3', '')}<td class="n">${s.semDesconto ? '<span class="nota">—</span>' : nf(3).format(s.desconto * 100) + '%'}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <div class="topo" style="margin-top:14px"><h2 style="font-size:13.5px">Empresas que vendem</h2><span class="nota">“por tipo” usa os impostos de saída da tabela acima; “Simples” usa uma alíquota só sobre a venda</span></div>
+    <div class="tabela-wrap"><table><thead><tr><th>Empresa</th><th>Regime</th><th class="n">Simples (%)</th><th>Aproveita crédito de IPI + ICMS</th></tr></thead><tbody>
+      ${emps.map((e, j) => `<tr><td>${ed ? `<input class="ci" data-pe="${j}" data-pek="nome" value="${esc(e.nome)}">` : esc(e.nome)}</td>
+        <td>${ed ? `<select class="ci" data-pe="${j}" data-pek="regime"><option value="tabela" ${e.regime !== 'simples' ? 'selected' : ''}>por tipo de produto</option><option value="simples" ${e.regime === 'simples' ? 'selected' : ''}>Simples</option></select>` : (e.regime === 'simples' ? 'Simples' : 'por tipo de produto')}</td>
+        <td class="n">${ed ? `<input class="ci n" style="width:80px" data-pe="${j}" data-pek="aliquota" value="${e.regime === 'simples' ? pv(e.aliquota) : ''}">` : (e.regime === 'simples' ? PC2(e.aliquota) : '—')}</td>
+        <td>${ed ? `<label class="chk-fluxo"><input type="checkbox" data-pe="${j}" data-pek="credito" ${e.credito ? 'checked' : ''}> sim</label>` : (e.credito ? 'sim' : 'não')}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${ed ? `<div class="calc-grade" style="margin-top:10px">
+      <label><span>Comissão base (%)</span><input id="pcfCom" value="${pv(cfg.comissao)}"></label>
+      <label style="grid-column:span 2"><span>Margens padrão (%) · separe por ;</span><input id="pcfMarg" value="${esc(cfg.margens.map(m => nf(0).format(m * 100)).join('; '))}"></label>
+      <label><span>PIS / COFINS / IRPJ-CSLL padrão (%)</span><input id="pcfPad" value="${[pd.pis_saida, pd.cofins_saida, pd.irpj_csll].map(pv).join('; ')}"></label></div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn-pri" id="pcfSalvar">Salvar impostos de saída, descontos e empresas</button><span class="nota" id="pcfMsg"></span></div>` : '<div class="nota" style="margin-top:8px">Só leitura: quem edita é o administrador.</div>'}
+  </details>`;
+}
+async function salvarPrecif(el) {
+  const pc = v => { const t = paraNum(v); return t === '' ? null : Number(t) / 100; };
+  const campos = ['ipi_saida', 'icms_saida', 'pis_saida', 'cofins_saida', 'irpj_csll', 'desconto1', 'desconto2', 'desconto3'];
+  const pt = precifDaBase().tipos, lista = [];
+  for (const f of Object.keys(est.aliquotas)) {
+    const o = { base: est.base, familia: f };
+    for (const k of campos) { const i = el.querySelector(`[data-pf="${CSS.escape(f)}"][data-pk="${k}"]`); o[k] = i ? pc(i.value) : null; }
+    if (campos.some(k => o[k] != null && (isNaN(o[k]) || o[k] < 0 || o[k] >= 1))) throw new Error(`Verifique os valores de ${f} (0 a 99,99%).`);
+    if (pt[f] || campos.some(k => o[k] != null)) lista.push(o);
+  }
+  const cfg = cfgPrecif();
+  const empresas = (cfg.empresas || []).map((e, j) => {
+    const g = k => el.querySelector(`[data-pe="${j}"][data-pek="${k}"]`);
+    const regime = g('regime').value, al = pc(g('aliquota').value);
+    if (regime === 'simples' && (al == null || isNaN(al) || al < 0 || al >= 1)) throw new Error(`Informe a alíquota do Simples de ${e.nome}.`);
+    return { nome: g('nome').value.trim() || e.nome, regime, ...(regime === 'simples' ? { aliquota: al } : {}), credito: g('credito').checked };
+  });
+  const com = pc($('#pcfCom').value), marg = String($('#pcfMarg').value).split(/[;\s]+/).filter(Boolean).map(pc);
+  const pad = String($('#pcfPad').value).split(/[;\s]+/).filter(Boolean).map(pc);
+  if (com == null || isNaN(com) || com < 0 || com >= 1) throw new Error('Verifique a comissão base.');
+  if (!marg.length || marg.some(m => m == null || isNaN(m) || m < 0 || m >= 1)) throw new Error('Verifique as margens padrão.');
+  if (pad.length !== 3 || pad.some(m => m == null || isNaN(m))) throw new Error('Informe PIS, COFINS e IRPJ/CSLL padrão separados por ;');
+  const valor = { ...cfg, comissao: com, margens: marg.slice(0, 7), padrao: { pis_saida: pad[0], cofins_saida: pad[1], irpj_csll: pad[2] }, empresas };
+  if (est.demo) {
+    const b = est.precifPorBase[est.base] || (est.precifPorBase[est.base] = { tipos: {}, cfg: null });
+    for (const o of lista) b.tipos[o.familia] = o; b.cfg = valor; return;
+  }
+  if (lista.length) { const { error } = await sb.from('imp_precif_tipos').upsert(lista.map(o => ({ ...o, atualizado_em: new Date().toISOString() })), { onConflict: 'base,familia' }); if (error) throw new Error(error.message); }
+  const { error } = await sb.from('imp_precif_config').upsert({ base: est.base, valor, atualizado_em: new Date().toISOString() }, { onConflict: 'base' });
+  if (error) throw new Error(error.message);
+  await recarregar();
+}
+function ligarPrecif(el) {
+  const c = est.calc;
+  el.querySelectorAll('[data-pc]').forEach(i => i.oninput = () => { c.prec[i.dataset.pc] = i.value; atualizarPrecif(resultadoCalc().r); });
+  if ($('#cExcel')) $('#cExcel').onclick = baixarExcel;
+  if ($('#cPrecEd')) $('#cPrecEd').ontoggle = e => { est.precEdAberto = e.target.open; };
+  if ($('#pcfSalvar')) $('#pcfSalvar').onclick = async () => {
+    $('#pcfMsg').textContent = 'Salvando…';
+    try { await salvarPrecif(el); est.precEdAberto = true; redesenhar(); } catch (e) { $('#pcfMsg').textContent = e.message; }
+  };
+}
+function carregarScript(src) {
+  return new Promise((ok, erro) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => erro(new Error('não carregou ' + src)); document.head.appendChild(s); });
+}
+// dados da calculadora para o Excel (estimativa + precificação)
+function dadosExcel() {
+  const c = est.calc, { pr, r } = resultadoCalc(), cfg = cfgPrecif(), pt = precifDaBase().tipos, pd = cfg.padrao || {};
+  const proc = est.processos.find(x => x.id === c.processo_id), g = grupoCalc(c);
+  const forn = proc ? proc.fornecedor : (g[0] && g[0].fornecedor) || '';
+  const val = (t, k, alt) => t && temValor(t[k]) ? Number(t[k]) : alt;
+  const tipos = Object.keys(est.aliquotas).sort().map(f => { const a = est.aliquotas[f], t = pt[f] || null;
+    return { familia: f, ii: a.ii, ipi: a.ipi, icms: a.icms, pis: a.pis, cofins: a.cofins, ii_dhl: a.ii_dhl, icms_dhl: a.icms_dhl, cadastrado: !!t,
+      ipi_saida: val(t, 'ipi_saida', null), icms_saida: val(t, 'icms_saida', nz(a.icms)), pis_saida: val(t, 'pis_saida', nz(pd.pis_saida)),
+      cofins_saida: val(t, 'cofins_saida', nz(pd.cofins_saida)), irpj_csll: val(t, 'irpj_csll', nz(pd.irpj_csll)),
+      d1: val(t, 'desconto1', null), d2: val(t, 'desconto2', null), d3: val(t, 'desconto3', null) }; });
+  const itens = c.itens.filter(x => numCalc(x.qtd) && numCalc(x.fob)).map((x, k) => ({ codigo: x.codigo || 'Item ' + (k + 1), qtd: numCalc(x.qtd), fob: numCalc(x.fob),
+    peso: numCalc(x.peso) || null, familia: x.familia, desc_neg: temValor(x.desc_neg) ? numCalc(x.desc_neg) / 100 : null }));
+  const historico = forn ? est.processos.filter(p => p.fornecedor === forn && p.status === 'fechado').map(p => ({ p, rs: resumo(p) })).filter(x => x.rs.fator)
+    .sort((a, b) => String(b.p.data_di || '').localeCompare(String(a.p.data_di || ''))).slice(0, 6)
+    .map(({ p, rs }) => ({ pedido: p.pedido, empresa: EMPRESAS[p.empresa] || '', modal: p.modal || '', fator: rs.fator, dolar_di: p.cambio_di, data_di: p.data_di })) : [];
+  const ad = temValor(c.premissas.adicoes) ? pr.adicoes : (g.length > 1 ? r.adicoes : null);
+  const sec = x => ({ frete_usd: pr[x + '_frete_usd'], frete_desp: pr[x + '_frete_desp'], afrmm: pr[x + '_afrmm'], sdas: pr[x + '_sdas'], armazenagem: pr[x + '_armazenagem'],
+    despachante: pr[x + '_despachante'], frete_nacional: pr[x + '_frete_nacional'], outras: pr[x + '_outras'] });
+  const pc = c.prec || precPadrao();
+  return { fornecedor: forn, cliente: proc ? proc.cliente || '' : '', mercadoria: (proc && proc.mercadoria) || (itens[0] ? itens[0].codigo : ''), data: hojeISO(),
+    cenario: { aereo: 'Aéreo', maritimo: 'Marítimo', dhl: 'DHL' }[c.cenario] || 'Aéreo',
+    prem: { dolar_di: pr.dolar_di, dolar_cambio: pr.dolar_cambio || pr.dolar_di, outros_acresc: pr.outros_acresc, adicoes: ad, a: sec('a'), m: sec('m'), d: { frete_usd: pr.d_frete_usd, despesas: pr.d_despesas } },
+    itens, tipos, comissao: numCalc(pc.comissao) / 100, margens: lerMargens(pc.margens), empresas: cfg.empresas || [], preco_informado: numCalc(pc.preco) || null, historico };
+}
+async function baixarExcel() {
+  const btn = $('#cExcel'), txt = btn.textContent;
+  const d = dadosExcel();
+  if (!d.itens.length) return alertaErro('Informe pelo menos um item com quantidade e FOB.');
+  btn.disabled = true; btn.textContent = 'Gerando…';
+  try {
+    if (!window.ExcelJS) await carregarScript('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js');
+    if (!window.gerarExcelEstimativa) await carregarScript('excel-estimativa.js?v=20261127');
+    const buf = await window.gerarExcelEstimativa(window.ExcelJS, d);
+    const proc = est.processos.find(x => x.id === est.calc.processo_id);
+    const nome = ['Estimativa e precificação', proc ? [proc.pedido, proc.fornecedor].filter(Boolean).join(' ') : (d.mercadoria || 'simulação'), d.data]
+      .join(' - ').replace(/[\\/:*?"<>|]+/g, ' ') + '.xlsx';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = nome; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  } catch (e) { alertaErro('Não consegui gerar o Excel: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = txt; }
 }
 
 function colarItens() {
@@ -2015,6 +2261,14 @@ async function recarregar() {
   for (const f of forns) pb(f.base).forn[f.nome] = f;
   try { const pr = await buscarTodos(() => sb.from('imp_produtos').select('*').order('codigo')); for (const x of pr) pb(x.base).prod[chaveProd(x.codigo)] = numerico(x); } catch (_) {}
   try { const al = await buscarTodos(() => sb.from('imp_aliquotas').select('*').order('familia')); for (const a of al) pb(a.base).aliq[a.familia] = numerico(a); } catch (_) {}
+  // precificação: o banco só devolve para quem tem a área "precificacao" (Rodrigo e os donos)
+  est.precifPorBase = {};
+  if (podePrecificar()) try {
+    const [tp, { data: cf }] = await Promise.all([buscarTodos(() => sb.from('imp_precif_tipos').select('*').order('familia')), sb.from('imp_precif_config').select('*')]);
+    const pp = b => est.precifPorBase[b || 'grupo'] || (est.precifPorBase[b || 'grupo'] = { tipos: {}, cfg: null });
+    for (const t of tp) pp(t.base).tipos[t.familia] = numerico(t);
+    for (const x of (cf || [])) pp(x.base).cfg = x.valor;
+  } catch (_) {}
   usarBase(est.base || baseDe(empresasFiltro()[0]));
   // câmbio de referência do painel (PTAX ou manual) para a calculadora
   if (est.cambioRef == null) try {

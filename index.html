@@ -2423,7 +2423,7 @@ function formImportacao(i) {
 
 // ======================= usuários (administrador) =======================
 const AREAS = [['caixa', 'Caixa e bancos'], ['titulos', 'Pagar / receber'], ['dre', 'DRE e resultados'], ['vendas', 'Performance de vendas'], ['importacoes', 'Importações'],
-  ['imp_gestor', 'Importações: fechar processo e marcar pago']];
+  ['imp_gestor', 'Importações: fechar processo e marcar pago'], ['precificacao', 'Importações: precificação (custos, margens e descontos)']];
 // empresas para dar acesso: as do ERP + as só de importação (sem vínculo com o fluxo de caixa)
 function empresasUsuarios() {
   const so = Object.entries(est.impEmpresas || {}).filter(([k]) => !est.empresasTodas[k]).map(([k, v]) => [k, ((v && v.nome) || 'Empresa ' + k) + ' (só importações)']);
